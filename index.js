@@ -6,6 +6,7 @@ const { initDB } = require('./db');
 
 const authRoutes = require('./routes/auth');
 const gameRoutes = require('./routes/game');
+const mapRoutes = require('./routes/map');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,6 +33,7 @@ app.get('/health', (req, res) => res.json({ ok: true, service: 'kindlewood-api' 
 
 app.use('/api/auth', authRoutes);
 app.use('/api/game', gameRoutes);
+app.use('/api/map', mapRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err.message);

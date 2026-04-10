@@ -62,6 +62,8 @@ router.get('/settlement', requireAuth, async (req, res) => {
         id: settlement.id,
         name: settlement.name,
         tier: settlement.tier,
+        tile_x: settlement.tile_x,
+        tile_y: settlement.tile_y,
         isNewSettlement: settlement.name === `${user.username}'s Camp`,
         resources: {
           food: settlement.food, timber: settlement.timber,
