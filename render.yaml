@@ -14,3 +14,5 @@ services:
         generateValue: true
       - key: ALLOWED_ORIGINS
         sync: false
+      - key: DATABASE_URL
+        sync: false

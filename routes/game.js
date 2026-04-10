@@ -1,5 +1,5 @@
 const express = require('express');
-const db = require('../db');
+const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
 
 const router = express.Router();
@@ -13,7 +13,7 @@ const SPECIES_RATES = {
   Hares:   { food: 18, timber: 8,  stone: 4,  metal: 3, wealth: 6  },
 };
 
-function applyTick(settlement, species) {
+async function applyTick(settlement, species) {
   const now = Date.now();
   const lastTick = new Date(settlement.last_tick).getTime();
   const hoursElapsed = (now - lastTick) / (1000 * 60 * 60);
@@ -27,55 +27,78 @@ function applyTick(settlement, species) {
     metal:  Math.floor(settlement.metal  + rates.metal  * hoursElapsed),
     wealth: Math.floor(settlement.wealth + rates.wealth * hoursElapsed),
   };
-  db.prepare(`
+
+  await query(`
     UPDATE settlements
-    SET food=?, timber=?, stone=?, metal=?, wealth=?, last_tick=CURRENT_TIMESTAMP
-    WHERE id=?
-  `).run(updated.food, updated.timber, updated.stone, updated.metal, updated.wealth, settlement.id);
+    SET food=$1, timber=$2, stone=$3, metal=$4, wealth=$5, last_tick=NOW()
+    WHERE id=$6
+  `, [updated.food, updated.timber, updated.stone, updated.metal, updated.wealth, settlement.id]);
 
   return { ...settlement, ...updated };
 }
 
-router.get('/settlement', requireAuth, (req, res) => {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.userId);
-  if (!user) return res.status(404).json({ error: 'User not found.' });
+router.get('/settlement', requireAuth, async (req, res) => {
+  try {
+    const userResult = await query('SELECT * FROM users WHERE id=$1', [req.user.userId]);
+    const user = userResult.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found.' });
 
-  let settlement = db.prepare('SELECT * FROM settlements WHERE user_id = ?').get(user.id);
-  if (!settlement) return res.status(404).json({ error: 'No settlement found.' });
+    let settlementResult = await query('SELECT * FROM settlements WHERE user_id=$1', [user.id]);
+    let settlement = settlementResult.rows[0];
+    if (!settlement) return res.status(404).json({ error: 'No settlement found.' });
 
-  settlement = applyTick(settlement, user.species);
-  const buildings = db.prepare('SELECT type, level FROM buildings WHERE settlement_id = ?').all(settlement.id);
-  const rates = SPECIES_RATES[user.species] || SPECIES_RATES.Mice;
+    settlement = await applyTick(settlement, user.species);
 
-  res.json({
-    ok: true,
-    settlement: {
-      id: settlement.id,
-      name: settlement.name,
-      tier: settlement.tier,
-      resources: {
-        food: settlement.food, timber: settlement.timber,
-        stone: settlement.stone, metal: settlement.metal, wealth: settlement.wealth,
+    const buildingsResult = await query(
+      'SELECT type, level FROM buildings WHERE settlement_id=$1',
+      [settlement.id]
+    );
+
+    const rates = SPECIES_RATES[user.species] || SPECIES_RATES.Mice;
+
+    res.json({
+      ok: true,
+      settlement: {
+        id: settlement.id,
+        name: settlement.name,
+        tier: settlement.tier,
+        isNewSettlement: settlement.name === `${user.username}'s Camp`,
+        resources: {
+          food: settlement.food, timber: settlement.timber,
+          stone: settlement.stone, metal: settlement.metal, wealth: settlement.wealth,
+        },
+        rates,
+        population: settlement.population,
+        population_cap: settlement.population_cap,
+        happiness: settlement.happiness,
+        last_tick: settlement.last_tick,
       },
-      rates,
-      population: settlement.population,
-      population_cap: settlement.population_cap,
-      happiness: settlement.happiness,
-    },
-    buildings,
-    species: user.species,
-    username: user.username,
-  });
+      buildings: buildingsResult.rows,
+      species: user.species,
+      username: user.username,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to load settlement.' });
+  }
 });
 
-router.patch('/settlement/rename', requireAuth, (req, res) => {
+router.patch('/settlement/rename', requireAuth, async (req, res) => {
   const { name } = req.body;
   if (!name || name.trim().length < 2)
     return res.status(400).json({ error: 'Name must be at least 2 characters.' });
-  const settlement = db.prepare('SELECT id FROM settlements WHERE user_id = ?').get(req.user.userId);
-  if (!settlement) return res.status(404).json({ error: 'No settlement found.' });
-  db.prepare('UPDATE settlements SET name = ? WHERE id = ?').run(name.trim(), settlement.id);
-  res.json({ ok: true, name: name.trim() });
+  try {
+    const settlementResult = await query(
+      'SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]
+    );
+    const settlement = settlementResult.rows[0];
+    if (!settlement) return res.status(404).json({ error: 'No settlement found.' });
+    await query('UPDATE settlements SET name=$1 WHERE id=$2', [name.trim(), settlement.id]);
+    res.json({ ok: true, name: name.trim() });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Rename failed.' });
+  }
 });
 
 module.exports = router;

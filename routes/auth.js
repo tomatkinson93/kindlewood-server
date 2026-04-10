@@ -1,7 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const db = require('../db');
+const { query } = require('../db');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
@@ -24,9 +24,8 @@ const STARTER_BUILDINGS = {
   Hares:   ['granary', 'barracks', 'farm'],
 };
 
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res) => {
   const { username, email, password, species } = req.body;
-
   if (!username || !email || !password || !species)
     return res.status(400).json({ error: 'All fields are required.' });
   if (!SPECIES_VALID.includes(species))
@@ -34,45 +33,64 @@ router.post('/register', (req, res) => {
   if (password.length < 8)
     return res.status(400).json({ error: 'Password must be at least 8 characters.' });
 
-  const existing = db.prepare('SELECT id FROM users WHERE email = ? OR username = ?').get(email, username);
-  if (existing)
-    return res.status(409).json({ error: 'Email or username already in use.' });
+  try {
+    const existing = await query(
+      'SELECT id FROM users WHERE email=$1 OR username=$2',
+      [email, username]
+    );
+    if (existing.rows.length > 0)
+      return res.status(409).json({ error: 'Email or username already in use.' });
 
-  const password_hash = bcrypt.hashSync(password, 10);
-  const userResult = db.prepare(
-    'INSERT INTO users (username, email, password_hash, species) VALUES (?, ?, ?, ?)'
-  ).run(username, email, password_hash, species);
+    const password_hash = await bcrypt.hash(password, 10);
+    const userResult = await query(
+      'INSERT INTO users (username, email, password_hash, species) VALUES ($1,$2,$3,$4) RETURNING id',
+      [username, email, password_hash, species]
+    );
+    const userId = userResult.rows[0].id;
 
-  const userId = userResult.lastInsertRowid;
-  const settlementResult = db.prepare(
-    'INSERT INTO settlements (user_id, name) VALUES (?, ?)'
-  ).run(userId, `${username}'s Camp`);
+    const settlementResult = await query(
+      "INSERT INTO settlements (user_id, name) VALUES ($1,$2) RETURNING id",
+      [userId, `${username}'s Camp`]
+    );
+    const settlementId = settlementResult.rows[0].id;
 
-  const settlementId = settlementResult.lastInsertRowid;
-  const insertBuilding = db.prepare('INSERT INTO buildings (settlement_id, type, level) VALUES (?, ?, 1)');
-  for (const b of STARTER_BUILDINGS[species]) insertBuilding.run(settlementId, b);
+    for (const b of STARTER_BUILDINGS[species]) {
+      await query(
+        'INSERT INTO buildings (settlement_id, type, level) VALUES ($1,$2,1)',
+        [settlementId, b]
+      );
+    }
 
-  const token = jwt.sign({ userId, username, species }, JWT_SECRET, { expiresIn: '7d' });
-  res.cookie('token', token, COOKIE_OPTIONS);
-  res.json({ ok: true, username, species });
+    const token = jwt.sign({ userId, username, species }, JWT_SECRET, { expiresIn: '7d' });
+    res.cookie('token', token, COOKIE_OPTIONS);
+    res.json({ ok: true, username, species });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Registration failed.' });
+  }
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password)
     return res.status(400).json({ error: 'Email and password are required.' });
 
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-  if (!user || !bcrypt.compareSync(password, user.password_hash))
-    return res.status(401).json({ error: 'Invalid email or password.' });
+  try {
+    const result = await query('SELECT * FROM users WHERE email=$1', [email]);
+    const user = result.rows[0];
+    if (!user || !(await bcrypt.compare(password, user.password_hash)))
+      return res.status(401).json({ error: 'Invalid email or password.' });
 
-  const token = jwt.sign(
-    { userId: user.id, username: user.username, species: user.species },
-    JWT_SECRET,
-    { expiresIn: '7d' }
-  );
-  res.cookie('token', token, COOKIE_OPTIONS);
-  res.json({ ok: true, username: user.username, species: user.species });
+    const token = jwt.sign(
+      { userId: user.id, username: user.username, species: user.species },
+      JWT_SECRET, { expiresIn: '7d' }
+    );
+    res.cookie('token', token, COOKIE_OPTIONS);
+    res.json({ ok: true, username: user.username, species: user.species });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Login failed.' });
+  }
 });
 
 router.post('/logout', (req, res) => {
