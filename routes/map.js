@@ -282,8 +282,8 @@ router.post('/arrive', requireAuth, async (req, res) => {
 
     // Score tiles by zone preference and distance from others
     const candidates = allTiles.filter(t => {
-      if (t.x < 4 || t.x > MAP_SIZE - 4) return false;
-      if (t.y < 4 || t.y > MAP_SIZE - 4) return false;
+      if (t.x < REVEAL_RADIUS + 1 || t.x > MAP_SIZE - REVEAL_RADIUS - 1) return false;
+      if (t.y < REVEAL_RADIUS + 1 || t.y > MAP_SIZE - REVEAL_RADIUS - 1) return false;
       if (!preferredTerrains.includes(t.terrain)) return false;
       for (const occ of occupiedRes.rows) {
         const dx = t.x - occ.tile_x, dy = t.y - occ.tile_y;
