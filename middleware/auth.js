@@ -2,22 +2,20 @@ const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 
 module.exports = function requireAuth(req, res, next) {
-  const cookieToken = req.cookies?.token || null;
-  const authHeader = req.headers.authorization || '';
-  const bearerToken = authHeader.startsWith('Bearer ')
-      ? authHeader.slice(7)
-      : null;
+  // Accept Bearer token from Authorization header OR cookie
+  let token = req.cookies.token;
 
-  const token = cookieToken || bearerToken;
-
-  if (!token) {
-    return res.status(401).json({ error: 'Not authenticated.' });
+  const authHeader = req.headers.authorization;
+  if (!token && authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.slice(7);
   }
+
+  if (!token) return res.status(401).json({ error: 'Not authenticated.' });
 
   try {
     req.user = jwt.verify(token, JWT_SECRET);
     next();
   } catch {
-    return res.status(401).json({ error: 'Session expired.' });
+    res.status(401).json({ error: 'Session expired.' });
   }
 };

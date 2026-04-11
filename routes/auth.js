@@ -15,132 +15,95 @@ const COOKIE_OPTIONS = {
 
 const SPECIES_VALID = ['Mice', 'Badgers', 'Otters', 'Moles', 'Foxes', 'Hares'];
 
-function getTokenFromReq(req) {
-  const cookieToken = req.cookies?.token || null;
-  const authHeader = req.headers.authorization || '';
-  const bearerToken = authHeader.startsWith('Bearer ')
-      ? authHeader.slice(7)
-      : null;
-
-  return cookieToken || bearerToken;
-}
+const STARTER_BUILDINGS = {
+  Mice:    ['granary', 'farm', 'market'],
+  Badgers: ['granary', 'barracks', 'quarry'],
+  Otters:  ['granary', 'dock', 'market'],
+  Moles:   ['granary', 'mine', 'workshop'],
+  Foxes:   ['granary', 'watchtower', 'market'],
+  Hares:   ['granary', 'barracks', 'farm'],
+};
 
 router.post('/register', async (req, res) => {
   const { username, email, password, species } = req.body;
-
-  if (!username || !email || !password) {
+  if (!username || !email || !password)
     return res.status(400).json({ error: 'All fields are required.' });
-  }
-
-  if (species && !SPECIES_VALID.includes(species)) {
+  if (species && !SPECIES_VALID.includes(species))
     return res.status(400).json({ error: 'Invalid species.' });
-  }
-
-  if (password.length < 8) {
+  if (password.length < 8)
     return res.status(400).json({ error: 'Password must be at least 8 characters.' });
-  }
 
   try {
     const existing = await query(
-        'SELECT id FROM users WHERE email=$1 OR username=$2',
-        [email, username]
+      'SELECT id FROM users WHERE email=$1 OR username=$2',
+      [email, username]
     );
-
-    if (existing.rows.length > 0) {
+    if (existing.rows.length > 0)
       return res.status(409).json({ error: 'Email or username already in use.' });
-    }
 
     const password_hash = await bcrypt.hash(password, 10);
-
     const userResult = await query(
-        'INSERT INTO users (username, email, password_hash, species) VALUES ($1,$2,$3,$4) RETURNING id',
-        [username, email, password_hash, species || 'pending']
+      'INSERT INTO users (username, email, password_hash, species) VALUES ($1,$2,$3,$4) RETURNING id',
+      [username, email, password_hash, species || 'pending']
     );
-
     const userId = userResult.rows[0].id;
 
-    await query(
-        'INSERT INTO settlements (user_id, name) VALUES ($1,$2)',
-        [userId, `${username}'s Camp`]
+    const settlementResult = await query(
+      "INSERT INTO settlements (user_id, name) VALUES ($1,$2) RETURNING id",
+      [userId, `${username}'s Camp`]
     );
+    const settlementId = settlementResult.rows[0].id;
 
-    const finalSpecies = species || 'pending';
-    const token = jwt.sign(
-        { userId, username, species: finalSpecies },
-        JWT_SECRET,
-        { expiresIn: '7d' }
-    );
+    // Starter buildings added during arrival when species is confirmed
 
+
+    const token = jwt.sign({ userId, username, species }, JWT_SECRET, { expiresIn: '7d' });
     res.cookie('token', token, COOKIE_OPTIONS);
-
-    return res.json({
-      ok: true,
-      username,
-      species: finalSpecies,
-      token,
-    });
+    res.json({ ok: true, username, species });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: 'Registration failed.' });
+    res.status(500).json({ error: 'Registration failed.' });
   }
 });
 
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
-
-  if (!email || !password) {
+  if (!email || !password)
     return res.status(400).json({ error: 'Email and password are required.' });
-  }
 
   try {
     const result = await query('SELECT * FROM users WHERE email=$1', [email]);
     const user = result.rows[0];
-
-    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+    if (!user || !(await bcrypt.compare(password, user.password_hash)))
       return res.status(401).json({ error: 'Invalid email or password.' });
-    }
 
     const token = jwt.sign(
-        { userId: user.id, username: user.username, species: user.species },
-        JWT_SECRET,
-        { expiresIn: '7d' }
+      { userId: user.id, username: user.username, species: user.species },
+      JWT_SECRET, { expiresIn: '7d' }
     );
-
     res.cookie('token', token, COOKIE_OPTIONS);
-
-    return res.json({
-      ok: true,
-      username: user.username,
-      species: user.species,
-      token,
-    });
+    res.json({ ok: true, username: user.username, species: user.species });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: 'Login failed.' });
+    res.status(500).json({ error: 'Login failed.' });
   }
 });
 
 router.post('/logout', (req, res) => {
   res.clearCookie('token', COOKIE_OPTIONS);
-  return res.json({ ok: true });
+  res.json({ ok: true });
 });
 
 router.get('/me', (req, res) => {
-  const token = getTokenFromReq(req);
-
-  if (!token) {
-    return res.status(401).json({ error: 'Not authenticated.' });
-  }
-
+  let token = req.cookies.token;
+  const authHeader = req.headers.authorization;
+  if (!token && authHeader && authHeader.startsWith('Bearer ')) token = authHeader.slice(7);
+  if (!token) return res.status(401).json({ error: 'Not authenticated.' });
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    return res.json({
-      ok: true,
-      username: payload.username,
-      species: payload.species,
-    });
+    res.json({ ok: true, username: payload.username, species: payload.species });
   } catch {
-    return res.status(401).json({ error: 'Session expired.' });
+    res.status(401).json({ error: 'Session expired.' });
   }
 });
 
