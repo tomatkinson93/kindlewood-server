@@ -115,16 +115,29 @@ async function initDB() {
     }
   }
 
-  // Add missing columns to existing settlements table
+  // Add missing columns and fix defaults
   await query(`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS tile_x INTEGER DEFAULT NULL`).catch(() => {});
   await query(`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS tile_y INTEGER DEFAULT NULL`).catch(() => {});
   await query(`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS rerolls_used INTEGER DEFAULT 0`).catch(() => {});
 
-  // Reset bogus default coordinates (4,3) from old schema — these were never real placements
+  // Force column defaults to NULL (fixes any lingering 4,3 default from old schema)
+  await query(`ALTER TABLE settlements ALTER COLUMN tile_x SET DEFAULT NULL`).catch(() => {});
+  await query(`ALTER TABLE settlements ALTER COLUMN tile_y SET DEFAULT NULL`).catch(() => {});
+
+  // Reset any settlements with bogus 4,3 coordinates that were never real placements
   await query(`
     UPDATE settlements SET tile_x = NULL, tile_y = NULL, rerolls_used = 0
     WHERE tile_x = 4 AND tile_y = 3
-  `).catch(() => {});
+  `).catch(e => console.log('Reset cleanup:', e.message));
+
+  // Reset settlements that have coordinates but no fog of war (placed by old default, not by player)
+  await query(`
+    UPDATE settlements SET tile_x = NULL, tile_y = NULL, rerolls_used = 0
+    WHERE tile_x IS NOT NULL
+    AND user_id NOT IN (SELECT DISTINCT user_id FROM fog_of_war)
+  `).catch(e => console.log('Fog reset:', e.message));
+
+
 
   console.log('Database initialised');
 }
