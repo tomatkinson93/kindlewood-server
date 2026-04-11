@@ -120,6 +120,12 @@ async function initDB() {
   await query(`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS tile_y INTEGER DEFAULT NULL`).catch(() => {});
   await query(`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS rerolls_used INTEGER DEFAULT 0`).catch(() => {});
 
+  // Reset bogus default coordinates (4,3) from old schema — these were never real placements
+  await query(`
+    UPDATE settlements SET tile_x = NULL, tile_y = NULL, rerolls_used = 0
+    WHERE tile_x = 4 AND tile_y = 3
+  `).catch(() => {});
+
   console.log('Database initialised');
 }
 
