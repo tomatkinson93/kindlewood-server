@@ -62,13 +62,28 @@ async function initDB() {
       id SERIAL PRIMARY KEY,
       settlement_id INTEGER NOT NULL REFERENCES settlements(id),
       name TEXT NOT NULL,
-      role TEXT DEFAULT 'idle',
-      traits JSONB DEFAULT '[]',
+      gender TEXT DEFAULT 'male',
       generation INTEGER DEFAULT 1,
+      role TEXT DEFAULT 'idle',
       parent_ids JSONB DEFAULT '[]',
+      stats JSONB DEFAULT '{}',
+      skills JSONB DEFAULT '{}',
+      life JSONB DEFAULT '{}',
+      repro JSONB DEFAULT '{}',
+      visible_traits JSONB DEFAULT '[]',
+      hidden_traits JSONB DEFAULT '[]',
       born_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+
+  // Migrate old citizens table if it exists without new columns
+  await query(`ALTER TABLE citizens ADD COLUMN IF NOT EXISTS gender TEXT DEFAULT 'male'`).catch(()=>{});
+  await query(`ALTER TABLE citizens ADD COLUMN IF NOT EXISTS stats JSONB DEFAULT '{}'`).catch(()=>{});
+  await query(`ALTER TABLE citizens ADD COLUMN IF NOT EXISTS skills JSONB DEFAULT '{}'`).catch(()=>{});
+  await query(`ALTER TABLE citizens ADD COLUMN IF NOT EXISTS life JSONB DEFAULT '{}'`).catch(()=>{});
+  await query(`ALTER TABLE citizens ADD COLUMN IF NOT EXISTS repro JSONB DEFAULT '{}'`).catch(()=>{});
+  await query(`ALTER TABLE citizens ADD COLUMN IF NOT EXISTS visible_traits JSONB DEFAULT '[]'`).catch(()=>{});
+  await query(`ALTER TABLE citizens ADD COLUMN IF NOT EXISTS hidden_traits JSONB DEFAULT '[]'`).catch(()=>{});
 
   await query(`
     CREATE TABLE IF NOT EXISTS tiles (

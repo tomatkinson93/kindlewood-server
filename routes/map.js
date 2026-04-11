@@ -2,6 +2,7 @@ const express = require('express');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
 const { TERRAIN_BONUSES, MAP_SIZE } = require('../mapgen');
+const { generateStartingCitizens } = require('../citizens');
 
 const router = express.Router();
 const REVEAL_RADIUS = 5;
@@ -356,6 +357,27 @@ router.post('/arrive', requireAuth, async (req, res) => {
         'INSERT INTO buildings (settlement_id, type, level) VALUES ($1,$2,1)',
         [settlement.id, b]
       );
+    }
+
+    // Generate starting citizens
+    const existingCitizens = await query(
+      'SELECT COUNT(*) FROM citizens WHERE settlement_id=$1', [settlement.id]
+    );
+    if (parseInt(existingCitizens.rows[0].count) === 0) {
+      const citizens = generateStartingCitizens(10);
+      for (const c of citizens) {
+        await query(
+          `INSERT INTO citizens (settlement_id, name, gender, generation, role, stats, skills, life, repro, visible_traits, hidden_traits)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [
+            settlement.id, c.name, c.gender, c.generation, c.role,
+            JSON.stringify(c.stats), JSON.stringify(c.skills),
+            JSON.stringify(c.life), JSON.stringify(c.repro),
+            JSON.stringify(c.visible_traits), JSON.stringify(c.hidden_traits),
+          ]
+        );
+      }
+      console.log(`Generated ${citizens.length} citizens for settlement ${settlement.id}`);
     }
 
     res.json({ ok: true, x: tile.x, y: tile.y, terrain: tile.terrain, species, zone });
