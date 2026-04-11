@@ -227,3 +227,123 @@ router.post('/place', requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+
+// Zone definitions - terrain preferences for each starting zone
+const ZONE_TERRAINS = {
+  forest:    ['forest', 'hills'],
+  riverside: ['river', 'plains'],
+  highland:  ['hills', 'mountain'],
+  heartlands:['plains'],
+  marsh:     ['marsh', 'river'],
+};
+
+const STARTER_BUILDINGS = {
+  Mice:    ['granary', 'farm', 'market'],
+  Badgers: ['granary', 'barracks', 'quarry'],
+  Otters:  ['granary', 'dock', 'market'],
+  Moles:   ['granary', 'mine', 'workshop'],
+  Foxes:   ['granary', 'watchtower', 'market'],
+  Hares:   ['granary', 'barracks', 'farm'],
+};
+
+const SPECIES_VALID = ['Mice', 'Badgers', 'Otters', 'Moles', 'Foxes', 'Hares'];
+
+// Confirm arrival — set species, zone, and auto-place in matching terrain
+router.post('/arrive', requireAuth, async (req, res) => {
+  try {
+    const { species, zone } = req.body;
+
+    if (!species || !SPECIES_VALID.includes(species))
+      return res.status(400).json({ error: 'Invalid species.' });
+    if (!zone || !ZONE_TERRAINS[zone])
+      return res.status(400).json({ error: 'Invalid zone.' });
+
+    // Check settlement exists and isn't placed yet
+    const settlementRes = await query(
+      'SELECT * FROM settlements WHERE user_id=$1', [req.user.userId]
+    );
+    const settlement = settlementRes.rows[0];
+    if (!settlement) return res.status(404).json({ error: 'No settlement found.' });
+    if (settlement.tile_x !== null) return res.status(400).json({ error: 'Already placed.' });
+
+    // Update species on user
+    await query('UPDATE users SET species=$1 WHERE id=$2', [species, req.user.userId]);
+
+    // Find a good tile matching the zone terrain, away from other players
+    const preferredTerrains = ZONE_TERRAINS[zone];
+    const occupiedRes = await query(
+      'SELECT tile_x, tile_y FROM settlements WHERE tile_x IS NOT NULL'
+    );
+    const allTilesRes = await query('SELECT x, y, terrain FROM tiles');
+    const allTiles = allTilesRes.rows;
+
+    // Score tiles by zone preference and distance from others
+    const candidates = allTiles.filter(t => {
+      if (t.x < 4 || t.x > MAP_SIZE - 4) return false;
+      if (t.y < 4 || t.y > MAP_SIZE - 4) return false;
+      if (!preferredTerrains.includes(t.terrain)) return false;
+      for (const occ of occupiedRes.rows) {
+        const dx = t.x - occ.tile_x, dy = t.y - occ.tile_y;
+        if (Math.sqrt(dx*dx + dy*dy) < MIN_PLAYER_DISTANCE) return false;
+      }
+      return true;
+    });
+
+    // Fallback to any valid tile if zone is full
+    const pool = candidates.length > 0 ? candidates : allTiles.filter(t => {
+      if (t.terrain === 'mountain') return false;
+      for (const occ of occupiedRes.rows) {
+        const dx = t.x - occ.tile_x, dy = t.y - occ.tile_y;
+        if (Math.sqrt(dx*dx + dy*dy) < MIN_PLAYER_DISTANCE) return false;
+      }
+      return true;
+    });
+
+    if (pool.length === 0)
+      return res.status(400).json({ error: 'No suitable tiles available.' });
+
+    const tile = pool[Math.floor(Math.random() * Math.min(pool.length, 20))];
+
+    // Place settlement
+    await query(
+      'UPDATE settlements SET tile_x=$1, tile_y=$2 WHERE user_id=$3',
+      [tile.x, tile.y, req.user.userId]
+    );
+
+    // Apply terrain bonus
+    const bonus = TERRAIN_BONUSES[tile.terrain];
+    if (bonus) {
+      await query(`
+        UPDATE settlements SET
+          food=food+$1, timber=timber+$2, stone=stone+$3, metal=metal+$4, wealth=wealth+$5
+        WHERE user_id=$6
+      `, [bonus.food*50, bonus.timber*50, bonus.stone*50, bonus.metal*50, bonus.wealth*50, req.user.userId]);
+    }
+
+    // Reveal fog of war
+    const revealRes = await query(
+      'SELECT x, y FROM tiles WHERE x BETWEEN $1 AND $2 AND y BETWEEN $3 AND $4',
+      [tile.x - REVEAL_RADIUS, tile.x + REVEAL_RADIUS, tile.y - REVEAL_RADIUS, tile.y + REVEAL_RADIUS]
+    );
+    for (const t of revealRes.rows) {
+      await query(
+        'INSERT INTO fog_of_war (user_id, tile_x, tile_y) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+        [req.user.userId, t.x, t.y]
+      );
+    }
+
+    // Add starter buildings
+    const buildings = STARTER_BUILDINGS[species] || STARTER_BUILDINGS.Mice;
+    for (const b of buildings) {
+      await query(
+        'INSERT INTO buildings (settlement_id, type, level) VALUES ($1,$2,1)',
+        [settlement.id, b]
+      );
+    }
+
+    res.json({ ok: true, x: tile.x, y: tile.y, terrain: tile.terrain, species, zone });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Arrival failed.' });
+  }
+});

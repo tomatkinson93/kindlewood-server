@@ -26,9 +26,9 @@ const STARTER_BUILDINGS = {
 
 router.post('/register', async (req, res) => {
   const { username, email, password, species } = req.body;
-  if (!username || !email || !password || !species)
+  if (!username || !email || !password)
     return res.status(400).json({ error: 'All fields are required.' });
-  if (!SPECIES_VALID.includes(species))
+  if (species && !SPECIES_VALID.includes(species))
     return res.status(400).json({ error: 'Invalid species.' });
   if (password.length < 8)
     return res.status(400).json({ error: 'Password must be at least 8 characters.' });
@@ -44,7 +44,7 @@ router.post('/register', async (req, res) => {
     const password_hash = await bcrypt.hash(password, 10);
     const userResult = await query(
       'INSERT INTO users (username, email, password_hash, species) VALUES ($1,$2,$3,$4) RETURNING id',
-      [username, email, password_hash, species]
+      [username, email, password_hash, species || 'pending']
     );
     const userId = userResult.rows[0].id;
 
@@ -54,12 +54,8 @@ router.post('/register', async (req, res) => {
     );
     const settlementId = settlementResult.rows[0].id;
 
-    for (const b of STARTER_BUILDINGS[species]) {
-      await query(
-        'INSERT INTO buildings (settlement_id, type, level) VALUES ($1,$2,1)',
-        [settlementId, b]
-      );
-    }
+    // Starter buildings added during arrival when species is confirmed
+
 
     const token = jwt.sign({ userId, username, species }, JWT_SECRET, { expiresIn: '7d' });
     res.cookie('token', token, COOKIE_OPTIONS);
