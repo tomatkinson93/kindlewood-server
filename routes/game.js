@@ -20,7 +20,11 @@ async function applyTick(settlement, species) {
   const hoursElapsed = (now - lastTick) / (1000 * 60 * 60);
   if (hoursElapsed < 0.005) return settlement;
 
-  const rates = SPECIES_RATES[species] || SPECIES_RATES.Mice;
+  const [bRes, cRes] = await Promise.all([
+    query('SELECT type, level FROM buildings WHERE settlement_id=$1', [settlement.id]),
+    query('SELECT role FROM citizens WHERE settlement_id=$1', [settlement.id]),
+  ]);
+  const rates = calculateRates(bRes.rows, cRes.rows, species);
   const updated = {
     food:   Math.floor(settlement.food   + rates.food   * hoursElapsed),
     timber: Math.floor(settlement.timber + rates.timber * hoursElapsed),
@@ -55,8 +59,11 @@ router.get('/settlement', requireAuth, async (req, res) => {
       'SELECT type, level FROM buildings WHERE settlement_id=$1',
       [settlement.id]
     );
-
-    const rates = SPECIES_RATES[user.species] || SPECIES_RATES.Mice;
+    const citizensResult = await query(
+      'SELECT role FROM citizens WHERE settlement_id=$1',
+      [settlement.id]
+    );
+    const rates = calculateRates(buildingsResult.rows, citizensResult.rows, user.species);
 
     console.log(`SETTLEMENT returning tile_x=${settlement.tile_x} for user=${req.user.userId}`);
     res.json({
