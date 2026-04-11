@@ -6,7 +6,7 @@ const { TERRAIN_BONUSES, MAP_SIZE } = require('../mapgen');
 const router = express.Router();
 const REVEAL_RADIUS = 5;
 const SPAWN_RADIUS = 8;
-const MIN_PLAYER_DISTANCE = 6;
+const MIN_PLAYER_DISTANCE = 4;
 const SUGGESTED_TILES = 5;
 const MAX_REROLLS = 1;
 
@@ -292,15 +292,29 @@ router.post('/arrive', requireAuth, async (req, res) => {
       return true;
     });
 
-    // Fallback to any valid tile if zone is full
-    const pool = candidates.length > 0 ? candidates : allTiles.filter(t => {
-      if (t.terrain === 'mountain') return false;
-      for (const occ of occupiedRes.rows) {
-        const dx = t.x - occ.tile_x, dy = t.y - occ.tile_y;
-        if (Math.sqrt(dx*dx + dy*dy) < MIN_PLAYER_DISTANCE) return false;
-      }
-      return true;
-    });
+    // Fallback 1: any terrain in safe zone, ignoring zone preference
+    let pool = candidates;
+    if (pool.length === 0) {
+      pool = allTiles.filter(t => {
+        if (t.terrain === 'mountain') return false;
+        if (t.x < REVEAL_RADIUS + 1 || t.x > MAP_SIZE - REVEAL_RADIUS - 1) return false;
+        if (t.y < REVEAL_RADIUS + 1 || t.y > MAP_SIZE - REVEAL_RADIUS - 1) return false;
+        for (const occ of occupiedRes.rows) {
+          const dx = t.x - occ.tile_x, dy = t.y - occ.tile_y;
+          if (Math.sqrt(dx*dx + dy*dy) < MIN_PLAYER_DISTANCE) return false;
+        }
+        return true;
+      });
+    }
+    // Fallback 2: ignore distance if really full
+    if (pool.length === 0) {
+      pool = allTiles.filter(t => {
+        if (t.terrain === 'mountain') return false;
+        if (t.x < REVEAL_RADIUS + 1 || t.x > MAP_SIZE - REVEAL_RADIUS - 1) return false;
+        if (t.y < REVEAL_RADIUS + 1 || t.y > MAP_SIZE - REVEAL_RADIUS - 1) return false;
+        return true;
+      });
+    }
 
     if (pool.length === 0)
       return res.status(400).json({ error: 'No suitable tiles available.' });
