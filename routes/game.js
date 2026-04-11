@@ -38,6 +38,7 @@ async function applyTick(settlement, species) {
 }
 
 router.get('/settlement', requireAuth, async (req, res) => {
+  console.log(`SETTLEMENT fetched: user=${req.user.userId} time=${Date.now()}`);
   try {
     const userResult = await query('SELECT * FROM users WHERE id=$1', [req.user.userId]);
     const user = userResult.rows[0];
@@ -56,6 +57,7 @@ router.get('/settlement', requireAuth, async (req, res) => {
 
     const rates = SPECIES_RATES[user.species] || SPECIES_RATES.Mice;
 
+    console.log(`SETTLEMENT returning tile_x=${settlement.tile_x} for user=${req.user.userId}`);
     res.json({
       ok: true,
       settlement: {

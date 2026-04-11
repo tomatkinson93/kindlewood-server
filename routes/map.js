@@ -175,6 +175,7 @@ router.post('/place', requireAuth, async (req, res) => {
       'SELECT * FROM settlements WHERE user_id=$1', [req.user.userId]
     );
     const settlement = settlementRes.rows[0];
+    console.log(`ARRIVE settlement check: tile_x=${settlement?.tile_x}`);
     if (!settlement) return res.status(404).json({ error: 'No settlement found.' });
     if (settlement.tile_x !== null) return res.status(400).json({ error: 'Already placed.' });
 
@@ -252,6 +253,7 @@ const SPECIES_VALID = ['Mice', 'Badgers', 'Otters', 'Moles', 'Foxes', 'Hares'];
 router.post('/arrive', requireAuth, async (req, res) => {
   try {
     const { species, zone } = req.body;
+    console.log(`ARRIVE called: user=${req.user.userId} species=${species} zone=${zone} time=${Date.now()}`);
 
     if (!species || !SPECIES_VALID.includes(species))
       return res.status(400).json({ error: 'Invalid species.' });
@@ -263,6 +265,7 @@ router.post('/arrive', requireAuth, async (req, res) => {
       'SELECT * FROM settlements WHERE user_id=$1', [req.user.userId]
     );
     const settlement = settlementRes.rows[0];
+    console.log(`ARRIVE settlement check: tile_x=${settlement?.tile_x}`);
     if (!settlement) return res.status(404).json({ error: 'No settlement found.' });
     if (settlement.tile_x !== null) return res.status(400).json({ error: 'Already placed.' });
 
