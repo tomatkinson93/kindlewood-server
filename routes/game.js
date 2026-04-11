@@ -104,3 +104,16 @@ router.patch('/settlement/rename', requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+
+// Dev-only: reset placement for testing
+router.post('/reset-placement', requireAuth, async (req, res) => {
+  try {
+    await query(
+      'UPDATE settlements SET tile_x=NULL, tile_y=NULL, rerolls_used=0 WHERE user_id=$1',
+      [req.user.userId]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Reset failed.' });
+  }
+});
