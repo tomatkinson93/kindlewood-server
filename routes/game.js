@@ -1,4 +1,5 @@
 const express = require('express');
+const { calculateRates } = require('../buildings');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
 
@@ -117,5 +118,32 @@ router.post('/reset-placement', requireAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: 'Reset failed.' });
+  }
+});
+
+// ── Cheat menu ──
+router.post('/cheat/resources', requireAuth, async (req, res) => {
+  try {
+    const { food, timber, stone, metal, wealth } = req.body;
+    const settlementRes = await query(
+      'SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]
+    );
+    const settlement = settlementRes.rows[0];
+    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+
+    await query(`
+      UPDATE settlements SET
+        food   = GREATEST(0, food   + $1),
+        timber = GREATEST(0, timber + $2),
+        stone  = GREATEST(0, stone  + $3),
+        metal  = GREATEST(0, metal  + $4),
+        wealth = GREATEST(0, wealth + $5)
+      WHERE id = $6
+    `, [food||0, timber||0, stone||0, metal||0, wealth||0, settlement.id]);
+
+    const updated = await query('SELECT food,timber,stone,metal,wealth FROM settlements WHERE id=$1', [settlement.id]);
+    res.json({ ok: true, resources: updated.rows[0] });
+  } catch(err) {
+    res.status(500).json({ error: 'Cheat failed.' });
   }
 });

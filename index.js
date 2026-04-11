@@ -8,6 +8,7 @@ const authRoutes = require('./routes/auth');
 const gameRoutes = require('./routes/game');
 const mapRoutes = require('./routes/map');
 const citizenRoutes = require('./routes/citizens');
+const buildingRoutes = require('./routes/buildings');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -36,6 +37,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/game', gameRoutes);
 app.use('/api/map', mapRoutes);
 app.use('/api/citizens', citizenRoutes);
+app.use('/api/buildings', buildingRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err.message);
