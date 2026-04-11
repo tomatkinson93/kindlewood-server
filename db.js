@@ -149,6 +149,20 @@ async function initDB() {
 
 
 
+  await query(`
+    CREATE TABLE IF NOT EXISTS expeditions (
+      id SERIAL PRIMARY KEY,
+      settlement_id INTEGER NOT NULL REFERENCES settlements(id),
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      target_x INTEGER NOT NULL,
+      target_y INTEGER NOT NULL,
+      started_at TIMESTAMPTZ DEFAULT NOW(),
+      completes_at TIMESTAMPTZ NOT NULL,
+      status TEXT DEFAULT 'travelling',
+      path JSONB DEFAULT '[]'
+    )
+  `);
+
   console.log('Database initialised');
 }
 

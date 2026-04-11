@@ -38,6 +38,8 @@ app.use('/api/game', gameRoutes);
 app.use('/api/map', mapRoutes);
 app.use('/api/citizens', citizenRoutes);
 app.use('/api/buildings', buildingRoutes);
+const expeditionRoutes = require('./routes/expeditions');
+app.use('/api/expeditions', expeditionRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err.message);
