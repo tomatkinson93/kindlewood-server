@@ -130,12 +130,7 @@ async function initDB() {
     WHERE tile_x = 4 AND tile_y = 3
   `).catch(e => console.log('Reset cleanup:', e.message));
 
-  // Reset settlements that have coordinates but no fog of war (placed by old default, not by player)
-  await query(`
-    UPDATE settlements SET tile_x = NULL, tile_y = NULL, rerolls_used = 0
-    WHERE tile_x IS NOT NULL
-    AND user_id NOT IN (SELECT DISTINCT user_id FROM fog_of_war)
-  `).catch(e => console.log('Fog reset:', e.message));
+
 
 
 
