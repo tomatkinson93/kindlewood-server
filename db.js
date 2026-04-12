@@ -166,6 +166,9 @@ async function initDB() {
 
   await query(`ALTER TABLE expeditions ADD COLUMN IF NOT EXISTS citizen_id INTEGER DEFAULT NULL`).catch(()=>{});
 
+  // Add bio column to users if missing
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT ''`).catch(() => {});
+
   console.log('Database initialised');
 }
 
