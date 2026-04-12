@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { query } = require('../db');
+const requireAuth = require('../middleware/auth');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
@@ -143,20 +144,15 @@ router.get('/profile/:username', async (req, res) => {
 });
 
 // PATCH /api/auth/profile — update own bio (authenticated)
-router.patch('/profile', async (req, res) => {
-  const token = req.cookies.token;
-  if (!token) return res.status(401).json({ error: 'Not authenticated.' });
+router.patch('/profile', requireAuth, async (req, res) => {
   try {
-    const jwt = require('jsonwebtoken');
-    const JWT_SECRET = process.env.JWT_SECRET || 'kindlewood-dev-secret';
-    const payload = jwt.verify(token, JWT_SECRET);
     const { bio } = req.body;
     if (typeof bio !== 'string') return res.status(400).json({ error: 'Bio must be a string.' });
     const trimmed = bio.trim().slice(0, 280);
-    await query('UPDATE users SET bio=$1 WHERE id=$2', [trimmed, payload.userId]);
+    await query('UPDATE users SET bio=$1 WHERE id=$2', [trimmed, req.user.userId]);
     res.json({ ok: true, bio: trimmed });
   } catch (err) {
-    console.error(err);
+    console.error('Profile patch error:', err);
     res.status(500).json({ error: 'Failed to update profile.' });
   }
 });
