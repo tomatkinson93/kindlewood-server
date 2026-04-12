@@ -161,3 +161,162 @@ router.post('/cheat/resources', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Cheat failed.' });
   }
 });
+
+// ── Settlement Tier Upgrade ──
+
+const TIER_ORDER = ['camp', 'village', 'town', 'city'];
+const TIER_LABELS = { camp: 'Camp', village: 'Village', town: 'Town', city: 'City' };
+
+const TIER_REQUIREMENTS = {
+  // To upgrade FROM camp → village
+  village: {
+    resources: { food: 800, timber: 600, stone: 400, metal: 100, wealth: 200 },
+    population: 20,
+    buildings: 3,  // must have at least 3 buildings
+    label: 'Village',
+    unlocks: ['quarry', 'market', 'inn'],
+    desc: 'Expand your humble camp into a proper village.',
+    popBonus: 50,   // new population cap
+  },
+  // To upgrade FROM village → town
+  town: {
+    resources: { food: 2500, timber: 2000, stone: 1500, metal: 400, wealth: 800 },
+    population: 40,
+    buildings: 6,
+    label: 'Town',
+    unlocks: ['forge', 'scout_post'],
+    desc: 'From village to bustling town — a true settlement.',
+    popBonus: 120,
+  },
+  // To upgrade FROM town → city
+  city: {
+    resources: { food: 8000, timber: 6000, stone: 5000, metal: 1500, wealth: 3000 },
+    population: 80,
+    buildings: 9,
+    label: 'City',
+    unlocks: [],
+    desc: 'A great city rises — seat of power in the woodland realm.',
+    popBonus: 300,
+  },
+};
+
+// GET /api/game/tier-info — returns current tier + next tier requirements
+router.get('/tier-info', requireAuth, async (req, res) => {
+  try {
+    const settlementRes = await query(
+      'SELECT * FROM settlements WHERE user_id=$1', [req.user.userId]
+    );
+    const s = settlementRes.rows[0];
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+
+    const buildingsRes = await query(
+      'SELECT COUNT(*) FROM buildings WHERE settlement_id=$1', [s.id]
+    );
+    const buildingCount = parseInt(buildingsRes.rows[0].count);
+
+    const currentTierIndex = TIER_ORDER.indexOf(s.tier);
+    const nextTier = TIER_ORDER[currentTierIndex + 1];
+    const req2 = nextTier ? TIER_REQUIREMENTS[nextTier] : null;
+
+    let canUpgrade = false;
+    let requirementsMet = {};
+    if (req2) {
+      const resOk = Object.entries(req2.resources).every(([r, v]) => (s[r] || 0) >= v);
+      const popOk = s.population >= req2.population;
+      const bldOk = buildingCount >= req2.buildings;
+      canUpgrade = resOk && popOk && bldOk;
+      requirementsMet = {
+        resources: resOk,
+        population: popOk,
+        buildings: bldOk,
+        current: {
+          food: s.food, timber: s.timber, stone: s.stone,
+          metal: s.metal, wealth: s.wealth,
+          population: s.population,
+          buildings: buildingCount,
+        },
+      };
+    }
+
+    res.json({
+      ok: true,
+      currentTier: s.tier,
+      nextTier,
+      nextTierLabel: TIER_LABELS[nextTier] || null,
+      requirements: req2,
+      requirementsMet,
+      canUpgrade,
+      isMaxTier: s.tier === 'city',
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to load tier info.' });
+  }
+});
+
+// POST /api/game/upgrade-tier — perform the upgrade
+router.post('/upgrade-tier', requireAuth, async (req, res) => {
+  try {
+    const settlementRes = await query(
+      'SELECT * FROM settlements WHERE user_id=$1', [req.user.userId]
+    );
+    const s = settlementRes.rows[0];
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+
+    const currentTierIndex = TIER_ORDER.indexOf(s.tier);
+    if (currentTierIndex < 0 || currentTierIndex >= TIER_ORDER.length - 1) {
+      return res.status(400).json({ error: 'Already at maximum tier.' });
+    }
+
+    const nextTier = TIER_ORDER[currentTierIndex + 1];
+    const reqs = TIER_REQUIREMENTS[nextTier];
+
+    // Check buildings
+    const buildingsRes = await query(
+      'SELECT COUNT(*) FROM buildings WHERE settlement_id=$1', [s.id]
+    );
+    const buildingCount = parseInt(buildingsRes.rows[0].count);
+
+    // Validate all requirements
+    const errors = [];
+    if (s.food   < reqs.resources.food)   errors.push(`Need ${reqs.resources.food} food (have ${s.food})`);
+    if (s.timber < reqs.resources.timber) errors.push(`Need ${reqs.resources.timber} timber (have ${s.timber})`);
+    if (s.stone  < reqs.resources.stone)  errors.push(`Need ${reqs.resources.stone} stone (have ${s.stone})`);
+    if (s.metal  < reqs.resources.metal)  errors.push(`Need ${reqs.resources.metal} metal (have ${s.metal})`);
+    if (s.wealth < reqs.resources.wealth) errors.push(`Need ${reqs.resources.wealth} wealth (have ${s.wealth})`);
+    if (s.population < reqs.population)   errors.push(`Need ${reqs.population} citizens (have ${s.population})`);
+    if (buildingCount < reqs.buildings)    errors.push(`Need ${reqs.buildings} buildings (have ${buildingCount})`);
+
+    if (errors.length > 0) {
+      return res.status(400).json({ error: errors[0], all: errors });
+    }
+
+    // Deduct resources
+    await query(`
+      UPDATE settlements SET
+        food   = food   - $1,
+        timber = timber - $2,
+        stone  = stone  - $3,
+        metal  = metal  - $4,
+        wealth = wealth - $5,
+        tier   = $6,
+        population_cap = $7
+      WHERE id = $8
+    `, [
+      reqs.resources.food, reqs.resources.timber, reqs.resources.stone,
+      reqs.resources.metal, reqs.resources.wealth,
+      nextTier, reqs.popBonus, s.id,
+    ]);
+
+    res.json({
+      ok: true,
+      newTier: nextTier,
+      newTierLabel: TIER_LABELS[nextTier],
+      unlocks: reqs.unlocks,
+      newPopCap: reqs.popBonus,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Upgrade failed.' });
+  }
+});
