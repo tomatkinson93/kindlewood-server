@@ -1,3 +1,4 @@
+const { getCurrentSeason, applySeasonModifiers } = require('../seasons');
 const express = require('express');
 const { calculateRates } = require('../buildings');
 const { query } = require('../db');
@@ -24,7 +25,9 @@ async function applyTick(settlement, species) {
     query('SELECT type, level FROM buildings WHERE settlement_id=$1', [settlement.id]),
     query('SELECT role FROM citizens WHERE settlement_id=$1', [settlement.id]),
   ]);
-  const rates = calculateRates(bRes.rows, cRes.rows, species);
+  const season = getCurrentSeason();
+  const baseRates = calculateRates(bRes.rows, cRes.rows, species);
+  const rates = applySeasonModifiers(baseRates, season);
   const updated = {
     food:   Math.floor(settlement.food   + rates.food   * hoursElapsed),
     timber: Math.floor(settlement.timber + rates.timber * hoursElapsed),
@@ -63,7 +66,9 @@ router.get('/settlement', requireAuth, async (req, res) => {
       'SELECT role FROM citizens WHERE settlement_id=$1',
       [settlement.id]
     );
-    const rates = calculateRates(buildingsResult.rows, citizensResult.rows, user.species);
+    const season = getCurrentSeason();
+    const baseRates = calculateRates(buildingsResult.rows, citizensResult.rows, user.species);
+    const rates = applySeasonModifiers(baseRates, season);
 
     console.log(`SETTLEMENT returning tile_x=${settlement.tile_x} for user=${req.user.userId}`);
     res.json({
@@ -80,6 +85,8 @@ router.get('/settlement', requireAuth, async (req, res) => {
           stone: settlement.stone, metal: settlement.metal, wealth: settlement.wealth,
         },
         rates,
+        baseRates,
+        season,
         population: settlement.population,
         population_cap: settlement.population_cap,
         happiness: settlement.happiness,
