@@ -159,9 +159,12 @@ async function initDB() {
       started_at TIMESTAMPTZ DEFAULT NOW(),
       completes_at TIMESTAMPTZ NOT NULL,
       status TEXT DEFAULT 'travelling',
-      path JSONB DEFAULT '[]'
+      path JSONB DEFAULT '[]',
+      citizen_id INTEGER DEFAULT NULL
     )
   `);
+
+  await query(`ALTER TABLE expeditions ADD COLUMN IF NOT EXISTS citizen_id INTEGER DEFAULT NULL`).catch(()=>{});
 
   console.log('Database initialised');
 }

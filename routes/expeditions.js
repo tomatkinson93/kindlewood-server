@@ -32,7 +32,7 @@ function pathBetween(x0, y0, x1, y1, size) {
 // Send scout expedition
 router.post('/send', requireAuth, async (req, res) => {
   try {
-    const { target_x, target_y } = req.body;
+    const { target_x, target_y, citizen_id } = req.body;
     if (target_x === undefined || target_y === undefined)
       return res.status(400).json({ error: 'Target coordinates required.' });
 
@@ -50,6 +50,28 @@ router.post('/send', requireAuth, async (req, res) => {
     );
     if (!scoutPost.rows.length)
       return res.status(400).json({ error: 'Build a Scout Post first.' });
+
+    // Validate citizen if provided
+    let citizenName = 'Unknown Scout';
+    let citizenSkillBonus = 1.0;
+    if (citizen_id) {
+      const citizenRes = await query(
+        "SELECT * FROM citizens WHERE id=$1 AND settlement_id=$2",
+        [citizen_id, settlement.id]
+      );
+      const citizen = citizenRes.rows[0];
+      if (!citizen) return res.status(400).json({ error: 'Citizen not found.' });
+      if (citizen.role !== 'scout') return res.status(400).json({ error: 'Citizen must be assigned as scout.' });
+      // Check not already on expedition
+      const onExpedition = await query(
+        "SELECT id FROM expeditions WHERE citizen_id=$1 AND status='travelling'",
+        [citizen_id]
+      );
+      if (onExpedition.rows.length) return res.status(400).json({ error: `${citizen.name} is already scouting.` });
+      citizenName = citizen.name;
+      const scoutSkill = (citizen.skills?.scouting || 1);
+      citizenSkillBonus = 1 + (scoutSkill - 1) * 0.04; // each skill point = 4% faster
+    }
 
     // Check no active expedition to same tile
     const existing = await query(
@@ -78,14 +100,16 @@ router.post('/send', requireAuth, async (req, res) => {
     // Scout post level reduces time
     const scoutLevel = scoutPost.rows[0].level;
     seconds = Math.round(seconds / (1 + (scoutLevel - 1) * 0.25));
+    // Citizen scout skill bonus
+    seconds = Math.round(seconds / citizenSkillBonus);
     seconds = Math.max(10, seconds); // minimum 10s
 
     const completesAt = new Date(Date.now() + seconds * 1000);
 
     const result = await query(
-      `INSERT INTO expeditions (settlement_id, user_id, target_x, target_y, completes_at, path)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [settlement.id, req.user.userId, target_x, target_y, completesAt, JSON.stringify(path)]
+      `INSERT INTO expeditions (settlement_id, user_id, target_x, target_y, completes_at, path, citizen_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [settlement.id, req.user.userId, target_x, target_y, completesAt, JSON.stringify(path), citizen_id || null]
     );
 
     res.json({
@@ -93,6 +117,7 @@ router.post('/send', requireAuth, async (req, res) => {
       expedition: result.rows[0],
       seconds,
       tiles: path.length,
+      citizenName,
     });
   } catch (err) {
     console.error(err);
@@ -113,7 +138,11 @@ router.get('/', requireAuth, async (req, res) => {
     await completeExpeditions(settlement.id, req.user.userId);
 
     const expeditions = await query(
-      "SELECT * FROM expeditions WHERE settlement_id=$1 AND status='travelling' ORDER BY completes_at ASC",
+      `SELECT e.*, c.name as citizen_name, c.skills as citizen_skills
+       FROM expeditions e
+       LEFT JOIN citizens c ON e.citizen_id = c.id
+       WHERE e.settlement_id=$1 AND e.status='travelling'
+       ORDER BY e.completes_at ASC`,
       [settlement.id]
     );
 
@@ -152,6 +181,7 @@ async function completeExpeditions(settlementId, userId) {
       }
     }
     await query("UPDATE expeditions SET status='complete' WHERE id=$1", [exp.id]);
+    // citizen is now free (tracked by expedition status)
   }
 }
 

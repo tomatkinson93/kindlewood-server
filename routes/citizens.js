@@ -19,6 +19,14 @@ router.get('/', requireAuth, async (req, res) => {
       [settlement.id]
     );
 
+    // Get active expeditions for this settlement
+    const expRes = await query(
+      "SELECT citizen_id, target_x, target_y, completes_at FROM expeditions WHERE settlement_id=$1 AND status='travelling'",
+      [settlement.id]
+    );
+    const expByCitizen = {};
+    expRes.rows.forEach(e => { expByCitizen[e.citizen_id] = e; });
+
     const citizens = citizensRes.rows.map(c => ({
       id: c.id,
       name: c.name,
@@ -29,9 +37,9 @@ router.get('/', requireAuth, async (req, res) => {
       skills: c.skills || {},
       life: c.life || {},
       visible_traits: c.visible_traits || [],
-      // Hidden traits revealed based on conditions — for now return none
       revealed_hidden_traits: [],
       born_at: c.born_at,
+      expedition: expByCitizen[c.id] || null,
     }));
 
     res.json({ ok: true, citizens });
@@ -83,6 +91,18 @@ router.patch('/:id/role', requireAuth, async (req, res) => {
       'SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]
     );
     const settlement = settlementRes.rows[0];
+
+    // Block if on active expedition
+    const expedition = await query(
+      "SELECT id, target_x, target_y FROM expeditions WHERE citizen_id=$1 AND status='travelling'",
+      [req.params.id]
+    );
+    if (expedition.rows.length) {
+      const exp = expedition.rows[0];
+      return res.status(400).json({
+        error: `This citizen is currently scouting (${exp.target_x}, ${exp.target_y}) and cannot be reassigned.`
+      });
+    }
 
     await query(
       'UPDATE citizens SET role=$1 WHERE id=$2 AND settlement_id=$3',
