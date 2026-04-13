@@ -1,0 +1,5 @@
+Copyright (c) 2026 Tom Atkinson
+
+All rights reserved.
+
+This code may not be copied, modified, or distributed without explicit permission.
