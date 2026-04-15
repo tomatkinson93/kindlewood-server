@@ -84,7 +84,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 router.patch('/:id/role', requireAuth, async (req, res) => {
   try {
     const { role } = req.body;
-    const VALID_ROLES = ['farmer','woodcutter','fisher','miner','crafter','scout','soldier','idle','innkeeper'];
+    const VALID_ROLES = ['farmer','woodcutter','fisher','miner','crafter','scout','soldier','idle','tavernkeep'];
     if (!VALID_ROLES.includes(role)) return res.status(400).json({ error: 'Invalid role.' });
 
     const settlementRes = await query(

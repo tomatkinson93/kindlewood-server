@@ -91,10 +91,10 @@ router.get('/settlement', requireAuth, async (req, res) => {
         population: settlement.population,
         population_cap: settlement.population_cap,
         happiness: (() => {
-          // Base happiness + 10% per innkeeper
-          const innkeeperCount = citizensResult.rows.filter(c => c.role === 'innkeeper').length;
+          // Base happiness + 10% per tavernkeep
+          const tavernkeepCount = citizensResult.rows.filter(c => c.role === 'tavernkeep').length;
           const base = typeof settlement.happiness === 'number' ? settlement.happiness : 70;
-          return Math.min(100, base + innkeeperCount * 10);
+          return Math.min(100, base + tavernkeepCount * 10);
         })(),
         last_tick: settlement.last_tick,
       },

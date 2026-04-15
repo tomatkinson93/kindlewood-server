@@ -75,7 +75,7 @@ const BUILDINGS = {
     cost: { timber: 80, food: 60, wealth: 40 },
     maxLevel: 3,
     effect: (level) => ({ happiness: level * 10 }),
-    citizenSlots: (level) => level,  // innkeeper slots = tavern level
+    citizenSlots: (level) => level,  // tavernkeep slots = tavern level
     requires: ['housing'],
   },
   market: {
@@ -101,7 +101,7 @@ const ROLE_BUILDING_MAP = {
   fisher:      ['forager_hut'],
   soldier:     [],
   idle:        [],
-  innkeeper:   ['tavern'],
+  tavernkeep:   ['tavern'],
 };
 
 // Calculate total resource rates for a settlement
