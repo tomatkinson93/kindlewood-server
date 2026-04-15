@@ -176,7 +176,9 @@ router.post('/remove', requireAuth, async (req, res) => {
   const { buildingId } = req.body;
   if (!buildingId) return res.status(400).json({ error: 'Missing buildingId.' });
   try {
-    const user = await getUser(req);
+    const userResult = await query('SELECT * FROM users WHERE id=$1', [req.user.userId]);
+    const user = userResult.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found.' });
     const settlementRes = await query('SELECT * FROM settlements WHERE user_id=$1', [user.id]);
     if (!settlementRes.rows.length) return res.status(404).json({ error: 'No settlement.' });
     const settlement = settlementRes.rows[0];

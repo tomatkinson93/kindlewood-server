@@ -128,12 +128,15 @@ router.patch('/settlement/rename', requireAuth, async (req, res) => {
 // Cheat: add one citizen
 router.post('/cheat/citizen', requireAuth, async (req, res) => {
   try {
-    const user = await getUser(req);
+    const userResult = await query('SELECT * FROM users WHERE id=$1', [req.user.userId]);
+    const user = userResult.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+
     const settlementRes = await query('SELECT * FROM settlements WHERE user_id=$1', [user.id]);
     if (!settlementRes.rows.length) return res.status(404).json({ error: 'No settlement.' });
     const settlement = settlementRes.rows[0];
 
-    const citizen = generateCitizen({ generation: 1, species: user.species });
+    const citizen = generateCitizen(1);
     await query(
       `INSERT INTO citizens (settlement_id, name, gender, generation, role, stats, skills, life, repro, visible_traits, hidden_traits, born_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())`,
@@ -154,11 +157,15 @@ router.post('/cheat/citizen', requireAuth, async (req, res) => {
 // Award gold from card games
 router.post('/award-gold', requireAuth, async (req, res) => {
   try {
-    const user = await getUser(req);
-    const settlement = await getSettlement(user.id);
+    const userResult = await query('SELECT * FROM users WHERE id=$1', [req.user.userId]);
+    const user = userResult.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+    const settlementRes = await query('SELECT * FROM settlements WHERE user_id=$1', [user.id]);
+    if (!settlementRes.rows.length) return res.status(404).json({ error: 'No settlement.' });
+    const settlement = settlementRes.rows[0];
     const { amount } = req.body;
     if (!amount || amount < 0 || amount > 10) return res.status(400).json({ error: 'Invalid amount.' });
-    await db.query(
+    await query(
       'UPDATE settlements SET wealth = wealth + $1 WHERE id = $2',
       [amount, settlement.id]
     );
