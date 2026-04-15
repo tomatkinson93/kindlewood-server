@@ -171,6 +171,49 @@ router.post('/build', requireAuth, async (req, res) => {
   }
 });
 
+// Remove (demolish) a building
+router.post('/remove', requireAuth, async (req, res) => {
+  const { buildingId } = req.body;
+  if (!buildingId) return res.status(400).json({ error: 'Missing buildingId.' });
+  try {
+    const user = await getUser(req);
+    const settlementRes = await query('SELECT * FROM settlements WHERE user_id=$1', [user.id]);
+    if (!settlementRes.rows.length) return res.status(404).json({ error: 'No settlement.' });
+    const settlement = settlementRes.rows[0];
+
+    // Check building exists
+    const existing = await query(
+      'SELECT * FROM buildings WHERE settlement_id=$1 AND type=$2',
+      [settlement.id, buildingId]
+    );
+    if (!existing.rows.length || existing.rows[0].level < 1) {
+      return res.status(400).json({ error: 'Building not found or not built.' });
+    }
+
+    // Remove from DB
+    await query('DELETE FROM buildings WHERE settlement_id=$1 AND type=$2', [settlement.id, buildingId]);
+
+    // Unassign any citizens working this building
+    const { ROLE_BUILDING_MAP } = require('../buildings');
+    const rolesForBuilding = Object.entries(ROLE_BUILDING_MAP)
+      .filter(([, buildings]) => buildings.includes(buildingId))
+      .map(([role]) => role);
+
+    if (rolesForBuilding.length) {
+      await query(
+        `UPDATE citizens SET role='idle' WHERE settlement_id=$1 AND role=ANY($2::text[])`,
+        [settlement.id, rolesForBuilding]
+      );
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Demolition failed.' });
+  }
+});
+
+
 // Get building definitions for frontend
 router.get('/definitions', async (req, res) => {
   res.json({ ok: true, buildings: BUILDINGS });

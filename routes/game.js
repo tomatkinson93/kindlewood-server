@@ -125,6 +125,32 @@ router.patch('/settlement/rename', requireAuth, async (req, res) => {
   }
 });
 
+// Cheat: add one citizen
+router.post('/cheat/citizen', requireAuth, async (req, res) => {
+  try {
+    const user = await getUser(req);
+    const settlementRes = await query('SELECT * FROM settlements WHERE user_id=$1', [user.id]);
+    if (!settlementRes.rows.length) return res.status(404).json({ error: 'No settlement.' });
+    const settlement = settlementRes.rows[0];
+
+    const citizen = generateCitizen({ generation: 1, species: user.species });
+    await query(
+      `INSERT INTO citizens (settlement_id, name, gender, generation, role, stats, skills, life, repro, visible_traits, hidden_traits, born_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())`,
+      [settlement.id, citizen.name, citizen.gender, citizen.generation, citizen.role,
+       JSON.stringify(citizen.stats), JSON.stringify(citizen.skills),
+       JSON.stringify(citizen.life), JSON.stringify(citizen.repro),
+       JSON.stringify(citizen.visible_traits), JSON.stringify(citizen.hidden_traits)]
+    );
+    await query('UPDATE settlements SET population = population + 1 WHERE id=$1', [settlement.id]);
+    res.json({ ok: true, name: citizen.name });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to add citizen.' });
+  }
+});
+
+
 // Award gold from card games
 router.post('/award-gold', requireAuth, async (req, res) => {
   try {
