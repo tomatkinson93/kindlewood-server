@@ -89,7 +89,12 @@ router.get('/settlement', requireAuth, async (req, res) => {
         season,
         population: settlement.population,
         population_cap: settlement.population_cap,
-        happiness: settlement.happiness,
+        happiness: (() => {
+          // Base happiness + 10% per innkeeper
+          const innkeeperCount = citizensResult.rows.filter(c => c.role === 'innkeeper').length;
+          const base = typeof settlement.happiness === 'number' ? settlement.happiness : 70;
+          return Math.min(100, base + innkeeperCount * 10);
+        })(),
         last_tick: settlement.last_tick,
       },
       buildings: buildingsResult.rows,
@@ -117,6 +122,24 @@ router.patch('/settlement/rename', requireAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Rename failed.' });
+  }
+});
+
+// Award gold from card games
+router.post('/award-gold', requireAuth, async (req, res) => {
+  try {
+    const user = await getUser(req);
+    const settlement = await getSettlement(user.id);
+    const { amount } = req.body;
+    if (!amount || amount < 0 || amount > 10) return res.status(400).json({ error: 'Invalid amount.' });
+    await db.query(
+      'UPDATE settlements SET wealth = wealth + $1 WHERE id = $2',
+      [amount, settlement.id]
+    );
+    res.json({ ok: true, awarded: amount });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to award gold.' });
   }
 });
 

@@ -67,6 +67,17 @@ const BUILDINGS = {
     citizenSlots: (level) => level * 3,
     requires: ['granary'],
   },
+  tavern: {
+    id: 'tavern',
+    label: 'Tavern',
+    desc: 'A warm gathering place. Boosts happiness and unlocks the Innkeeper role.',
+    icon: '🍺',
+    cost: { timber: 80, food: 60, wealth: 40 },
+    maxLevel: 3,
+    effect: (level) => ({ happiness: level * 10 }),
+    citizenSlots: (level) => level,  // innkeeper slots = tavern level
+    requires: ['housing'],
+  },
   market: {
     id: 'market',
     label: 'Market',
@@ -90,6 +101,7 @@ const ROLE_BUILDING_MAP = {
   fisher:      ['forager_hut'],
   soldier:     [],
   idle:        [],
+  innkeeper:   ['tavern'],
 };
 
 // Calculate total resource rates for a settlement
