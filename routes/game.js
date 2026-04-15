@@ -1,4 +1,5 @@
 const { getCurrentSeason, applySeasonModifiers } = require('../seasons');
+const { generateCitizen } = require('../citizens');
 const express = require('express');
 const { calculateRates } = require('../buildings');
 const { query } = require('../db');
