@@ -40,6 +40,8 @@ app.use('/api/citizens', citizenRoutes);
 app.use('/api/buildings', buildingRoutes);
 const expeditionRoutes = require('./routes/expeditions');
 app.use('/api/expeditions', expeditionRoutes);
+const questRoutes = require('./routes/quests');
+app.use('/api/quests', questRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err.message);

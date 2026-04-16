@@ -169,6 +169,25 @@ async function initDB() {
   // Add bio column to users if missing
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT ''`).catch(() => {});
 
+  // Quest system
+  await query(`
+    CREATE TABLE IF NOT EXISTS settlement_quests (
+      id SERIAL PRIMARY KEY,
+      settlement_id INTEGER NOT NULL REFERENCES settlements(id),
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      quest_id TEXT NOT NULL,
+      citizen_id INTEGER DEFAULT NULL,
+      status TEXT DEFAULT 'active',
+      started_at TIMESTAMPTZ DEFAULT NOW(),
+      completes_at TIMESTAMPTZ NOT NULL,
+      resolved_at TIMESTAMPTZ DEFAULT NULL,
+      success_roll FLOAT DEFAULT NULL,
+      success_chance FLOAT DEFAULT NULL
+    )
+  `);
+  await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS success_roll FLOAT DEFAULT NULL`).catch(()=>{});
+  await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS success_chance FLOAT DEFAULT NULL`).catch(()=>{});
+
   console.log('Database initialised');
 }
 
