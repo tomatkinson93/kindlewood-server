@@ -89,6 +89,17 @@ const BUILDINGS = {
     citizenSlots: (level) => level,
     requires: [],
   },
+  fishing_post: {
+    id: 'fishing_post',
+    label: 'Fishing Post',
+    desc: 'A riverside dock that improves fishing yields and lets you cast a line yourself.',
+    icon: '🎣',
+    cost: { timber: 50, stone: 20 },
+    maxLevel: 5,
+    effect: (level) => ({ food: level * 3 }),
+    citizenSlots: (level) => level * 2,
+    requires: [],
+  },
 };
 
 // Citizen role → building it contributes to
@@ -98,7 +109,7 @@ const ROLE_BUILDING_MAP = {
   scout:       ['scout_post'],
   miner:       [],
   crafter:     [],
-  fisher:      ['forager_hut'],
+  fisher:      ['forager_hut', 'fishing_post'],
   soldier:     [],
   idle:        [],
   tavernkeep:   ['tavern'],
@@ -139,10 +150,23 @@ function calculateRates(buildings, citizens, species) {
     idle:       {},
   };
 
+  // Fishing Post passive bonus — scales per level, applied as % multiplier to fisher citizen food
+  const FISHING_POST_BONUS = [0, 0.10, 0.20, 0.35, 0.50, 0.70];
+  const fishingPost = buildings.find(b => b.type === 'fishing_post');
+  const fishingPostLevel = fishingPost ? Math.min(fishingPost.level, 5) : 0;
+  const fishingBonus = FISHING_POST_BONUS[fishingPostLevel] || 0;
+
   for (const c of citizens) {
     const bonus = CITIZEN_ROLE_BONUS[c.role] || {};
     for (const [res, val] of Object.entries(bonus)) {
-      if (rates[res] !== undefined) rates[res] += val;
+      if (rates[res] !== undefined) {
+        // Apply fishing post multiplier to fisher food output
+        if (c.role === 'fisher' && res === 'food' && fishingBonus > 0) {
+          rates[res] += Math.round(val * (1 + fishingBonus));
+        } else {
+          rates[res] += val;
+        }
+      }
     }
   }
 
