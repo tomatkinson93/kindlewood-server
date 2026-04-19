@@ -92,6 +92,15 @@ router.post('/build', requireAuth, async (req, res) => {
     const existing = existingRes.rows[0];
     const currentLevel = existing ? existing.level : 0;
 
+    // Tier-based soft cap for housing buildings
+    if (def.tierCaps) {
+      const settlementTierRes = await query('SELECT tier FROM settlements WHERE user_id=$1', [req.user.userId]);
+      const tier = settlementTierRes.rows[0]?.tier || 'camp';
+      const tierCap = def.tierCaps[tier] || def.tierCaps['camp'];
+      if (currentLevel >= tierCap)
+        return res.status(400).json({ error: `Upgrade your settlement to build more ${def.label}s. Current limit: ${tierCap}.` });
+    }
+
     if (currentLevel >= def.maxLevel)
       return res.status(400).json({ error: 'Already at max level.' });
 

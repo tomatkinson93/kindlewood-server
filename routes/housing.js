@@ -17,8 +17,12 @@ router.get('/', requireAuth, async (req, res) => {
     const settlement = settRes.rows[0];
     if (!settlement) return res.status(404).json({ error: 'No settlement.' });
 
+    // Get species from user for display
+    const userRes = await query('SELECT species FROM users WHERE id=$1', [req.user.userId]);
+    const species = userRes.rows[0]?.species || 'Mice';
+
     const housesRes = await query(
-      `SELECT h.*, 
+      `SELECT h.*,
               json_agg(
                 json_build_object('id', c.id, 'name', c.name, 'gender', c.gender, 'role', c.role)
                 ORDER BY c.born_at
@@ -41,6 +45,7 @@ router.get('/', requireAuth, async (req, res) => {
 
     res.json({
       ok: true,
+      species,
       houses: housesRes.rows.map(h => ({
         id: h.id,
         name: h.name,

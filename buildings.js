@@ -92,15 +92,17 @@ const BUILDINGS = {
   starter_house: {
     id: 'starter_house',
     label: 'Willow Hut',
-    desc: 'A simple home for two citizens. Housed citizens are happier.',
+    desc: 'A simple home for two citizens. Housed citizens are happier and more productive.',
     icon: '🏡',
     cost: { timber: 40, stone: 20 },
-    maxLevel: 1,
+    maxLevel: 60,
     effect: () => ({}),
     citizenSlots: () => 0,
     requires: [],
     capacity: 2,  // citizens per house instance
     isHousing: true,
+    // Soft cap per tier (enforced in route) — camp:5, village:15, town:30, city:60
+    tierCaps: { camp: 5, village: 15, town: 30, city: 60 },
   },
   fishing_post: {
     id: 'fishing_post',
