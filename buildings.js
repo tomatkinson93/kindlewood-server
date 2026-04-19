@@ -3,6 +3,7 @@
 const BUILDINGS = {
   forager_hut: {
     id: 'forager_hut',
+    imgFile: 'foragerhut.png',
     label: 'Forager Hut',
     desc: 'Sends citizens into the woodland to gather food.',
     icon: '🍄',
@@ -14,6 +15,7 @@ const BUILDINGS = {
   },
   lumber_camp: {
     id: 'lumber_camp',
+    imgFile: 'lumbercamp.png',
     label: 'Lumber Camp',
     desc: 'Organised timber felling. Feeds the settlement\'s building needs.',
     icon: '🪓',
@@ -23,19 +25,10 @@ const BUILDINGS = {
     citizenSlots: (level) => level * 2,
     requires: [],
   },
-  housing: {
-    id: 'housing',
-    label: 'Housing',
-    desc: 'Simple dwellings that allow your settlement to grow.',
-    icon: '🏠',
-    cost: { timber: 80, stone: 40 },
-    maxLevel: 5,
-    effect: (level) => ({ population_cap: level * 5 }),
-    citizenSlots: () => 0,
-    requires: [],
-  },
+
   scout_post: {
     id: 'scout_post',
+    imgFile: 'scoutpost.png',
     label: 'Scout Post',
     desc: 'Trains scouts to push back the fog of war.',
     icon: '🗺',
@@ -47,6 +40,7 @@ const BUILDINGS = {
   },
   granary: {
     id: 'granary',
+    imgFile: 'granary.png',
     label: 'Granary',
     desc: 'Stores surplus food and reduces spoilage.',
     icon: '🌾',
@@ -58,6 +52,7 @@ const BUILDINGS = {
   },
   farm: {
     id: 'farm',
+    imgFile: 'farm.png',
     label: 'Farm',
     desc: 'Cultivated fields that reliably feed your people.',
     icon: '🌱',
@@ -69,6 +64,7 @@ const BUILDINGS = {
   },
   tavern: {
     id: 'tavern',
+    imgFile: 'tavern.png',
     label: 'Tavern',
     desc: 'A warm gathering place. Boosts happiness and unlocks the Innkeeper role.',
     icon: '🍺',
@@ -76,10 +72,11 @@ const BUILDINGS = {
     maxLevel: 3,
     effect: (level) => ({ happiness: level * 10 }),
     citizenSlots: (level) => level,  // tavernkeep slots = tavern level
-    requires: ['housing'],
+    requires: [],
   },
   market: {
     id: 'market',
+    imgFile: 'market.png',
     label: 'Market',
     desc: 'Traders bring wealth from distant settlements.',
     icon: '⚖️',
@@ -91,6 +88,7 @@ const BUILDINGS = {
   },
   starter_house: {
     id: 'starter_house',
+    imgFile: 'willowhut.png',
     label: 'Willow Hut',
     desc: 'A simple home for two citizens. Housed citizens are happier and more productive.',
     icon: '🏡',
@@ -106,6 +104,7 @@ const BUILDINGS = {
   },
   fishing_post: {
     id: 'fishing_post',
+    imgFile: 'fishingpost.png',
     label: 'Fishing Post',
     desc: 'A riverside dock that improves fishing yields and lets you cast a line yourself.',
     icon: '🎣',

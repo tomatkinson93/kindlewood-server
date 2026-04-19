@@ -23,16 +23,25 @@ router.get('/', requireAuth, async (req, res) => {
     );
     const built = buildingsRes.rows;
 
-    // Map built buildings
+    // Map built buildings (housing: count rows, others: use single row)
     const builtMap = {};
+    const housingCounts = {};
     for (const b of built) {
-      builtMap[b.type] = b;
+      if (BUILDINGS[b.type]?.isHousing) {
+        housingCounts[b.type] = (housingCounts[b.type] || 0) + 1;
+        if (!builtMap[b.type]) builtMap[b.type] = b; // keep first row as sentinel
+      } else {
+        builtMap[b.type] = b;
+      }
     }
 
     // Determine what can be built / upgraded
     const available = Object.values(BUILDINGS).map(def => {
       const existing = builtMap[def.id];
-      const currentLevel = existing ? existing.level : 0;
+      // For housing, currentLevel = number of houses built; for others = building level
+      const currentLevel = def.isHousing
+        ? (housingCounts[def.id] || 0)
+        : (existing ? existing.level : 0);
       const canUpgrade = currentLevel < def.maxLevel;
 
       // Check requirements met
@@ -50,6 +59,7 @@ router.get('/', requireAuth, async (req, res) => {
         label: def.label,
         desc: def.desc,
         icon: def.icon,
+        imgFile: def.imgFile || null,
         currentLevel,
         maxLevel: def.maxLevel,
         canUpgrade,
@@ -97,8 +107,14 @@ router.post('/build', requireAuth, async (req, res) => {
       const settlementTierRes = await query('SELECT tier FROM settlements WHERE user_id=$1', [req.user.userId]);
       const tier = settlementTierRes.rows[0]?.tier || 'camp';
       const tierCap = def.tierCaps[tier] || def.tierCaps['camp'];
-      if (currentLevel >= tierCap)
-        return res.status(400).json({ error: `Upgrade your settlement to build more ${def.label}s. Current limit: ${tierCap}.` });
+      // For housing, count rows (not level) to get actual house count
+      const houseCountRes = await query(
+        'SELECT COUNT(*) FROM buildings WHERE settlement_id=$1 AND type=$2',
+        [settlement.id, buildingId]
+      );
+      const houseCount = parseInt(houseCountRes.rows[0].count);
+      if (houseCount >= tierCap)
+        return res.status(400).json({ error: `Upgrade your settlement tier to build more ${def.label}s. Current limit: ${tierCap}.` });
     }
 
     if (currentLevel >= def.maxLevel)
@@ -140,21 +156,18 @@ router.post('/build', requireAuth, async (req, res) => {
     `, [cost.food||0, cost.timber||0, cost.stone||0, cost.metal||0, cost.wealth||0, settlement.id]);
 
     // Build or upgrade
-    if (existing) {
+    if (def.isHousing) {
+      // Housing: always insert a new row per house (not level-based)
+      await query(
+        'INSERT INTO buildings (settlement_id, type, level) VALUES ($1,$2,1)',
+        [settlement.id, buildingId]
+      );
+    } else if (existing) {
       await query('UPDATE buildings SET level=$1 WHERE id=$2', [currentLevel + 1, existing.id]);
     } else {
       await query(
         'INSERT INTO buildings (settlement_id, type, level) VALUES ($1,$2,1)',
         [settlement.id, buildingId]
-      );
-    }
-
-    // Apply housing population cap increase
-    if (buildingId === 'housing') {
-      const effect = def.effect(currentLevel + 1);
-      await query(
-        'UPDATE settlements SET population_cap=$1 WHERE id=$2',
-        [20 + (effect.population_cap || 0), settlement.id]
       );
     }
 
@@ -174,8 +187,8 @@ router.post('/build', requireAuth, async (req, res) => {
       }
     }
 
-    // Create a house record if this is a housing building
-    if (def.isHousing && !existing) {
+    // Create a house record for every housing build
+    if (def.isHousing) {
       await createHouseForSettlement(settlement.id, buildingId);
     }
 
