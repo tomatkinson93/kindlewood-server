@@ -166,6 +166,19 @@ async function initDB() {
 
   await query(`ALTER TABLE expeditions ADD COLUMN IF NOT EXISTS citizen_id INTEGER DEFAULT NULL`).catch(()=>{});
 
+  // Housing system
+  await query(`
+    CREATE TABLE IF NOT EXISTS houses (
+      id SERIAL PRIMARY KEY,
+      settlement_id INTEGER NOT NULL REFERENCES settlements(id),
+      name TEXT NOT NULL,
+      building_type TEXT NOT NULL DEFAULT 'starter_house',
+      capacity INTEGER NOT NULL DEFAULT 2,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await query(`ALTER TABLE citizens ADD COLUMN IF NOT EXISTS house_id INTEGER DEFAULT NULL REFERENCES houses(id) ON DELETE SET NULL`).catch(()=>{});
+
   // Add bio column to users if missing
   await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT DEFAULT ''`).catch(() => {});
 

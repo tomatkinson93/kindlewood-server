@@ -39,6 +39,7 @@ router.get('/', requireAuth, async (req, res) => {
       visible_traits: c.visible_traits || [],
       revealed_hidden_traits: [],
       born_at: c.born_at,
+      house_id: c.house_id || null,
       expedition: expByCitizen[c.id] || null,
     }));
 

@@ -1,4 +1,5 @@
 const express = require('express');
+const { createHouseForSettlement, removeHouseForSettlement } = require('./housing');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
 const { BUILDINGS, calculateRates } = require('../buildings');
@@ -164,6 +165,11 @@ router.post('/build', requireAuth, async (req, res) => {
       }
     }
 
+    // Create a house record if this is a housing building
+    if (def.isHousing && !existing) {
+      await createHouseForSettlement(settlement.id, buildingId);
+    }
+
     res.json({ ok: true, building: buildingId, newLevel: currentLevel + 1, cost });
   } catch (err) {
     console.error(err);
@@ -194,6 +200,12 @@ router.post('/remove', requireAuth, async (req, res) => {
 
     // Remove from DB
     await query('DELETE FROM buildings WHERE settlement_id=$1 AND type=$2', [settlement.id, buildingId]);
+
+    // Remove associated house if this is a housing building
+    const { BUILDINGS } = require('../buildings');
+    if (BUILDINGS[buildingId]?.isHousing) {
+      await removeHouseForSettlement(settlement.id, buildingId);
+    }
 
     // Unassign any citizens working this building
     const { ROLE_BUILDING_MAP } = require('../buildings');

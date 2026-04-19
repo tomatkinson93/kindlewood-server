@@ -89,6 +89,19 @@ const BUILDINGS = {
     citizenSlots: (level) => level,
     requires: [],
   },
+  starter_house: {
+    id: 'starter_house',
+    label: 'Willow Hut',
+    desc: 'A simple home for two citizens. Housed citizens are happier.',
+    icon: '🏡',
+    cost: { timber: 40, stone: 20 },
+    maxLevel: 1,
+    effect: () => ({}),
+    citizenSlots: () => 0,
+    requires: [],
+    capacity: 2,  // citizens per house instance
+    isHousing: true,
+  },
   fishing_post: {
     id: 'fishing_post',
     label: 'Fishing Post',
