@@ -1,4 +1,5 @@
 const { getCurrentSeason, applySeasonModifiers } = require('../seasons');
+const { runSimulation } = require('../simulation');
 const { generateCitizen } = require('../citizens');
 const express = require('express');
 const { calculateRates } = require('../buildings');
@@ -42,6 +43,22 @@ async function applyTick(settlement, species) {
     SET food=$1, timber=$2, stone=$3, metal=$4, wealth=$5, last_tick=NOW()
     WHERE id=$6
   `, [updated.food, updated.timber, updated.stone, updated.metal, updated.wealth, settlement.id]);
+
+  // Run relationship/bonding/breeding simulation (gated by last_sim_tick)
+  try {
+    const simTickRes = await query(
+      'SELECT last_sim_tick FROM settlements WHERE id=$1', [settlement.id]
+    );
+    const lastSim = simTickRes.rows[0]?.last_sim_tick;
+    const simHoursElapsed = lastSim
+      ? (Date.now() - new Date(lastSim).getTime()) / (1000 * 60 * 60)
+      : 1.0;
+    if (simHoursElapsed >= 1.0) {
+      await runSimulation({ id: settlement.id }, simHoursElapsed);
+    }
+  } catch(simErr) {
+    console.error('Simulation tick error:', simErr.message);
+  }
 
   return { ...settlement, ...updated };
 }

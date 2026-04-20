@@ -44,6 +44,10 @@ const questRoutes = require('./routes/quests');
 app.use('/api/quests', questRoutes);
 const housingRoutes = require('./routes/housing');
 app.use('/api/housing', housingRoutes);
+const eventsRoutes = require('./routes/events');
+app.use('/api/events', eventsRoutes);
+const relationshipsRoutes = require('./routes/relationships');
+app.use('/api/relationships', relationshipsRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err.message);

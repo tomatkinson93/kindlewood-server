@@ -159,4 +159,4 @@ function generateStartingCitizens(count = 10) {
   return Array.from({ length: count }, () => generateCitizen(1));
 }
 
-module.exports = { generateStartingCitizens, generateCitizen, VISIBLE_TRAITS, HIDDEN_TRAITS, SKILLS };
+module.exports = { generateStartingCitizens, generateCitizen, VISIBLE_TRAITS, HIDDEN_TRAITS, SKILLS, MALE_NAMES, FEMALE_NAMES, LAST_NAMES };

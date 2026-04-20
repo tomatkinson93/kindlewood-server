@@ -201,6 +201,43 @@ async function initDB() {
   await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS success_roll FLOAT DEFAULT NULL`).catch(()=>{});
   await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS success_chance FLOAT DEFAULT NULL`).catch(()=>{});
 
+  // ── Relationship / Bonding / Breeding system ──────────────────────────────
+
+  // Relationship pairs (canonical: citizen_a_id < citizen_b_id always)
+  await query(`
+    CREATE TABLE IF NOT EXISTS citizen_relationships (
+      id SERIAL PRIMARY KEY,
+      settlement_id INTEGER NOT NULL REFERENCES settlements(id),
+      citizen_a_id INTEGER NOT NULL REFERENCES citizens(id) ON DELETE CASCADE,
+      citizen_b_id INTEGER NOT NULL REFERENCES citizens(id) ON DELETE CASCADE,
+      score INTEGER NOT NULL DEFAULT 0,        -- 0-100
+      state TEXT NOT NULL DEFAULT 'strangers', -- strangers/acquaintances/friends/close/bonded/partners
+      shared_house_days INTEGER DEFAULT 0,
+      shared_quest_count INTEGER DEFAULT 0,
+      last_updated TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(citizen_a_id, citizen_b_id)
+    )
+  `);
+
+  // Events log (births, partnerships, etc.)
+  await query(`
+    CREATE TABLE IF NOT EXISTS settlement_events (
+      id SERIAL PRIMARY KEY,
+      settlement_id INTEGER NOT NULL REFERENCES settlements(id),
+      type TEXT NOT NULL,   -- 'bond_formed','partnership','child_born','close_bond'
+      message TEXT NOT NULL,
+      citizen_ids JSONB DEFAULT '[]',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // New columns on citizens
+  await query(`ALTER TABLE citizens ADD COLUMN IF NOT EXISTS partner_id INTEGER DEFAULT NULL REFERENCES citizens(id) ON DELETE SET NULL`).catch(()=>{});
+  await query(`ALTER TABLE citizens ADD COLUMN IF NOT EXISTS life_stage TEXT DEFAULT 'adult'`).catch(()=>{});
+
+  // Simulation tick tracker on settlements (separate from resource tick)
+  await query(`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS last_sim_tick TIMESTAMPTZ DEFAULT NOW()`).catch(()=>{});
+
   console.log('Database initialised');
 }
 
