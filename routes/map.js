@@ -15,7 +15,7 @@ const MAX_REROLLS = 1;
 router.get('/world', requireAuth, async (req, res) => {
   try {
     const settlementRes = await query(
-      'SELECT * FROM settlements WHERE user_id=$1', [req.user.userId]
+      'SELECT *, world_version FROM settlements WHERE user_id=$1', [req.user.userId]
     );
     const settlement = settlementRes.rows[0];
 
@@ -73,11 +73,15 @@ router.get('/world', requireAuth, async (req, res) => {
 router.get('/spawn', requireAuth, async (req, res) => {
   try {
     const settlement = (await query(
-      'SELECT tile_x, tile_y, rerolls_used FROM settlements WHERE user_id=$1',
+      'SELECT tile_q, tile_r, rerolls_used, world_version FROM settlements WHERE user_id=$1',
       [req.user.userId]
     )).rows[0];
 
     if (!settlement) return res.status(404).json({ error: 'No settlement found.' });
+    if (settlement.world_version < 2) {
+      await query('UPDATE settlements SET tile_q=NULL, tile_r=NULL WHERE id=$1', [settlement.id]);
+      settlement.tile_q = null;
+    }
     if (settlement.tile_q !== null) return res.status(400).json({ error: 'Already placed.' });
 
     const rerollsUsed = settlement.rerolls_used || 0;
@@ -166,11 +170,15 @@ router.post('/place', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Coordinates required.' });
 
     const settlementRes = await query(
-      'SELECT * FROM settlements WHERE user_id=$1', [req.user.userId]
+      'SELECT *, world_version FROM settlements WHERE user_id=$1', [req.user.userId]
     );
     const settlement = settlementRes.rows[0];
-    console.log(`ARRIVE settlement check: tile_x=${settlement?.tile_x}`);
     if (!settlement) return res.status(404).json({ error: 'No settlement found.' });
+    // If world_version is stale, treat as unplaced regardless of tile_q
+    if (settlement.world_version < 2) {
+      await query('UPDATE settlements SET tile_q=NULL, tile_r=NULL WHERE id=$1', [settlement.id]);
+      settlement.tile_q = null; settlement.tile_r = null;
+    }
     if (settlement.tile_q !== null) return res.status(400).json({ error: 'Already placed.' });
 
     // Check tile exists and is not occupied
@@ -254,11 +262,15 @@ router.post('/arrive', requireAuth, async (req, res) => {
 
     // Check settlement exists and isn't placed yet
     const settlementRes = await query(
-      'SELECT * FROM settlements WHERE user_id=$1', [req.user.userId]
+      'SELECT *, world_version FROM settlements WHERE user_id=$1', [req.user.userId]
     );
     const settlement = settlementRes.rows[0];
-    console.log(`ARRIVE settlement check: tile_x=${settlement?.tile_x}`);
     if (!settlement) return res.status(404).json({ error: 'No settlement found.' });
+    // If world_version is stale, treat as unplaced regardless of tile_q
+    if (settlement.world_version < 2) {
+      await query('UPDATE settlements SET tile_q=NULL, tile_r=NULL WHERE id=$1', [settlement.id]);
+      settlement.tile_q = null; settlement.tile_r = null;
+    }
     if (settlement.tile_q !== null) return res.status(400).json({ error: 'Already placed.' });
 
     // Update species on user

@@ -85,6 +85,35 @@ async function initDB() {
   await query(`ALTER TABLE citizens ADD COLUMN IF NOT EXISTS visible_traits JSONB DEFAULT '[]'`).catch(()=>{});
   await query(`ALTER TABLE citizens ADD COLUMN IF NOT EXISTS hidden_traits JSONB DEFAULT '[]'`).catch(()=>{});
 
+  // ── World reset / hex migration ──────────────────────────────────────────
+  // Must run BEFORE tile table creation and seeding.
+  const CURRENT_WORLD_VERSION = 2;
+
+  // Ensure world_version column exists on settlements
+  await query(`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS world_version INTEGER DEFAULT 0`).catch(()=>{});
+
+  // Detect old x/y schema and wipe for hex migration
+  const tileColCheck = await query(`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name='tiles' AND column_name='x'
+  `).catch(()=>({rows:[]}));
+
+  if (tileColCheck.rows.length > 0) {
+    console.log('Old x/y tile schema detected — wiping for hex migration...');
+    await query('DROP TABLE IF EXISTS fog_of_war CASCADE').catch(()=>{});
+    await query('DROP TABLE IF EXISTS expeditions CASCADE').catch(()=>{});
+    await query('DROP TABLE IF EXISTS tiles CASCADE').catch(()=>{});
+    await query('UPDATE settlements SET tile_q=NULL, tile_r=NULL, world_version=0').catch(()=>{});
+    await query('UPDATE users SET species=NULL').catch(()=>{});
+    console.log('Hex migration wipe complete — map will regenerate.');
+  }
+
+  // Always clear any settlement not yet on current world version
+  await query(
+    'UPDATE settlements SET tile_q=NULL, tile_r=NULL, rerolls_used=0 WHERE world_version < ' + CURRENT_WORLD_VERSION
+  ).catch(()=>{});
+
+  // ── Tile + fog tables ─────────────────────────────────────────────────────
   await query(`
     CREATE TABLE IF NOT EXISTS tiles (
       id SERIAL PRIMARY KEY,
@@ -122,8 +151,8 @@ async function initDB() {
       }
       await client.query('COMMIT');
       console.log(`World map generated: ${tiles.length} hex tiles`);
-      // Mark all settlements as up to date
-      await client.query('UPDATE settlements SET world_version=2').catch(()=>{});
+      // All settlements are unplaced at this point (migration cleared them)
+      await client.query('UPDATE settlements SET world_version=' + CURRENT_WORLD_VERSION).catch(()=>{});
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -167,34 +196,6 @@ async function initDB() {
   `);
 
   await query(`ALTER TABLE expeditions ADD COLUMN IF NOT EXISTS citizen_id INTEGER DEFAULT NULL`).catch(()=>{});
-
-  // ── World reset (hex migration) ───────────────────────────────────────────
-  // Add world_version column — if it doesn't match, wipe map data and prompt resettlement
-  await query(`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS world_version INTEGER DEFAULT 0`).catch(()=>{});
-  const CURRENT_WORLD_VERSION = 2; // increment to force resettlement
-
-  // Check if tiles table needs rebuilding (column rename from x/y to q/r)
-  const tileColCheck = await query(`
-    SELECT column_name FROM information_schema.columns
-    WHERE table_name='tiles' AND column_name='x'
-  `).catch(()=>({rows:[]}));
-
-  if (tileColCheck.rows.length > 0) {
-    // Old x/y schema exists — wipe everything and rebuild
-    console.log('Old tile schema detected — wiping for hex migration...');
-    await query('DROP TABLE IF EXISTS fog_of_war CASCADE').catch(()=>{});
-    await query('DROP TABLE IF EXISTS expeditions CASCADE').catch(()=>{});
-    await query('DROP TABLE IF EXISTS tiles CASCADE').catch(()=>{});
-    // Reset all settlements to unplaced and old world version
-    await query('UPDATE settlements SET tile_q=NULL, tile_r=NULL, world_version=0').catch(()=>{});
-    await query('UPDATE users SET species=NULL').catch(()=>{});
-    console.log('Hex migration wipe complete — map will be regenerated.');
-  }
-
-  // Reset any settlements on old world version
-  await query(
-    `UPDATE settlements SET tile_q=NULL, tile_r=NULL WHERE world_version < ${CURRENT_WORLD_VERSION}`
-  ).catch(()=>{});
 
   // Housing system
   await query(`
