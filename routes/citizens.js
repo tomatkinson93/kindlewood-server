@@ -21,7 +21,7 @@ router.get('/', requireAuth, async (req, res) => {
 
     // Get active expeditions for this settlement
     const expRes = await query(
-      "SELECT citizen_id, target_x, target_y, completes_at FROM expeditions WHERE settlement_id=$1 AND status='travelling'",
+      "SELECT citizen_id, target_q, target_r, completes_at FROM expeditions WHERE settlement_id=$1 AND status='travelling'",
       [settlement.id]
     );
     const expByCitizen = {};
@@ -98,13 +98,13 @@ router.patch('/:id/role', requireAuth, async (req, res) => {
 
     // Block if on active expedition
     const expedition = await query(
-      "SELECT id, target_x, target_y FROM expeditions WHERE citizen_id=$1 AND status='travelling'",
+      "SELECT id, target_q, target_r FROM expeditions WHERE citizen_id=$1 AND status='travelling'",
       [req.params.id]
     );
     if (expedition.rows.length) {
       const exp = expedition.rows[0];
       return res.status(400).json({
-        error: `This citizen is currently scouting (${exp.target_x}, ${exp.target_y}) and cannot be reassigned.`
+        error: `This citizen is currently scouting (${exp.target_q}, ${exp.target_r}) and cannot be reassigned.`
       });
     }
 

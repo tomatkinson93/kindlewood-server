@@ -10,7 +10,7 @@ const router = express.Router();
 router.get('/', requireAuth, async (req, res) => {
   try {
     const settlementRes = await query(
-      'SELECT * FROM settlements WHERE user_id=$1', [req.user.userId]
+      'SELECT *, tile_q, tile_r FROM settlements WHERE user_id=$1', [req.user.userId]
     );
     const settlement = settlementRes.rows[0];
     if (!settlement) return res.status(404).json({ error: 'No settlement.' });
@@ -86,7 +86,7 @@ router.post('/build', requireAuth, async (req, res) => {
     if (!def) return res.status(400).json({ error: 'Unknown building.' });
 
     const settlementRes = await query(
-      'SELECT * FROM settlements WHERE user_id=$1', [req.user.userId]
+      'SELECT *, tile_q, tile_r FROM settlements WHERE user_id=$1', [req.user.userId]
     );
     const settlement = settlementRes.rows[0];
     if (!settlement) return res.status(404).json({ error: 'No settlement.' });
@@ -171,18 +171,15 @@ router.post('/build', requireAuth, async (req, res) => {
       );
     }
 
-    // Apply scout post fog reveal
+    // Apply scout post fog reveal (hex disk)
     if (buildingId === 'scout_post') {
-      const newRadius = 5 + def.effect(currentLevel + 1).reveal_radius;
-      const revealRes = await query(
-        'SELECT x, y FROM tiles WHERE x BETWEEN $1 AND $2 AND y BETWEEN $3 AND $4',
-        [settlement.tile_x - newRadius, settlement.tile_x + newRadius,
-         settlement.tile_y - newRadius, settlement.tile_y + newRadius]
-      );
-      for (const t of revealRes.rows) {
+      const { hexDisk } = require('../mapgen');
+      const newRadius = 5 + (def.effect(currentLevel + 1).reveal_radius || 0);
+      const disk = hexDisk(settlement.tile_q, settlement.tile_r, newRadius);
+      for (const { q, r } of disk) {
         await query(
-          'INSERT INTO fog_of_war (user_id, tile_x, tile_y) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
-          [req.user.userId, t.x, t.y]
+          'INSERT INTO fog_of_war (user_id, tile_q, tile_r) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+          [req.user.userId, q, r]
         );
       }
     }

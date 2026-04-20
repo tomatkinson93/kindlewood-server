@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { query } = require('../db');
+const requireAuth = require('../middleware/auth');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
@@ -108,3 +109,50 @@ router.get('/me', (req, res) => {
 });
 
 module.exports = router;
+
+// GET /api/auth/profile/:username — public profile fetch
+router.get('/profile/:username', async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT u.username, u.species, u.bio, u.created_at,
+              s.name as settlement_name, s.tier, s.tile_q, s.tile_r, s.population
+       FROM users u
+       LEFT JOIN settlements s ON s.user_id = u.id
+       WHERE u.username = $1`,
+      [req.params.username]
+    );
+    const user = result.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+    res.json({
+      ok: true,
+      username: user.username,
+      species:  user.species,
+      bio:      user.bio || '',
+      joined:   user.created_at,
+      settlement: user.settlement_name ? {
+        name: user.settlement_name,
+        tier: user.tier,
+        tile_q: user.tile_q,
+        tile_r: user.tile_r,
+        population: user.population,
+      } : null,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch profile.' });
+  }
+});
+
+// PATCH /api/auth/profile — update own bio (authenticated)
+router.patch('/profile', requireAuth, async (req, res) => {
+  try {
+    const { bio } = req.body;
+    if (typeof bio !== 'string') return res.status(400).json({ error: 'Bio must be a string.' });
+    const trimmed = bio.trim().slice(0, 280);
+    await query('UPDATE users SET bio=$1 WHERE id=$2', [trimmed, req.user.userId]);
+    res.json({ ok: true, bio: trimmed });
+  } catch (err) {
+    console.error('Profile patch error:', err);
+    res.status(500).json({ error: 'Failed to update profile.' });
+  }
+});
