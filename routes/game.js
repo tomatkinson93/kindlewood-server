@@ -194,6 +194,123 @@ router.post('/award-gold', requireAuth, async (req, res) => {
   }
 });
 
+// ── Cheat: simulate event ─────────────────────────────────────────────────────
+router.post('/cheat/simulate-event', requireAuth, async (req, res) => {
+  try {
+    const { event_type } = req.body;
+    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const settlement = settRes.rows[0];
+    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+
+    // Get two random citizens for the event
+    const citizensRes = await query(
+      "SELECT id, name, gender, house_id, partner_id, life_stage FROM citizens WHERE settlement_id=$1 AND life_stage='adult' ORDER BY RANDOM() LIMIT 2",
+      [settlement.id]
+    );
+    const citizens = citizensRes.rows;
+    if (citizens.length < 2) return res.status(400).json({ error: 'Need at least 2 adult citizens.' });
+
+    const [a, b] = citizens;
+    let message = '';
+    const ids = [a.id, b.id];
+
+    if (event_type === 'close_bond') {
+      message = `${a.name} and ${b.name} have grown close.`;
+      // Actually bump their relationship score
+      const aId = Math.min(a.id, b.id), bId = Math.max(a.id, b.id);
+      await query(`INSERT INTO citizen_relationships (settlement_id, citizen_a_id, citizen_b_id, score, state)
+        VALUES ($1,$2,$3,60,'close')
+        ON CONFLICT (citizen_a_id, citizen_b_id) DO UPDATE SET score=GREATEST(citizen_relationships.score,60), state='close'`,
+        [settlement.id, aId, bId]);
+
+    } else if (event_type === 'bond_formed') {
+      message = `${a.name} and ${b.name} share a strong bond. 🤝`;
+      const aId = Math.min(a.id, b.id), bId = Math.max(a.id, b.id);
+      await query(`INSERT INTO citizen_relationships (settlement_id, citizen_a_id, citizen_b_id, score, state)
+        VALUES ($1,$2,$3,80,'bonded')
+        ON CONFLICT (citizen_a_id, citizen_b_id) DO UPDATE SET score=GREATEST(citizen_relationships.score,80), state='bonded'`,
+        [settlement.id, aId, bId]);
+
+    } else if (event_type === 'partnership') {
+      // Pick an unpartnered male + female if possible, else any two
+      const unpartneredRes = await query(
+        "SELECT id, name, gender FROM citizens WHERE settlement_id=$1 AND partner_id IS NULL AND life_stage='adult' ORDER BY RANDOM() LIMIT 2",
+        [settlement.id]
+      );
+      const pair = unpartneredRes.rows.length >= 2 ? unpartneredRes.rows : citizens;
+      const [p1, p2] = pair;
+      ids.length = 0; ids.push(p1.id, p2.id);
+      // Form the partnership
+      await query('UPDATE citizens SET partner_id=$1 WHERE id=$2', [p2.id, p1.id]);
+      await query('UPDATE citizens SET partner_id=$1 WHERE id=$2', [p1.id, p2.id]);
+      const aId = Math.min(p1.id, p2.id), bId = Math.max(p1.id, p2.id);
+      await query(`INSERT INTO citizen_relationships (settlement_id, citizen_a_id, citizen_b_id, score, state)
+        VALUES ($1,$2,$3,95,'partners')
+        ON CONFLICT (citizen_a_id, citizen_b_id) DO UPDATE SET score=95, state='partners'`,
+        [settlement.id, aId, bId]);
+      message = `${p1.name} and ${p2.name} have become partners. 💕`;
+
+    } else if (event_type === 'child_born') {
+      // Simulate: just create event message, optionally add a child citizen
+      const houseRes = await query('SELECT id, name FROM houses WHERE settlement_id=$1 LIMIT 1', [settlement.id]);
+      const house = houseRes.rows[0];
+      if (!house) return res.status(400).json({ error: 'Need at least one house.' });
+      message = `A child has been born to ${a.name} and ${b.name} in ${house.name}. 🍼`;
+      ids.push(); // no real child created in cheat — just the event
+
+    } else {
+      return res.status(400).json({ error: 'Unknown event_type.' });
+    }
+
+    await query(
+      'INSERT INTO settlement_events (settlement_id, type, message, citizen_ids) VALUES ($1,$2,$3,$4)',
+      [settlement.id, event_type, message, JSON.stringify(ids)]
+    );
+
+    res.json({ ok: true, message });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to simulate event.' });
+  }
+});
+
+// ── Cheat: set relationship score between two citizens ────────────────────────
+router.post('/cheat/relationship', requireAuth, async (req, res) => {
+  try {
+    const { citizen_a_id, citizen_b_id, score } = req.body;
+    if (!citizen_a_id || !citizen_b_id || score === undefined)
+      return res.status(400).json({ error: 'citizen_a_id, citizen_b_id, score required.' });
+
+    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const settlement = settRes.rows[0];
+    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+
+    const clampedScore = Math.max(0, Math.min(100, parseInt(score)));
+    const aId = Math.min(citizen_a_id, citizen_b_id);
+    const bId = Math.max(citizen_a_id, citizen_b_id);
+
+    const state = clampedScore >= 90 ? 'bonded'
+                : clampedScore >= 75 ? 'bonded'
+                : clampedScore >= 60 ? 'close'
+                : clampedScore >= 40 ? 'friends'
+                : clampedScore >= 20 ? 'acquaintances'
+                : 'strangers';
+
+    await query(
+      `INSERT INTO citizen_relationships (settlement_id, citizen_a_id, citizen_b_id, score, state)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (citizen_a_id, citizen_b_id) DO UPDATE
+         SET score=$4, state=$5, last_updated=NOW()`,
+      [settlement.id, aId, bId, clampedScore, state]
+    );
+
+    res.json({ ok: true, score: clampedScore, state });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to set relationship.' });
+  }
+});
+
 module.exports = router;
 
 // Dev-only: reset placement for testing
