@@ -4,26 +4,38 @@ const requireAuth = require('../middleware/auth');
 
 const router = express.Router();
 
-const MAP_SIZE = 40;
+const { MAP_W, MAP_H, hexDistanceWrapped } = require('../mapgen');
 const SECONDS_PER_TILE_CLEAR = 8;   // revealed tile
 const SECONDS_PER_TILE_FOG   = 20;  // fog tile — harder to traverse
 
-// Bresenham line between two points (wrapping-aware shortest path)
-function pathBetween(x0, y0, x1, y1, size) {
-  // Find shortest wrapped distance
-  let dx = x1 - x0;
-  let dy = y1 - y0;
-  if (Math.abs(dx) > size / 2) dx = dx > 0 ? dx - size : dx + size;
-  if (Math.abs(dy) > size / 2) dy = dy > 0 ? dy - size : dy + size;
+// Hex line between two axial-coord hexes (wrapping-aware)
+// Uses cube coordinate lerp — standard hex grid algorithm
+function hexLinePath(q0, r0, q1, r1) {
+  // Find shortest wrapped target
+  let dq = q1 - q0, dr = r1 - r0;
+  if (Math.abs(dq) > MAP_W / 2) dq = dq > 0 ? dq - MAP_W : dq + MAP_W;
+  if (Math.abs(dr) > MAP_H / 2) dr = dr > 0 ? dr - MAP_H : dr + MAP_H;
 
-  const steps = Math.max(Math.abs(dx), Math.abs(dy));
+  // Convert to cube coords for lerp
+  const tq1 = q0 + dq, tr1 = r0 + dr;
+  const s0 = -q0 - r0, s1 = -tq1 - tr1;
+
+  const N = Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr));
   const path = [];
-  for (let i = 0; i <= steps; i++) {
-    const t = steps === 0 ? 0 : i / steps;
-    const px = ((Math.round(x0 + dx * t) % size) + size) % size;
-    const py = ((Math.round(y0 + dy * t) % size) + size) % size;
-    if (!path.length || path[path.length-1].x !== px || path[path.length-1].y !== py) {
-      path.push({ x: px, y: py });
+  for (let i = 0; i <= N; i++) {
+    const t = N === 0 ? 0 : i / N;
+    // Cube lerp then round
+    const fq = q0 + (tq1 - q0) * t;
+    const fr = r0 + (tr1 - r0) * t;
+    const fs = s0 + (s1 - s0) * t;
+    let rq = Math.round(fq), rr = Math.round(fr), rs = Math.round(fs);
+    const qDiff = Math.abs(rq - fq), rDiff = Math.abs(rr - fr), sDiff = Math.abs(rs - fs);
+    if (qDiff > rDiff && qDiff > sDiff) rq = -rr - rs;
+    else if (rDiff > sDiff) rr = -rq - rs;
+    const wq = ((rq % MAP_W) + MAP_W) % MAP_W;
+    const wr = ((rr % MAP_H) + MAP_H) % MAP_H;
+    if (!path.length || path[path.length-1].q !== wq || path[path.length-1].r !== wr) {
+      path.push({ q: wq, r: wr });
     }
   }
   return path;
@@ -32,8 +44,8 @@ function pathBetween(x0, y0, x1, y1, size) {
 // Send scout expedition
 router.post('/send', requireAuth, async (req, res) => {
   try {
-    const { target_x, target_y, citizen_id } = req.body;
-    if (target_x === undefined || target_y === undefined)
+    const { target_q, target_r, citizen_id } = req.body;
+    if (target_q === undefined || target_r === undefined)
       return res.status(400).json({ error: 'Target coordinates required.' });
 
     const settlementRes = await query(
@@ -41,7 +53,7 @@ router.post('/send', requireAuth, async (req, res) => {
     );
     const settlement = settlementRes.rows[0];
     if (!settlement) return res.status(404).json({ error: 'No settlement.' });
-    if (settlement.tile_x === null) return res.status(400).json({ error: 'Not placed yet.' });
+    if (settlement.tile_q === null) return res.status(400).json({ error: 'Not placed yet.' });
 
     // Check scout post exists
     const scoutPost = await query(
@@ -75,24 +87,24 @@ router.post('/send', requireAuth, async (req, res) => {
 
     // Check no active expedition to same tile
     const existing = await query(
-      "SELECT id FROM expeditions WHERE settlement_id=$1 AND target_x=$2 AND target_y=$3 AND status='travelling'",
-      [settlement.id, target_x, target_y]
+      "SELECT id FROM expeditions WHERE settlement_id=$1 AND target_q=$2 AND target_r=$3 AND status='travelling'",
+      [settlement.id, target_q, target_r]
     );
     if (existing.rows.length)
       return res.status(400).json({ error: 'Scout already heading there.' });
 
     // Calculate path
-    const path = pathBetween(settlement.tile_x, settlement.tile_y, target_x, target_y, MAP_SIZE);
+    const path = hexLinePath(settlement.tile_q, settlement.tile_r, target_q, target_r);
 
     // Get revealed tiles to calculate travel time
     const revealedRes = await query(
-      'SELECT tile_x, tile_y FROM fog_of_war WHERE user_id=$1', [req.user.userId]
+      'SELECT tile_q, tile_r FROM fog_of_war WHERE user_id=$1', [req.user.userId]
     );
-    const revealed = new Set(revealedRes.rows.map(r => `${r.tile_x},${r.tile_y}`));
+    const revealed = new Set(revealedRes.rows.map(r => `${r.tile_q},${r.tile_r}`));
 
     let seconds = 0;
     for (const tile of path) {
-      seconds += revealed.has(`${tile.x},${tile.y}`)
+      seconds += revealed.has(`${tile.q},${tile.r}`)
         ? SECONDS_PER_TILE_CLEAR
         : SECONDS_PER_TILE_FOG;
     }
@@ -107,16 +119,16 @@ router.post('/send', requireAuth, async (req, res) => {
     const completesAt = new Date(Date.now() + seconds * 1000);
 
     const result = await query(
-      `INSERT INTO expeditions (settlement_id, user_id, target_x, target_y, completes_at, path, citizen_id)
+      `INSERT INTO expeditions (settlement_id, user_id, target_q, target_r, completes_at, path, citizen_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [settlement.id, req.user.userId, target_x, target_y, completesAt, JSON.stringify(path), citizen_id || null]
+      [settlement.id, req.user.userId, target_q, target_r, completesAt, JSON.stringify(path), citizen_id || null]
     );
 
     res.json({
       ok: true,
       expedition: result.rows[0],
       seconds,
-      tiles: path.length,
+      hexes: path.length,
       citizenName,
     });
   } catch (err) {
@@ -164,21 +176,19 @@ async function completeExpeditions(settlementId, userId) {
     // Reveal all path tiles
     for (const tile of path) {
       await query(
-        'INSERT INTO fog_of_war (user_id, tile_x, tile_y) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
-        [userId, tile.x, tile.y]
+        'INSERT INTO fog_of_war (user_id, tile_q, tile_r) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+        [userId, tile.q, tile.r]
       );
     }
     // Also reveal a small radius around destination
-    const tx = exp.target_x, ty = exp.target_y;
-    for (let dx = -2; dx <= 2; dx++) {
-      for (let dy = -2; dy <= 2; dy++) {
-        const nx = ((tx + dx) % MAP_SIZE + MAP_SIZE) % MAP_SIZE;
-        const ny = ((ty + dy) % MAP_SIZE + MAP_SIZE) % MAP_SIZE;
-        await query(
-          'INSERT INTO fog_of_war (user_id, tile_x, tile_y) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
-          [userId, nx, ny]
-        );
-      }
+    // Reveal hex disk around destination
+    const { hexDisk } = require('../mapgen');
+    const destDisk = hexDisk(exp.target_q, exp.target_r, 2);
+    for (const { q: tq, r: tr } of destDisk) {
+      await query(
+        'INSERT INTO fog_of_war (user_id, tile_q, tile_r) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+        [userId, tq, tr]
+      );
     }
     await query("UPDATE expeditions SET status='complete' WHERE id=$1", [exp.id]);
     // citizen is now free (tracked by expedition status)
@@ -188,11 +198,11 @@ async function completeExpeditions(settlementId, userId) {
 // Cheat — reveal all fog
 router.post('/reveal-all', requireAuth, async (req, res) => {
   try {
-    const tilesRes = await query('SELECT x, y FROM tiles');
+    const tilesRes = await query('SELECT q, r FROM tiles');
     for (const t of tilesRes.rows) {
       await query(
-        'INSERT INTO fog_of_war (user_id, tile_x, tile_y) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
-        [req.user.userId, t.x, t.y]
+        'INSERT INTO fog_of_war (user_id, tile_q, tile_r) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+        [req.user.userId, t.q, t.r]
       );
     }
     res.json({ ok: true, revealed: tilesRes.rows.length });
@@ -207,19 +217,16 @@ router.post('/reset-fog', requireAuth, async (req, res) => {
     await query('DELETE FROM fog_of_war WHERE user_id=$1', [req.user.userId]);
     // Re-reveal just around settlement
     const settlementRes = await query(
-      'SELECT tile_x, tile_y FROM settlements WHERE user_id=$1', [req.user.userId]
+      'SELECT tile_q, tile_r FROM settlements WHERE user_id=$1', [req.user.userId]
     );
     const s = settlementRes.rows[0];
-    if (s?.tile_x !== null) {
-      for (let dx = -5; dx <= 5; dx++) {
-        for (let dy = -5; dy <= 5; dy++) {
-          const nx = ((s.tile_x + dx) % MAP_SIZE + MAP_SIZE) % MAP_SIZE;
-          const ny = ((s.tile_y + dy) % MAP_SIZE + MAP_SIZE) % MAP_SIZE;
-          await query(
-            'INSERT INTO fog_of_war (user_id, tile_x, tile_y) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
-            [req.user.userId, nx, ny]
+    if (s?.tile_q !== null) {
+      const { hexDisk: hd } = require('../mapgen');
+      for (const { q, r } of hd(s.tile_q, s.tile_r, 5)) {
+        await query(
+          'INSERT INTO fog_of_war (user_id, tile_q, tile_r) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+          [req.user.userId, q, r]
           );
-        }
       }
     }
     res.json({ ok: true });

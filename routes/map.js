@@ -1,7 +1,7 @@
 const express = require('express');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
-const { TERRAIN_BONUSES, MAP_SIZE } = require('../mapgen');
+const { TERRAIN_BONUSES, MAP_SIZE, MAP_W, MAP_H, hexDistanceWrapped, hexDisk } = require('../mapgen');
 const { generateStartingCitizens } = require('../citizens');
 
 const router = express.Router();
@@ -20,31 +20,31 @@ router.get('/world', requireAuth, async (req, res) => {
     const settlement = settlementRes.rows[0];
 
     // Get all tiles
-    const tilesRes = await query('SELECT * FROM tiles ORDER BY x, y');
+    const tilesRes = await query('SELECT * FROM tiles ORDER BY q, r');
 
     // Get this player's revealed tiles
     const fogRes = await query(
-      'SELECT tile_x, tile_y FROM fog_of_war WHERE user_id=$1', [req.user.userId]
+      'SELECT tile_q, tile_r FROM fog_of_war WHERE user_id=$1', [req.user.userId]
     );
-    const revealed = new Set(fogRes.rows.map(r => `${r.tile_x},${r.tile_y}`));
+    const revealed = new Set(fogRes.rows.map(r => `${r.tile_q},${r.tile_r}`));
 
     // Get all settlements for display
     const settlementsRes = await query(`
-      SELECT s.tile_x, s.tile_y, s.name, s.tier, u.species, u.username
+      SELECT s.tile_q, s.tile_r, s.name, s.tier, u.species, u.username
       FROM settlements s JOIN users u ON s.user_id = u.id
-      WHERE s.tile_x IS NOT NULL AND s.tile_y IS NOT NULL
+      WHERE s.tile_q IS NOT NULL AND s.tile_r IS NOT NULL
     `);
     const settlementMap = {};
     settlementsRes.rows.forEach(s => {
-      settlementMap[`${s.tile_x},${s.tile_y}`] = s;
+      settlementMap[`${s.tile_q},${s.tile_r}`] = s;
     });
 
     const tiles = tilesRes.rows.map(t => {
-      const key = `${t.x},${t.y}`;
+      const key = `${t.q},${t.r}`;
       const isRevealed = revealed.has(key);
       const occupant = settlementMap[key];
       return {
-        x: t.x, y: t.y,
+        q: t.q, r: t.r,
         terrain: isRevealed ? t.terrain : 'fog',
         revealed: isRevealed,
         settlement: isRevealed && occupant ? {
@@ -52,7 +52,7 @@ router.get('/world', requireAuth, async (req, res) => {
           species: occupant.species,
           username: occupant.username,
           tier: occupant.tier,
-          isOwn: settlement && t.x === settlement.tile_x && t.y === settlement.tile_y,
+          isOwn: settlement && t.q === settlement.tile_q && t.r === settlement.tile_r,
         } : null,
       };
     });
@@ -61,7 +61,7 @@ router.get('/world', requireAuth, async (req, res) => {
       ok: true,
       mapSize: MAP_SIZE,
       tiles,
-      playerSettlement: settlement ? { x: settlement.tile_x, y: settlement.tile_y } : null,
+      playerSettlement: settlement ? { q: settlement.tile_q, r: settlement.tile_r } : null,
     });
   } catch (err) {
     console.error(err);
@@ -78,7 +78,7 @@ router.get('/spawn', requireAuth, async (req, res) => {
     )).rows[0];
 
     if (!settlement) return res.status(404).json({ error: 'No settlement found.' });
-    if (settlement.tile_x !== null) return res.status(400).json({ error: 'Already placed.' });
+    if (settlement.tile_q !== null) return res.status(400).json({ error: 'Already placed.' });
 
     const rerollsUsed = settlement.rerolls_used || 0;
     if (rerollsUsed > MAX_REROLLS) {
@@ -87,9 +87,9 @@ router.get('/spawn', requireAuth, async (req, res) => {
 
     // Get all occupied tiles
     const occupiedRes = await query(
-      'SELECT tile_x, tile_y FROM settlements WHERE tile_x IS NOT NULL'
+      'SELECT tile_q, tile_r FROM settlements WHERE tile_q IS NOT NULL'
     );
-    const occupied = new Set(occupiedRes.rows.map(r => `${r.tile_x},${r.tile_y}`));
+    const occupied = new Set(occupiedRes.rows.map(r => `${r.tile_q},${r.tile_r}`));
 
     // Pick a random spawn centre away from others
     const allTilesRes = await query('SELECT x, y, terrain FROM tiles');
@@ -98,12 +98,11 @@ router.get('/spawn', requireAuth, async (req, res) => {
     // Find valid spawn centres
     const validCentres = allTiles.filter(t => {
       if (t.terrain === 'mountain') return false;
-      if (t.x < SPAWN_RADIUS || t.x > MAP_SIZE - SPAWN_RADIUS) return false;
-      if (t.y < SPAWN_RADIUS || t.y > MAP_SIZE - SPAWN_RADIUS) return false;
+      if (t.q < SPAWN_RADIUS || t.q > MAP_W - SPAWN_RADIUS) return false;
+      if (t.r < SPAWN_RADIUS || t.r > MAP_H - SPAWN_RADIUS) return false;
       // Check distance from other settlements
       for (const occ of occupiedRes.rows) {
-        const dx = t.x - occ.tile_x, dy = t.y - occ.tile_y;
-        if (Math.sqrt(dx*dx + dy*dy) < MIN_PLAYER_DISTANCE) return false;
+        if (hexDistanceWrapped(t.q, t.r, occ.tile_q, occ.tile_r) < MIN_PLAYER_DISTANCE) return false;
       }
       return true;
     });
@@ -116,10 +115,7 @@ router.get('/spawn', requireAuth, async (req, res) => {
     const centre = validCentres[Math.floor(Math.random() * validCentres.length)];
 
     // Get tiles in reveal radius
-    const localTiles = allTiles.filter(t => {
-      const dx = t.x - centre.x, dy = t.y - centre.y;
-      return Math.abs(dx) <= REVEAL_RADIUS && Math.abs(dy) <= REVEAL_RADIUS;
-    });
+    const localTiles = allTiles.filter(t => hexDistanceWrapped(t.q, t.r, centre.q, centre.r) <= REVEAL_RADIUS);
 
     // Pick suggested settlement spots (not mountain, not river edge)
     const candidates = localTiles.filter(t =>
@@ -132,10 +128,7 @@ router.get('/spawn', requireAuth, async (req, res) => {
     const shuffled = candidates.sort(() => Math.random() - 0.5);
     for (const c of shuffled) {
       if (suggested.length >= SUGGESTED_TILES) break;
-      const tooClose = suggested.some(s => {
-        const dx = s.x - c.x, dy = s.y - c.y;
-        return Math.sqrt(dx*dx + dy*dy) < minDist;
-      });
+      const tooClose = suggested.some(s => hexDistanceWrapped(s.q, s.r, c.q, c.r) < minDist);
       if (!tooClose) suggested.push(c);
     }
 
@@ -147,14 +140,14 @@ router.get('/spawn', requireAuth, async (req, res) => {
 
     res.json({
       ok: true,
-      centre: { x: centre.x, y: centre.y },
+      centre: { q: centre.q, r: centre.r },
       localTiles: localTiles.map(t => ({
-        x: t.x, y: t.y, terrain: t.terrain,
-        occupied: occupied.has(`${t.x},${t.y}`),
+        q: t.q, r: t.r, terrain: t.terrain,
+        occupied: occupied.has(`${t.q},${t.r}`),
         bonus: TERRAIN_BONUSES[t.terrain] || null,
       })),
       suggested: suggested.map(t => ({
-        x: t.x, y: t.y, terrain: t.terrain,
+        q: t.q, r: t.r, terrain: t.terrain,
         bonus: TERRAIN_BONUSES[t.terrain],
       })),
       rerollsRemaining: MAX_REROLLS - rerollsUsed,
@@ -168,8 +161,8 @@ router.get('/spawn', requireAuth, async (req, res) => {
 // Confirm settlement placement
 router.post('/place', requireAuth, async (req, res) => {
   try {
-    const { x, y } = req.body;
-    if (x === undefined || y === undefined)
+    const { q, r } = req.body;
+    if (q === undefined || r === undefined)
       return res.status(400).json({ error: 'Coordinates required.' });
 
     const settlementRes = await query(
@@ -178,23 +171,23 @@ router.post('/place', requireAuth, async (req, res) => {
     const settlement = settlementRes.rows[0];
     console.log(`ARRIVE settlement check: tile_x=${settlement?.tile_x}`);
     if (!settlement) return res.status(404).json({ error: 'No settlement found.' });
-    if (settlement.tile_x !== null) return res.status(400).json({ error: 'Already placed.' });
+    if (settlement.tile_q !== null) return res.status(400).json({ error: 'Already placed.' });
 
     // Check tile exists and is not occupied
-    const tileRes = await query('SELECT * FROM tiles WHERE x=$1 AND y=$2', [x, y]);
+    const tileRes = await query('SELECT * FROM tiles WHERE q=$1 AND r=$2', [q, r]);
     const tile = tileRes.rows[0];
     if (!tile) return res.status(400).json({ error: 'Invalid tile.' });
 
     const occupiedRes = await query(
-      'SELECT id FROM settlements WHERE tile_x=$1 AND tile_y=$2', [x, y]
+      'SELECT id FROM settlements WHERE tile_q=$1 AND tile_r=$2', [q, r]
     );
     if (occupiedRes.rows.length > 0)
       return res.status(409).json({ error: 'Tile already occupied.' });
 
     // Place settlement
     await query(
-      'UPDATE settlements SET tile_x=$1, tile_y=$2 WHERE user_id=$3',
-      [x, y, req.user.userId]
+      'UPDATE settlements SET tile_q=$1, tile_r=$2, world_version=2 WHERE user_id=$3',
+      [q, r, req.user.userId]
     );
 
     // Apply terrain bonus to starting resources
@@ -210,18 +203,16 @@ router.post('/place', requireAuth, async (req, res) => {
     }
 
     // Reveal tiles in radius
-    const revealRes = await query(
-      'SELECT x, y FROM tiles WHERE x BETWEEN $1 AND $2 AND y BETWEEN $3 AND $4',
-      [x - REVEAL_RADIUS, x + REVEAL_RADIUS, y - REVEAL_RADIUS, y + REVEAL_RADIUS]
-    );
-    for (const t of revealRes.rows) {
+    // Reveal hex disk around placement
+    const revealDisk = hexDisk(q, r, REVEAL_RADIUS);
+    for (const { q: tq, r: tr } of revealDisk) {
       await query(
-        'INSERT INTO fog_of_war (user_id, tile_x, tile_y) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
-        [req.user.userId, t.x, t.y]
+        'INSERT INTO fog_of_war (user_id, tile_q, tile_r) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+        [req.user.userId, tq, tr]
       );
     }
 
-    res.json({ ok: true, x, y, terrain: tile.terrain, bonus: TERRAIN_BONUSES[tile.terrain] });
+    res.json({ ok: true, q, r, terrain: tile.terrain, bonus: TERRAIN_BONUSES[tile.terrain] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Placement failed.' });
@@ -268,7 +259,7 @@ router.post('/arrive', requireAuth, async (req, res) => {
     const settlement = settlementRes.rows[0];
     console.log(`ARRIVE settlement check: tile_x=${settlement?.tile_x}`);
     if (!settlement) return res.status(404).json({ error: 'No settlement found.' });
-    if (settlement.tile_x !== null) return res.status(400).json({ error: 'Already placed.' });
+    if (settlement.tile_q !== null) return res.status(400).json({ error: 'Already placed.' });
 
     // Update species on user
     await query('UPDATE users SET species=$1 WHERE id=$2', [species, req.user.userId]);
@@ -276,19 +267,18 @@ router.post('/arrive', requireAuth, async (req, res) => {
     // Find a good tile matching the zone terrain, away from other players
     const preferredTerrains = ZONE_TERRAINS[zone];
     const occupiedRes = await query(
-      'SELECT tile_x, tile_y FROM settlements WHERE tile_x IS NOT NULL'
+      'SELECT tile_q, tile_r FROM settlements WHERE tile_q IS NOT NULL'
     );
     const allTilesRes = await query('SELECT x, y, terrain FROM tiles');
     const allTiles = allTilesRes.rows;
 
     // Score tiles by zone preference and distance from others
     const candidates = allTiles.filter(t => {
-      if (t.x < REVEAL_RADIUS + 1 || t.x > MAP_SIZE - REVEAL_RADIUS - 1) return false;
-      if (t.y < REVEAL_RADIUS + 1 || t.y > MAP_SIZE - REVEAL_RADIUS - 1) return false;
+      if (t.q < REVEAL_RADIUS + 1 || t.q > MAP_W - REVEAL_RADIUS - 1) return false;
+      if (t.r < REVEAL_RADIUS + 1 || t.r > MAP_H - REVEAL_RADIUS - 1) return false;
       if (!preferredTerrains.includes(t.terrain)) return false;
       for (const occ of occupiedRes.rows) {
-        const dx = t.x - occ.tile_x, dy = t.y - occ.tile_y;
-        if (Math.sqrt(dx*dx + dy*dy) < MIN_PLAYER_DISTANCE) return false;
+        if (hexDistanceWrapped(t.q, t.r, occ.tile_q, occ.tile_r) < MIN_PLAYER_DISTANCE) return false;
       }
       return true;
     });
@@ -301,8 +291,7 @@ router.post('/arrive', requireAuth, async (req, res) => {
         if (t.x < REVEAL_RADIUS + 1 || t.x > MAP_SIZE - REVEAL_RADIUS - 1) return false;
         if (t.y < REVEAL_RADIUS + 1 || t.y > MAP_SIZE - REVEAL_RADIUS - 1) return false;
         for (const occ of occupiedRes.rows) {
-          const dx = t.x - occ.tile_x, dy = t.y - occ.tile_y;
-          if (Math.sqrt(dx*dx + dy*dy) < MIN_PLAYER_DISTANCE) return false;
+          if (hexDistanceWrapped(t.q, t.r, occ.tile_q, occ.tile_r) < MIN_PLAYER_DISTANCE) return false;
         }
         return true;
       });
@@ -324,8 +313,8 @@ router.post('/arrive', requireAuth, async (req, res) => {
 
     // Place settlement
     await query(
-      'UPDATE settlements SET tile_x=$1, tile_y=$2 WHERE user_id=$3',
-      [tile.x, tile.y, req.user.userId]
+      'UPDATE settlements SET tile_q=$1, tile_r=$2, world_version=2 WHERE user_id=$3',
+      [tile.q, tile.r, req.user.userId]
     );
 
     // Apply terrain bonus
@@ -339,14 +328,11 @@ router.post('/arrive', requireAuth, async (req, res) => {
     }
 
     // Reveal fog of war
-    const revealRes = await query(
-      'SELECT x, y FROM tiles WHERE x BETWEEN $1 AND $2 AND y BETWEEN $3 AND $4',
-      [tile.x - REVEAL_RADIUS, tile.x + REVEAL_RADIUS, tile.y - REVEAL_RADIUS, tile.y + REVEAL_RADIUS]
-    );
-    for (const t of revealRes.rows) {
+    const arriveDisk = hexDisk(tile.q, tile.r, REVEAL_RADIUS);
+    for (const { q: tq, r: tr } of arriveDisk) {
       await query(
-        'INSERT INTO fog_of_war (user_id, tile_x, tile_y) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
-        [req.user.userId, t.x, t.y]
+        'INSERT INTO fog_of_war (user_id, tile_q, tile_r) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
+        [req.user.userId, tq, tr]
       );
     }
 
@@ -380,7 +366,7 @@ router.post('/arrive', requireAuth, async (req, res) => {
       console.log(`Generated ${citizens.length} citizens for settlement ${settlement.id}`);
     }
 
-    res.json({ ok: true, x: tile.x, y: tile.y, terrain: tile.terrain, species, zone });
+    res.json({ ok: true, q: tile.q, r: tile.r, terrain: tile.terrain, species, zone });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Arrival failed.' });

@@ -88,16 +88,17 @@ router.get('/settlement', requireAuth, async (req, res) => {
     const baseRates = calculateRates(buildingsResult.rows, citizensResult.rows, user.species);
     const rates = applySeasonModifiers(baseRates, season);
 
-    console.log(`SETTLEMENT returning tile_x=${settlement.tile_x} for user=${req.user.userId}`);
+    console.log(`SETTLEMENT returning tile_q=${settlement.tile_q} for user=${req.user.userId}`);
     res.json({
       ok: true,
       settlement: {
         id: settlement.id,
         name: settlement.name,
         tier: settlement.tier,
-        tile_x: settlement.tile_x,
-        tile_y: settlement.tile_y,
-        isNewSettlement: settlement.tile_x === null,
+        tile_q: settlement.tile_q,
+        tile_r: settlement.tile_r,
+        isNewSettlement: settlement.tile_q === null,
+        needsResettlement: settlement.world_version < 2 && settlement.tile_q === null,
         resources: {
           food: settlement.food, timber: settlement.timber,
           stone: settlement.stone, metal: settlement.metal, wealth: settlement.wealth,
@@ -317,7 +318,7 @@ module.exports = router;
 router.post('/reset-placement', requireAuth, async (req, res) => {
   try {
     await query(
-      'UPDATE settlements SET tile_x=NULL, tile_y=NULL, rerolls_used=0 WHERE user_id=$1',
+      'UPDATE settlements SET tile_q=NULL, tile_r=NULL, world_version=0, rerolls_used=0 WHERE user_id=$1',
       [req.user.userId]
     );
     res.json({ ok: true });

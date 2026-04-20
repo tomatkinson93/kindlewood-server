@@ -33,8 +33,8 @@ async function initDB() {
       user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
       name TEXT NOT NULL,
       tier TEXT DEFAULT 'camp',
-      tile_x INTEGER DEFAULT NULL,
-      tile_y INTEGER DEFAULT NULL,
+      tile_q INTEGER DEFAULT NULL,
+      tile_r INTEGER DEFAULT NULL,
       rerolls_used INTEGER DEFAULT 0,
       food INTEGER DEFAULT 500,
       timber INTEGER DEFAULT 300,
@@ -88,11 +88,11 @@ async function initDB() {
   await query(`
     CREATE TABLE IF NOT EXISTS tiles (
       id SERIAL PRIMARY KEY,
-      x INTEGER NOT NULL,
-      y INTEGER NOT NULL,
+      q INTEGER NOT NULL,
+      r INTEGER NOT NULL,
       terrain TEXT NOT NULL,
       settlement_id INTEGER DEFAULT NULL,
-      UNIQUE(x, y)
+      UNIQUE(q, r)
     )
   `);
 
@@ -100,14 +100,14 @@ async function initDB() {
     CREATE TABLE IF NOT EXISTS fog_of_war (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id),
-      tile_x INTEGER NOT NULL,
-      tile_y INTEGER NOT NULL,
-      UNIQUE(user_id, tile_x, tile_y)
+      tile_q INTEGER NOT NULL,
+      tile_r INTEGER NOT NULL,
+      UNIQUE(user_id, tile_q, tile_r)
     )
   `);
 
   // Seed map if empty
-  const tileCount = await query('SELECT COUNT(*) FROM tiles');
+  const tileCount = await query("SELECT COUNT(*) FROM tiles WHERE EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tiles' AND column_name='q')").catch(()=>({rows:[{count:'0'}]}));
   if (parseInt(tileCount.rows[0].count) === 0) {
     console.log('Generating world map...');
     const tiles = generateMap(Date.now());
@@ -116,12 +116,14 @@ async function initDB() {
       await client.query('BEGIN');
       for (const t of tiles) {
         await client.query(
-          'INSERT INTO tiles (x, y, terrain) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
-          [t.x, t.y, t.terrain]
+          'INSERT INTO tiles (q, r, terrain) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+          [t.q, t.r, t.terrain]
         );
       }
       await client.query('COMMIT');
-      console.log(`World map generated: ${tiles.length} tiles`);
+      console.log(`World map generated: ${tiles.length} hex tiles`);
+      // Mark all settlements as up to date
+      await client.query('UPDATE settlements SET world_version=2').catch(()=>{});
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -131,18 +133,18 @@ async function initDB() {
   }
 
   // Add missing columns and fix defaults
-  await query(`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS tile_x INTEGER DEFAULT NULL`).catch(() => {});
-  await query(`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS tile_y INTEGER DEFAULT NULL`).catch(() => {});
+  await query(`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS tile_q INTEGER DEFAULT NULL`).catch(() => {});
+  await query(`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS tile_r INTEGER DEFAULT NULL`).catch(() => {});
   await query(`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS rerolls_used INTEGER DEFAULT 0`).catch(() => {});
 
   // Force column defaults to NULL (fixes any lingering 4,3 default from old schema)
-  await query(`ALTER TABLE settlements ALTER COLUMN tile_x SET DEFAULT NULL`).catch(() => {});
-  await query(`ALTER TABLE settlements ALTER COLUMN tile_y SET DEFAULT NULL`).catch(() => {});
+  await query(`ALTER TABLE settlements ALTER COLUMN tile_q SET DEFAULT NULL`).catch(() => {});
+  await query(`ALTER TABLE settlements ALTER COLUMN tile_r SET DEFAULT NULL`).catch(() => {});
 
   // Reset any settlements with bogus 4,3 coordinates that were never real placements
   await query(`
     UPDATE settlements SET tile_x = NULL, tile_y = NULL, rerolls_used = 0
-    WHERE tile_x = 4 AND tile_y = 3
+    WHERE tile_q = 4 AND tile_r = 3
   `).catch(e => console.log('Reset cleanup:', e.message));
 
 
@@ -154,8 +156,8 @@ async function initDB() {
       id SERIAL PRIMARY KEY,
       settlement_id INTEGER NOT NULL REFERENCES settlements(id),
       user_id INTEGER NOT NULL REFERENCES users(id),
-      target_x INTEGER NOT NULL,
-      target_y INTEGER NOT NULL,
+      target_q INTEGER NOT NULL,
+      target_r INTEGER NOT NULL,
       started_at TIMESTAMPTZ DEFAULT NOW(),
       completes_at TIMESTAMPTZ NOT NULL,
       status TEXT DEFAULT 'travelling',
@@ -165,6 +167,34 @@ async function initDB() {
   `);
 
   await query(`ALTER TABLE expeditions ADD COLUMN IF NOT EXISTS citizen_id INTEGER DEFAULT NULL`).catch(()=>{});
+
+  // ── World reset (hex migration) ───────────────────────────────────────────
+  // Add world_version column — if it doesn't match, wipe map data and prompt resettlement
+  await query(`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS world_version INTEGER DEFAULT 0`).catch(()=>{});
+  const CURRENT_WORLD_VERSION = 2; // increment to force resettlement
+
+  // Check if tiles table needs rebuilding (column rename from x/y to q/r)
+  const tileColCheck = await query(`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name='tiles' AND column_name='x'
+  `).catch(()=>({rows:[]}));
+
+  if (tileColCheck.rows.length > 0) {
+    // Old x/y schema exists — wipe everything and rebuild
+    console.log('Old tile schema detected — wiping for hex migration...');
+    await query('DROP TABLE IF EXISTS fog_of_war CASCADE').catch(()=>{});
+    await query('DROP TABLE IF EXISTS expeditions CASCADE').catch(()=>{});
+    await query('DROP TABLE IF EXISTS tiles CASCADE').catch(()=>{});
+    // Reset all settlements to unplaced and old world version
+    await query('UPDATE settlements SET tile_q=NULL, tile_r=NULL, world_version=0').catch(()=>{});
+    await query('UPDATE users SET species=NULL').catch(()=>{});
+    console.log('Hex migration wipe complete — map will be regenerated.');
+  }
+
+  // Reset any settlements on old world version
+  await query(
+    `UPDATE settlements SET tile_q=NULL, tile_r=NULL WHERE world_version < ${CURRENT_WORLD_VERSION}`
+  ).catch(()=>{});
 
   // Housing system
   await query(`
