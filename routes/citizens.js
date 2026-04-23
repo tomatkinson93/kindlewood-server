@@ -77,7 +77,7 @@ router.get('/', requireAuth, async (req, res) => {
           const myHappy   = c.life?.happiness ?? 70;
           const ptHappy   = partner?.life?.happiness ?? 70;
           const happyOk   = myHappy >= 60 && ptHappy >= 60;
-          const houseResidents = c.house_id ? houseResidents[c.house_id]?.length || 1 : 0;
+          const residentCount = c.house_id ? (houseResidents[c.house_id]?.length || 1) : 0;
 
           // Calculate chance
           let chance = 0.04;
