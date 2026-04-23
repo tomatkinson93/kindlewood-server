@@ -62,6 +62,52 @@ router.get('/', requireAuth, async (req, res) => {
         houseChildCount: houseChildCount[c.house_id] || 0,
       };
       const { factors, base, delta, computed } = calculateHappinessFactors(c, context);
+      // Breeding status — only for partnered adults
+      let breedingStatus = null;
+      if (c.partner_id && c.life_stage === 'adult') {
+        const partner = citizensRes.rows.find(p => p.id === c.partner_id);
+        const isMale   = c.gender === 'male';
+        const isFemale = c.gender === 'female';
+        const partnerIsMale   = partner?.gender === 'male';
+        const partnerIsFemale = partner?.gender === 'female';
+        const canBreed = (isMale && partnerIsFemale) || (isFemale && partnerIsMale);
+
+        if (canBreed) {
+          const sameHouse = c.house_id && partner?.house_id && c.house_id === partner.house_id;
+          const myHappy   = c.life?.happiness ?? 70;
+          const ptHappy   = partner?.life?.happiness ?? 70;
+          const happyOk   = myHappy >= 60 && ptHappy >= 60;
+          const houseResidents = c.house_id ? houseResidents[c.house_id]?.length || 1 : 0;
+
+          // Calculate chance
+          let chance = 0.04;
+          if (sameHouse && happyOk) {
+            chance += season.birthChanceBonus || 0;
+            const avgHappy = (myHappy + ptHappy) / 2;
+            chance += Math.floor((avgHappy - 60) / 10) * 0.04;
+            chance = Math.min(0.35, Math.max(0, chance));
+          } else {
+            chance = 0;
+          }
+
+          breedingStatus = {
+            canBreed,
+            sameHouse,
+            happyOk,
+            myHappy,
+            partnerHappy: ptHappy,
+            partnerName: partner?.name || 'Partner',
+            chance: Math.round(chance * 100),
+            season: season.id,
+            seasonBonus: Math.round((season.birthChanceBonus || 0) * 100),
+            blockers: [
+              !sameHouse   ? 'Not living together'          : null,
+              !happyOk     ? 'Happiness too low (need 60+)' : null,
+            ].filter(Boolean),
+          };
+        }
+      }
+
       return {
         id: c.id,
         name: c.name,
@@ -81,6 +127,7 @@ router.get('/', requireAuth, async (req, res) => {
         expedition: expByCitizen[c.id] || null,
         happiness_factors: factors,
         happiness_computed: computed,
+        breeding_status: breedingStatus,
       };
     });
 
