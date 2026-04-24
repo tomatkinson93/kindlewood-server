@@ -247,6 +247,8 @@ async function initDB() {
   `);
   await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS success_roll FLOAT DEFAULT NULL`).catch(()=>{});
   await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS success_chance FLOAT DEFAULT NULL`).catch(()=>{});
+  await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS party_ids JSONB DEFAULT '[]'`).catch(()=>{});
+  await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS quest_type TEXT DEFAULT 'solo'`).catch(()=>{});
 
   // ── Relationship / Bonding / Breeding system ──────────────────────────────
 

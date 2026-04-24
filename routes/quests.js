@@ -149,17 +149,140 @@ const QUEST_POOL = [
   },
 ];
 
-// Pick 3 fresh quests for the notice board (deterministic per day per user)
+
+// ══════════════════════════════════════════════
+//  PARTY QUEST DEFINITIONS
+//  requires: array of { role_label, skill_key, description }
+//  Each member contributes their skill to the overall success roll
+// ══════════════════════════════════════════════
+
+const PARTY_QUEST_POOL = [
+  {
+    id: 'pq_fallen_watchtree',
+    title: 'The Fallen Watchtree',
+    description: 'A massive ancient tree has collapsed near the settlement, blocking paths and attracting strange wildlife.',
+    icon: '🌳',
+    category: 'expedition',
+    flavour: '"The old giants of the forest do not fall quietly…"',
+    duration_s: 300,
+    base_success: 0.45,
+    requires: [
+      { role_label: 'Woodworker', skill_key: 'woodcutting', desc: 'Clear the debris' },
+      { role_label: 'Scout',      skill_key: 'scouting',    desc: 'Identify safe routes' },
+      { role_label: 'Fighter',    skill_key: 'combat',      desc: 'Defend from creatures' },
+    ],
+    rewards: { timber: 40, wealth: 15 },
+    reward_label: '+40 timber, +15 gold',
+    flavour_success: 'The party returns laden with timber. The path is clear, and something ancient hums in the heartwood.',
+    flavour_fail: 'The creatures drove them back. The path remains blocked — for now.',
+    high_bonus: { item: 'Ancient Heartwood', desc: 'A rare crafting material from the fallen giant.' },
+  },
+  {
+    id: 'pq_whispers_water',
+    title: 'Whispers Beneath the Water',
+    description: 'Fishers report something strange in the river — shadows moving against the current.',
+    icon: '🌊',
+    category: 'expedition',
+    flavour: '"The river remembers things long forgotten…"',
+    duration_s: 280,
+    base_success: 0.5,
+    requires: [
+      { role_label: 'Fisher',    skill_key: 'fishing',    desc: 'Interact with the water' },
+      { role_label: 'Scholar',   skill_key: 'crafting',   desc: 'Identify the anomaly' },
+      { role_label: 'Scout',     skill_key: 'scouting',   desc: 'Track the source upstream' },
+    ],
+    rewards: { food: 35, wealth: 20 },
+    reward_label: '+35 food, +20 gold',
+    flavour_success: 'They return with strange glimmering fish and a secret they dare not speak aloud.',
+    flavour_fail: 'The shadows retreated. Equipment came back waterlogged and ruined.',
+    high_bonus: { item: 'Luminous Scale', desc: 'Shimmers even in darkness. Purposes unknown.' },
+  },
+  {
+    id: 'pq_ruins_thicket',
+    title: 'Ruins in the Thicket',
+    description: 'Overgrown ruins have been discovered — possibly from an old civilisation buried beneath the forest floor.',
+    icon: '🏚',
+    category: 'expedition',
+    flavour: '"Stone remembers what the forest has tried to hide."',
+    duration_s: 360,
+    base_success: 0.42,
+    requires: [
+      { role_label: 'Scout',   skill_key: 'scouting', desc: 'Locate the entrance' },
+      { role_label: 'Crafter', skill_key: 'crafting', desc: 'Dismantle structures safely' },
+      { role_label: 'Fighter', skill_key: 'combat',   desc: 'Deal with lurking threats' },
+    ],
+    rewards: { wealth: 35, stone: 20 },
+    reward_label: '+35 gold, +20 stone',
+    flavour_success: 'They return bearing old coins and stranger relics. The ruins gave up their secrets.',
+    flavour_fail: 'A trap triggered in the dark. They escaped, but not unscathed.',
+    high_bonus: { item: 'Ancient Blueprint', desc: 'Plans for a building long forgotten.' },
+  },
+  {
+    id: 'pq_spreading_blight',
+    title: 'The Spreading Blight',
+    description: 'A creeping fungal rot is spreading through nearby vegetation, threatening the food supply.',
+    icon: '🍄',
+    category: 'expedition',
+    flavour: '"Not all things that grow are meant to flourish…"',
+    duration_s: 320,
+    base_success: 0.48,
+    requires: [
+      { role_label: 'Forager',  skill_key: 'farming',   desc: 'Identify affected plants' },
+      { role_label: 'Scholar',  skill_key: 'crafting',  desc: 'Determine the cure' },
+      { role_label: 'Worker',   skill_key: 'endurance', desc: 'Clear infected areas' },
+    ],
+    rewards: { food: 25, wealth: 12 },
+    reward_label: '+25 food, +12 gold',
+    flavour_success: 'The blight is contained. The party returns with rare herbs and weary hands.',
+    flavour_fail: 'The rot spread further. Gathering will be harder for a time.',
+    high_bonus: { item: 'Blightbane Herb', desc: 'A rare herb that drives away rot and sickness.' },
+  },
+  {
+    id: 'pq_hunters_request',
+    title: "A Hunter's Request",
+    description: 'A wandering hunter seeks help tracking a powerful beast that has been terrorising the woodland roads.',
+    icon: '🏹',
+    category: 'expedition',
+    flavour: '"Some creatures are meant to be feared… others, respected."',
+    duration_s: 340,
+    base_success: 0.44,
+    requires: [
+      { role_label: 'Scout',   skill_key: 'scouting', desc: 'Track the beast' },
+      { role_label: 'Fighter', skill_key: 'combat',   desc: 'Engage it' },
+      { role_label: 'Crafter', skill_key: 'crafting', desc: 'Prepare bait and traps' },
+    ],
+    rewards: { food: 20, wealth: 25 },
+    reward_label: '+20 food, +25 gold',
+    flavour_success: 'The beast is felled. The hunter pays in full and buys a round at the tavern.',
+    flavour_fail: 'The beast was clever. It escaped, and so did they — barely.',
+    high_bonus: { item: "Hunter's Cloak", desc: 'Woven from the beast hide. Grants an air of quiet menace.' },
+  },
+];
+
+// Pick fresh quests for the notice board (deterministic per day per user)
 function getDailyQuests(userId) {
   const dayKey = Math.floor(Date.now() / (1000 * 60 * 60 * 24));
-  // Simple seeded shuffle using userId + day
   const seed = (userId * 31337 + dayKey * 7919) % 999983;
-  const shuffled = [...QUEST_POOL];
-  for (let i = shuffled.length - 1; i > 0; i--) {
+
+  // 2 solo quests
+  const soloShuffled = [...QUEST_POOL];
+  for (let i = soloShuffled.length - 1; i > 0; i--) {
     const j = (seed * (i + 1) * 1103515245) % (i + 1);
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    [soloShuffled[i], soloShuffled[j]] = [soloShuffled[j], soloShuffled[i]];
   }
-  return shuffled.slice(0, 3);
+
+  // 2 party quests
+  const partySeed = (seed + 42) % 999983;
+  const partyShuffled = [...PARTY_QUEST_POOL];
+  for (let i = partyShuffled.length - 1; i > 0; i--) {
+    const j = (partySeed * (i + 1) * 1103515245) % (i + 1);
+    [partyShuffled[i], partyShuffled[j]] = [partyShuffled[j], partyShuffled[i]];
+  }
+
+  return {
+    solo:  soloShuffled.slice(0, 2).map(q => ({ ...q, quest_type: 'solo' })),
+    party: partyShuffled.slice(0, 2).map(q => ({ ...q, quest_type: 'party' })),
+  };
 }
 
 // ── GET /api/quests — notice board + active quests ──
@@ -187,15 +310,23 @@ router.get('/', requireAuth, async (req, res) => {
 
     const dailyQuests = getDailyQuests(req.user.userId);
 
-    // Embed quest definition into each active row so the frontend can render without a separate lookup
-    const activeWithDefs = activeRes.rows.map(row => ({
-      ...row,
-      quest_def: QUEST_POOL.find(q => q.id === row.quest_id) || null,
+    // For party quests, load party member names
+    const activeWithDefs = await Promise.all(activeRes.rows.map(async row => {
+      const questDef = QUEST_POOL.find(q => q.id === row.quest_id)
+                    || PARTY_QUEST_POOL.find(q => q.id === row.quest_id)
+                    || null;
+      let partyNames = [];
+      if (row.party_ids && row.party_ids.length > 0) {
+        const pRes = await query('SELECT id, name FROM citizens WHERE id = ANY($1)', [row.party_ids]);
+        partyNames = pRes.rows;
+      }
+      return { ...row, quest_def: questDef, party_members: partyNames };
     }));
 
     res.json({
       ok: true,
-      available: dailyQuests,
+      available: dailyQuests.solo,
+      available_party: dailyQuests.party,
       active: activeWithDefs,
     });
   } catch (err) {
@@ -274,6 +405,74 @@ router.post('/accept', requireAuth, async (req, res) => {
   }
 });
 
+// ── POST /api/quests/accept-party — assign party and start party quest ──
+router.post('/accept-party', requireAuth, async (req, res) => {
+  try {
+    const { quest_id, citizen_ids } = req.body;
+    if (!quest_id || !Array.isArray(citizen_ids) || citizen_ids.length === 0)
+      return res.status(400).json({ error: 'quest_id and citizen_ids array required.' });
+
+    const quest = PARTY_QUEST_POOL.find(q => q.id === quest_id);
+    if (!quest) return res.status(400).json({ error: 'Unknown party quest.' });
+
+    if (citizen_ids.length !== quest.requires.length)
+      return res.status(400).json({ error: `This quest requires exactly ${quest.requires.length} citizens.` });
+
+    const settlementRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const settlement = settlementRes.rows[0];
+    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+
+    // Validate all citizens belong to this settlement and are available
+    const citizenRes = await query(
+      'SELECT * FROM citizens WHERE id = ANY($1) AND settlement_id=$2',
+      [citizen_ids, settlement.id]
+    );
+    if (citizenRes.rows.length !== citizen_ids.length)
+      return res.status(400).json({ error: 'One or more citizens not found.' });
+
+    // Check none are busy
+    const busyRes = await query(
+      "SELECT citizen_id FROM settlement_quests WHERE citizen_id = ANY($1) AND status='active'",
+      [citizen_ids]
+    );
+    if (busyRes.rows.length) {
+      const busyId = busyRes.rows[0].citizen_id;
+      const busy = citizenRes.rows.find(c => c.id === busyId);
+      return res.status(400).json({ error: `${busy?.name || 'A citizen'} is already on a quest.` });
+    }
+
+    // Check none are scouting
+    const scoutRes = await query(
+      "SELECT citizen_id FROM expeditions WHERE citizen_id = ANY($1) AND status='travelling'",
+      [citizen_ids]
+    );
+    if (scoutRes.rows.length)
+      return res.status(400).json({ error: 'A citizen in this party is out scouting.' });
+
+    // Check quest not already active
+    const dupeRes = await query(
+      "SELECT id FROM settlement_quests WHERE settlement_id=$1 AND quest_id=$2 AND status='active'",
+      [settlement.id, quest_id]
+    );
+    if (dupeRes.rows.length)
+      return res.status(400).json({ error: 'This quest is already underway.' });
+
+    const completesAt = new Date(Date.now() + quest.duration_s * 1000);
+
+    const result = await query(
+      `INSERT INTO settlement_quests
+         (settlement_id, user_id, quest_id, citizen_id, party_ids, quest_type, completes_at, status)
+       VALUES ($1,$2,$3,$4,$5,'party',$6,'active') RETURNING *`,
+      [settlement.id, req.user.userId, quest_id, citizen_ids[0], JSON.stringify(citizen_ids), completesAt]
+    );
+
+    res.json({ ok: true, quest: result.rows[0], completes_at: completesAt });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to accept party quest.' });
+  }
+});
+
 // ── POST /api/quests/collect/:id — collect resolved quest reward ──
 router.post('/collect/:id', requireAuth, async (req, res) => {
   try {
@@ -295,11 +494,17 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
 
     let goldAwarded = 0;
     if (run.status === 'completed') {
-      goldAwarded = quest?.reward_gold ?? 10;
-      await query(
-        'UPDATE settlements SET wealth = wealth + $1 WHERE id=$2',
-        [goldAwarded, run.settlement_id]
-      );
+      if (quest?.quest_type === 'party' || PARTY_QUEST_POOL.find(q => q.id === run.quest_id)) {
+        // Party quest rewards
+        const pq = PARTY_QUEST_POOL.find(q => q.id === run.quest_id);
+        const rewards = pq?.rewards || {};
+        const sets = Object.entries(rewards).map(([k,v]) => `${k} = ${k} + ${v}`).join(', ');
+        if (sets) await query(`UPDATE settlements SET ${sets} WHERE id=$1`, [run.settlement_id]);
+        goldAwarded = rewards.wealth || 0;
+      } else {
+        goldAwarded = quest?.reward_gold ?? 10;
+        await query('UPDATE settlements SET wealth = wealth + $1 WHERE id=$2', [goldAwarded, run.settlement_id]);
+      }
     }
 
     await query(
@@ -325,18 +530,74 @@ async function resolveCompletedQuests(settlementId) {
   );
 
   for (const run of dueRes.rows) {
-    const quest = QUEST_POOL.find(q => q.id === run.quest_id);
+    const isParty = run.quest_type === 'party';
+    const quest = isParty
+      ? PARTY_QUEST_POOL.find(q => q.id === run.quest_id)
+      : QUEST_POOL.find(q => q.id === run.quest_id);
+
     if (!quest) {
       await query("UPDATE settlement_quests SET status='failed' WHERE id=$1", [run.id]);
       continue;
     }
 
-    // Roll success: base_success + skill bonus (each skill point above 1 adds 4%)
-    const skills = run.citizen_skills || {};
-    const skillVal = skills[quest.skill_key] ?? 1;
-    const successChance = Math.min(0.95, quest.base_success + (skillVal - 1) * 0.04);
-    const roll = Math.random();
-    const outcome = roll < successChance ? 'completed' : 'failed';
+    let successChance, roll, outcome;
+
+    if (isParty) {
+      // Party quest: average skill across all party members' relevant skills
+      const partyIds = run.party_ids || [];
+      let totalSkill = 0, count = 0;
+      if (partyIds.length > 0) {
+        const pRes = await query('SELECT skills FROM citizens WHERE id = ANY($1)', [partyIds]);
+        quest.requires.forEach((req, i) => {
+          const member = pRes.rows[i];
+          if (member) {
+            totalSkill += (member.skills?.[req.skill_key] ?? 1);
+            count++;
+          }
+        });
+      }
+      const avgSkill = count > 0 ? totalSkill / count : 1;
+      successChance = Math.min(0.95, quest.base_success + (avgSkill - 1) * 0.04);
+      roll = Math.random();
+      outcome = roll < successChance ? 'completed' : 'failed';
+
+      // Award relationship points between all party members
+      const relDelta = outcome === 'completed' ? 8 : -3;
+      const partyIdArr = run.party_ids || [];
+      for (let i = 0; i < partyIdArr.length; i++) {
+        for (let j = i + 1; j < partyIdArr.length; j++) {
+          const aId = Math.min(partyIdArr[i], partyIdArr[j]);
+          const bId = Math.max(partyIdArr[i], partyIdArr[j]);
+          await query(
+            `INSERT INTO citizen_relationships (settlement_id, citizen_a_id, citizen_b_id, score, state)
+             VALUES ($1,$2,$3,GREATEST(0,LEAST(100,50+$4)),'acquaintances')
+             ON CONFLICT (citizen_a_id, citizen_b_id)
+             DO UPDATE SET score = GREATEST(0, LEAST(100, citizen_relationships.score + $4)),
+                           last_updated = NOW()`,
+            [settlementId, aId, bId, relDelta]
+          );
+        }
+      }
+
+      // Chronicle event
+      const partyNamesRes = await query('SELECT name FROM citizens WHERE id = ANY($1)', [partyIdArr]);
+      const names = partyNamesRes.rows.map(r => r.name).join(', ');
+      const evtMsg = outcome === 'completed'
+        ? `The party — ${names} — returned triumphant from "${quest.title}". 🎉`
+        : `The party — ${names} — failed their quest: "${quest.title}". 😔`;
+      await query(
+        'INSERT INTO settlement_events (settlement_id, type, message, citizen_ids) VALUES ($1,$2,$3,$4)',
+        [settlementId, outcome === 'completed' ? 'quest_success' : 'quest_fail', evtMsg, JSON.stringify(partyIdArr)]
+      );
+
+    } else {
+      // Solo quest
+      const skills = run.citizen_skills || {};
+      const skillVal = skills[quest.skill_key] ?? 1;
+      successChance = Math.min(0.95, quest.base_success + (skillVal - 1) * 0.04);
+      roll = Math.random();
+      outcome = roll < successChance ? 'completed' : 'failed';
+    }
 
     await query(
       "UPDATE settlement_quests SET status=$1, resolved_at=NOW(), success_roll=$2, success_chance=$3 WHERE id=$4",
@@ -347,3 +608,4 @@ async function resolveCompletedQuests(settlementId) {
 
 module.exports = router;
 module.exports.QUEST_POOL = QUEST_POOL;
+module.exports.PARTY_QUEST_POOL = PARTY_QUEST_POOL;
