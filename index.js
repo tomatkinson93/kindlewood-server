@@ -42,6 +42,8 @@ const expeditionRoutes = require('./routes/expeditions');
 app.use('/api/expeditions', expeditionRoutes);
 const questRoutes = require('./routes/quests');
 app.use('/api/quests', questRoutes);
+const questAdminRoutes = require('./routes/quest_admin');
+app.use('/api/quest-admin', questAdminRoutes);
 const housingRoutes = require('./routes/housing');
 app.use('/api/housing', housingRoutes);
 const eventsRoutes = require('./routes/events');
