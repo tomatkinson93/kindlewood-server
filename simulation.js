@@ -408,8 +408,9 @@ async function _createChild(settlementId, pair) {
   const houseRes = await query('SELECT name FROM houses WHERE id = $1', [pair.house_a]);
   const houseName = houseRes.rows[0]?.name || 'a Willow Hut';
 
+  const babyGender = isFemale ? 'daughter' : 'son';
   await _addEvent(settlementId, 'child_born',
-    `A child has been born to ${pair.name_a} and ${pair.name_b} in ${houseName}. 🍼 Welcome, ${childName}!`,
+    `New beginnings — ${pair.name_a} and ${pair.name_b} welcome a ${babyGender} into the world. 🍼 May ${childName} grow strong in ${houseName}.`,
     [pair.id_a, pair.id_b, childId]
   );
 }
@@ -430,4 +431,4 @@ function _name(citizen) {
   return citizen?.name || 'Unknown';
 }
 
-module.exports = { runSimulation, awardQuestRelationshipBonus };
+module.exports = { runSimulation, awardQuestRelationshipBonus, _createChild };

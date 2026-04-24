@@ -312,6 +312,139 @@ router.post('/cheat/relationship', requireAuth, async (req, res) => {
   }
 });
 
+
+// ── Cheat: set or remove partnership between two specific citizens ────────────
+router.post('/cheat/partnership', requireAuth, async (req, res) => {
+  try {
+    const { citizen_a_id, citizen_b_id, action } = req.body; // action: 'set' | 'remove'
+    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const settlement = settRes.rows[0];
+    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+
+    const [a, b] = await Promise.all([
+      query('SELECT id,name,partner_id FROM citizens WHERE id=$1 AND settlement_id=$2', [citizen_a_id, settlement.id]),
+      query('SELECT id,name,partner_id FROM citizens WHERE id=$1 AND settlement_id=$2', [citizen_b_id, settlement.id]),
+    ]);
+    const ca = a.rows[0], cb = b.rows[0];
+    if (!ca || !cb) return res.status(404).json({ error: 'Citizen not found.' });
+
+    if (action === 'remove') {
+      // Clear both sides
+      await query('UPDATE citizens SET partner_id=NULL WHERE id=$1 OR id=$2', [ca.id, cb.id]);
+      // If either had a different partner, clear that too
+      if (ca.partner_id && ca.partner_id !== cb.id)
+        await query('UPDATE citizens SET partner_id=NULL WHERE id=$1', [ca.partner_id]);
+      if (cb.partner_id && cb.partner_id !== ca.id)
+        await query('UPDATE citizens SET partner_id=NULL WHERE id=$1', [cb.partner_id]);
+      return res.json({ ok: true, message: `Partnership between ${ca.name} and ${cb.name} removed.` });
+    }
+
+    // Set — clear existing partners first
+    if (ca.partner_id) await query('UPDATE citizens SET partner_id=NULL WHERE id=$1', [ca.partner_id]);
+    if (cb.partner_id) await query('UPDATE citizens SET partner_id=NULL WHERE id=$1', [cb.partner_id]);
+    await query('UPDATE citizens SET partner_id=$1 WHERE id=$2', [cb.id, ca.id]);
+    await query('UPDATE citizens SET partner_id=$1 WHERE id=$2', [ca.id, cb.id]);
+
+    // Upsert relationship at partners level
+    const aId = Math.min(ca.id, cb.id), bId = Math.max(ca.id, cb.id);
+    await query(
+      `INSERT INTO citizen_relationships (settlement_id, citizen_a_id, citizen_b_id, score, state)
+       VALUES ($1,$2,$3,95,'partners')
+       ON CONFLICT (citizen_a_id, citizen_b_id) DO UPDATE SET score=95, state='partners', last_updated=NOW()`,
+      [settlement.id, aId, bId]
+    );
+    await query('INSERT INTO settlement_events (settlement_id, type, message, citizen_ids) VALUES ($1,$2,$3,$4)',
+      [settlement.id, 'partnership', `${ca.name} and ${cb.name} have become partners. 💕`, JSON.stringify([ca.id, cb.id])]);
+
+    res.json({ ok: true, message: `${ca.name} and ${cb.name} are now partners.` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to set partnership.' });
+  }
+});
+
+// ── Cheat: trigger a real birth between two specific citizens ─────────────────
+router.post('/cheat/trigger-birth', requireAuth, async (req, res) => {
+  try {
+    const { citizen_a_id, citizen_b_id } = req.body;
+    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const settlement = settRes.rows[0];
+    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+
+    // Load full citizen data needed for _createChild
+    const pairRes = await query(`
+      SELECT
+        ca.id as id_a, ca.name as name_a, ca.gender as gender_a,
+        ca.stats as stats_a, ca.skills as skills_a, ca.life as life_a,
+        ca.visible_traits as traits_a, ca.hidden_traits as hidden_a,
+        ca.generation as gen_a, ca.house_id as house_a,
+        cb.id as id_b, cb.name as name_b, cb.gender as gender_b,
+        cb.stats as stats_b, cb.skills as skills_b, cb.life as life_b,
+        cb.visible_traits as traits_b, cb.hidden_traits as hidden_b,
+        cb.generation as gen_b,
+        COALESCE(h.capacity, 2) as house_cap
+      FROM citizens ca
+      JOIN citizens cb ON cb.id = $2
+      LEFT JOIN houses h ON h.id = ca.house_id
+      WHERE ca.id = $1 AND ca.settlement_id = $3`,
+      [citizen_a_id, citizen_b_id, settlement.id]
+    );
+    if (!pairRes.rows[0]) return res.status(404).json({ error: 'Citizens not found.' });
+    const pair = pairRes.rows[0];
+
+    const { _createChild } = require('../simulation');
+    if (!_createChild) return res.status(500).json({ error: 'Birth function not exported.' });
+
+    await _createChild(settlement.id, pair);
+    res.json({ ok: true, message: `A child was born to ${pair.name_a} and ${pair.name_b}!` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to trigger birth: ' + err.message });
+  }
+});
+
+// ── Cheat: edit any citizen field ────────────────────────────────────────────
+router.patch('/cheat/citizen/:id', requireAuth, async (req, res) => {
+  try {
+    const { name, gender, role, life_stage, stats, skills, life, generation } = req.body;
+    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const settlement = settRes.rows[0];
+    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+
+    const cRes = await query('SELECT * FROM citizens WHERE id=$1 AND settlement_id=$2', [req.params.id, settlement.id]);
+    const c = cRes.rows[0];
+    if (!c) return res.status(404).json({ error: 'Citizen not found.' });
+
+    const updates = [], vals = [];
+    let i = 1;
+    if (name       !== undefined) { updates.push(`name=$${i++}`);       vals.push(name); }
+    if (gender     !== undefined) { updates.push(`gender=$${i++}`);     vals.push(gender); }
+    if (role       !== undefined) { updates.push(`role=$${i++}`);       vals.push(role); }
+    if (life_stage !== undefined) { updates.push(`life_stage=$${i++}`); vals.push(life_stage); }
+    if (generation !== undefined) { updates.push(`generation=$${i++}`); vals.push(generation); }
+    if (stats !== undefined) {
+      const merged = { ...(c.stats || {}), ...stats };
+      updates.push(`stats=$${i++}`); vals.push(JSON.stringify(merged));
+    }
+    if (skills !== undefined) {
+      const merged = { ...(c.skills || {}), ...skills };
+      updates.push(`skills=$${i++}`); vals.push(JSON.stringify(merged));
+    }
+    if (life !== undefined) {
+      const merged = { ...(c.life || {}), ...life };
+      updates.push(`life=$${i++}`); vals.push(JSON.stringify(merged));
+    }
+    if (!updates.length) return res.status(400).json({ error: 'Nothing to update.' });
+
+    vals.push(req.params.id, settlement.id);
+    await query(`UPDATE citizens SET ${updates.join(',')} WHERE id=$${i++} AND settlement_id=$${i++}`, vals);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update citizen.' });
+  }
+});
+
 module.exports = router;
 
 // Dev-only: reset placement for testing
