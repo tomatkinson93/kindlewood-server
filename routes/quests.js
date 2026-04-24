@@ -430,7 +430,7 @@ router.post('/accept-party', requireAuth, async (req, res) => {
     if (citizenRes.rows.length !== citizen_ids.length)
       return res.status(400).json({ error: 'One or more citizens not found.' });
 
-    // Check none are busy
+    // Check none are busy — in solo quests (citizen_id) OR party quests (party_ids JSONB)
     const busyRes = await query(
       "SELECT citizen_id FROM settlement_quests WHERE citizen_id = ANY($1) AND status='active'",
       [citizen_ids]
@@ -439,6 +439,18 @@ router.post('/accept-party', requireAuth, async (req, res) => {
       const busyId = busyRes.rows[0].citizen_id;
       const busy = citizenRes.rows.find(c => c.id === busyId);
       return res.status(400).json({ error: `${busy?.name || 'A citizen'} is already on a quest.` });
+    }
+    // Also check party_ids JSONB overlap
+    const partyBusyRes = await query(
+      "SELECT party_ids FROM settlement_quests WHERE settlement_id=$1 AND status='active' AND quest_type='party'",
+      [settlement.id]
+    );
+    for (const row of partyBusyRes.rows) {
+      const overlap = (row.party_ids || []).find(id => citizen_ids.includes(id));
+      if (overlap) {
+        const busy = citizenRes.rows.find(c => c.id === overlap);
+        return res.status(400).json({ error: `${busy?.name || 'A citizen'} is already on a party expedition.` });
+      }
     }
 
     // Check none are scouting

@@ -29,6 +29,26 @@ router.get('/', requireAuth, async (req, res) => {
     const expByCitizen = {};
     expRes.rows.forEach(e => { expByCitizen[e.citizen_id] = e; });
 
+    // Get active party quests — citizens in party_ids are also busy
+    const partyQuestRes = await query(
+      "SELECT quest_id, party_ids, completes_at FROM settlement_quests WHERE settlement_id=$1 AND status='active' AND quest_type='party'",
+      [settlement.id]
+    );
+    const questByCitizen = {};
+    partyQuestRes.rows.forEach(q => {
+      (q.party_ids || []).forEach(cid => {
+        questByCitizen[cid] = { quest_id: q.quest_id, completes_at: q.completes_at };
+      });
+    });
+    // Also solo quests
+    const soloQuestRes = await query(
+      "SELECT citizen_id, quest_id, completes_at FROM settlement_quests WHERE settlement_id=$1 AND status='active' AND (quest_type IS NULL OR quest_type='solo')",
+      [settlement.id]
+    );
+    soloQuestRes.rows.forEach(q => {
+      if (q.citizen_id) questByCitizen[q.citizen_id] = { quest_id: q.quest_id, completes_at: q.completes_at };
+    });
+
     // Build lookup maps for happiness context
     const season = getCurrentSeason();
     const settRes = await query('SELECT food FROM settlements WHERE id=$1', [settlement.id]);
@@ -57,7 +77,7 @@ router.get('/', requireAuth, async (req, res) => {
       const context = {
         season,
         lowFood,
-        onExpedition: !!expByCitizen[c.id],
+        onExpedition: !!expByCitizen[c.id] || !!questByCitizen[c.id],
         partnerHouseId: c.partner_id ? partnerHouseMap[c.partner_id] : null,
         houseChildCount: houseChildCount[c.house_id] || 0,
       };
@@ -125,6 +145,7 @@ router.get('/', requireAuth, async (req, res) => {
         life_stage: c.life_stage || 'adult',
         parent_ids: c.parent_ids || [],
         expedition: expByCitizen[c.id] || null,
+        active_quest: questByCitizen[c.id] || null,
         happiness_factors: factors,
         happiness_computed: computed,
         breeding_status: breedingStatus,
