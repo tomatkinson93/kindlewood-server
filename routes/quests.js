@@ -259,29 +259,25 @@ const PARTY_QUEST_POOL = [
   },
 ];
 
-// Pick fresh quests for the notice board (deterministic per day per user)
-function getDailyQuests(userId) {
-  const dayKey = Math.floor(Date.now() / (1000 * 60 * 60 * 24));
-  const seed = (userId * 31337 + dayKey * 7919) % 999983;
-
-  // 2 solo quests
-  const soloShuffled = [...QUEST_POOL];
-  for (let i = soloShuffled.length - 1; i > 0; i--) {
-    const j = (seed * (i + 1) * 1103515245) % (i + 1);
-    [soloShuffled[i], soloShuffled[j]] = [soloShuffled[j], soloShuffled[i]];
+// Load all active (non-archived) quests from DB
+// Falls back to hardcoded pools if DB has none
+async function getDailyQuests(userId) {
+  try {
+    const r = await query("SELECT * FROM quest_definitions WHERE archived=FALSE ORDER BY sort_order ASC, created_at ASC");
+    if (r.rows.length > 0) {
+      // Return ALL non-archived quests — rotation/filtering added later
+      const soloAll  = r.rows.filter(q => q.quest_type === 'solo');
+      const partyAll = r.rows.filter(q => q.quest_type === 'party');
+      return { solo: soloAll, party: partyAll };
+    }
+  } catch(e) {
+    console.error('getDailyQuests DB error, falling back to hardcoded:', e.message);
   }
 
-  // 2 party quests
-  const partySeed = (seed + 42) % 999983;
-  const partyShuffled = [...PARTY_QUEST_POOL];
-  for (let i = partyShuffled.length - 1; i > 0; i--) {
-    const j = (partySeed * (i + 1) * 1103515245) % (i + 1);
-    [partyShuffled[i], partyShuffled[j]] = [partyShuffled[j], partyShuffled[i]];
-  }
-
+  // Fallback: hardcoded pools (before first seed)
   return {
-    solo:  soloShuffled.slice(0, 2).map(q => ({ ...q, quest_type: 'solo' })),
-    party: partyShuffled.slice(0, 2).map(q => ({ ...q, quest_type: 'party' })),
+    solo:  QUEST_POOL.map(q => ({ ...q, quest_type: 'solo' })),
+    party: PARTY_QUEST_POOL.map(q => ({ ...q, quest_type: 'party' })),
   };
 }
 
@@ -308,13 +304,17 @@ router.get('/', requireAuth, async (req, res) => {
       [settlement.id]
     );
 
-    const dailyQuests = getDailyQuests(req.user.userId);
+    const dailyQuests = await getDailyQuests(req.user.userId);
 
     // For party quests, load party member names
     const activeWithDefs = await Promise.all(activeRes.rows.map(async row => {
-      const questDef = QUEST_POOL.find(q => q.id === row.quest_id)
-                    || PARTY_QUEST_POOL.find(q => q.id === row.quest_id)
-                    || null;
+      let questDef = QUEST_POOL.find(q => q.id === row.quest_id)
+                  || PARTY_QUEST_POOL.find(q => q.id === row.quest_id)
+                  || null;
+      if (!questDef) {
+        const dbQ = await query('SELECT * FROM quest_definitions WHERE id=$1', [row.quest_id]);
+        if (dbQ.rows.length) questDef = dbQ.rows[0];
+      }
       let partyNames = [];
       if (row.party_ids && row.party_ids.length > 0) {
         const pRes = await query('SELECT id, name FROM citizens WHERE id = ANY($1)', [row.party_ids]);
@@ -412,8 +412,11 @@ router.post('/accept-party', requireAuth, async (req, res) => {
     if (!quest_id || !Array.isArray(citizen_ids) || citizen_ids.length === 0)
       return res.status(400).json({ error: 'quest_id and citizen_ids array required.' });
 
-    const quest = PARTY_QUEST_POOL.find(q => q.id === quest_id);
-    if (!quest) return res.status(400).json({ error: 'Unknown party quest.' });
+    let quest = PARTY_QUEST_POOL.find(q => q.id === quest_id);
+    if (!quest) {
+      const dbQ = await query('SELECT * FROM quest_definitions WHERE id=$1 AND archived=FALSE', [quest_id]);
+      if (dbQ.rows.length) quest = dbQ.rows[0]; else return res.status(400).json({ error: 'Unknown party quest.' });
+    }
 
     if (citizen_ids.length !== quest.requires.length)
       return res.status(400).json({ error: `This quest requires exactly ${quest.requires.length} citizens.` });

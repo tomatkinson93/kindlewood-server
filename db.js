@@ -250,6 +250,35 @@ async function initDB() {
   await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS party_ids JSONB DEFAULT '[]'`).catch(()=>{});
   await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS quest_type TEXT DEFAULT 'solo'`).catch(()=>{});
 
+
+  // ── Quest definitions table ───────────────────────────────────────────────
+  await query(`
+    CREATE TABLE IF NOT EXISTS quest_definitions (
+      id           TEXT PRIMARY KEY,
+      title        TEXT NOT NULL,
+      description  TEXT NOT NULL DEFAULT '',
+      flavour      TEXT NOT NULL DEFAULT '',
+      icon         TEXT NOT NULL DEFAULT '📜',
+      category     TEXT NOT NULL DEFAULT 'general',
+      quest_type   TEXT NOT NULL DEFAULT 'solo',
+      skill_key    TEXT,
+      base_success FLOAT NOT NULL DEFAULT 0.5,
+      duration_s   INTEGER NOT NULL DEFAULT 120,
+      reward_gold  INTEGER DEFAULT 10,
+      rewards      JSONB DEFAULT '{}',
+      reward_label TEXT DEFAULT '',
+      requires     JSONB DEFAULT '[]',
+      flavour_success TEXT DEFAULT '',
+      flavour_fail    TEXT DEFAULT '',
+      high_bonus      JSONB DEFAULT NULL,
+      archived     BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at   TIMESTAMPTZ DEFAULT NOW(),
+      sort_order   INTEGER DEFAULT 0
+    )
+  `);
+  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS high_bonus JSONB DEFAULT NULL`).catch(()=>{});
+  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0`).catch(()=>{});
+
   // ── Relationship / Bonding / Breeding system ──────────────────────────────
 
   // Relationship pairs (canonical: citizen_a_id < citizen_b_id always)
