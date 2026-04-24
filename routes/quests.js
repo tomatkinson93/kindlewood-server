@@ -229,7 +229,7 @@ const PARTY_QUEST_POOL = [
     requires: [
       { role_label: 'Forager',  skill_key: 'farming',   desc: 'Identify affected plants' },
       { role_label: 'Scholar',  skill_key: 'crafting',  desc: 'Determine the cure' },
-      { role_label: 'Worker',   skill_key: 'endurance', desc: 'Clear infected areas' },
+      { role_label: 'Worker',   skill_key: 'combat',    desc: 'Clear infected areas' },
     ],
     rewards: { food: 25, wealth: 12 },
     reward_label: '+25 food, +12 gold',
