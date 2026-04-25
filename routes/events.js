@@ -46,4 +46,15 @@ router.delete('/:id', requireAuth, async (req, res) => {
   }
 });
 
+
+// ── POST /api/events/clear-all ────────────────
+router.post('/clear-all', requireAuth, async (req, res) => {
+  try {
+    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    if (!settRes.rows[0]) return res.status(404).json({ error: 'No settlement.' });
+    await query("DELETE FROM settlement_events WHERE settlement_id=$1", [settRes.rows[0].id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;
