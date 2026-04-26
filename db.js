@@ -251,6 +251,34 @@ async function initDB() {
   await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS quest_type TEXT DEFAULT 'solo'`).catch(()=>{});
 
 
+
+  // ── Inventory system ──────────────────────────────────────────────────────
+  await query(`
+    CREATE TABLE IF NOT EXISTS inventory_items (
+      id           SERIAL PRIMARY KEY,
+      settlement_id INTEGER NOT NULL REFERENCES settlements(id) ON DELETE CASCADE,
+      item_key     TEXT NOT NULL,          -- e.g. 'ancient_heartwood', 'luminous_scale'
+      name         TEXT NOT NULL,
+      description  TEXT NOT NULL DEFAULT '',
+      icon         TEXT NOT NULL DEFAULT '📦',
+      category     TEXT NOT NULL DEFAULT 'misc',
+                                           -- misc | equipment | food | material | quest | trophy
+      rarity       TEXT NOT NULL DEFAULT 'common',
+                                           -- common | uncommon | rare | epic | legendary
+      quantity     INTEGER NOT NULL DEFAULT 1,
+      -- Equipment stats (null for non-equipment)
+      equip_slot   TEXT DEFAULT NULL,      -- weapon | armour | trinket | tool
+      stat_bonuses JSONB DEFAULT '{}',     -- e.g. {"combat":2,"scouting":1}
+      equipped_to  INTEGER DEFAULT NULL REFERENCES citizens(id) ON DELETE SET NULL,
+      -- Metadata
+      source       TEXT DEFAULT NULL,      -- quest_id, raid, forge, trade etc.
+      obtained_at  TIMESTAMPTZ DEFAULT NOW(),
+      metadata     JSONB DEFAULT '{}'      -- flexible future data
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_inv_settlement ON inventory_items(settlement_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_inv_equipped ON inventory_items(equipped_to) WHERE equipped_to IS NOT NULL`);
+
   // ── Quest definitions table ───────────────────────────────────────────────
   await query(`
     CREATE TABLE IF NOT EXISTS quest_definitions (

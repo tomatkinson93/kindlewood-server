@@ -44,6 +44,8 @@ const questRoutes = require('./routes/quests');
 app.use('/api/quests', questRoutes);
 const questAdminRoutes = require('./routes/quest_admin');
 app.use('/api/quest-admin', questAdminRoutes);
+const inventoryRoutes = require('./routes/inventory');
+app.use('/api/inventory', inventoryRoutes);
 const housingRoutes = require('./routes/housing');
 app.use('/api/housing', housingRoutes);
 const eventsRoutes = require('./routes/events');

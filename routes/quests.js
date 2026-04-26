@@ -509,13 +509,24 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
 
     let goldAwarded = 0;
     if (run.status === 'completed') {
-      if (quest?.quest_type === 'party' || PARTY_QUEST_POOL.find(q => q.id === run.quest_id)) {
-        // Party quest rewards
+      const isPartyRun = quest?.quest_type === 'party' || PARTY_QUEST_POOL.find(q => q.id === run.quest_id);
+      if (isPartyRun) {
         const pq = PARTY_QUEST_POOL.find(q => q.id === run.quest_id);
         const rewards = pq?.rewards || {};
         const sets = Object.entries(rewards).map(([k,v]) => `${k} = ${k} + ${v}`).join(', ');
         if (sets) await query(`UPDATE settlements SET ${sets} WHERE id=$1`, [run.settlement_id]);
         goldAwarded = rewards.wealth || 0;
+        // Award high_bonus item if roll was high
+        if (pq?.high_bonus && (run.success_roll || 0) > (run.success_chance || 0.8)) {
+          const hb = pq.high_bonus;
+          await query(
+            `INSERT INTO inventory_items (settlement_id, item_key, name, description, icon, category, rarity, quantity, source)
+             VALUES ($1,$2,$3,$4,$5,'quest_item','rare',1,$6)
+             ON CONFLICT DO NOTHING`,
+            [run.settlement_id, hb.item?.toLowerCase().replace(/\s+/g,'_') || 'quest_item',
+             hb.item || 'Quest Item', hb.desc || '', '✨', run.quest_id]
+          );
+        }
       } else {
         goldAwarded = quest?.reward_gold ?? 10;
         await query('UPDATE settlements SET wealth = wealth + $1 WHERE id=$2', [goldAwarded, run.settlement_id]);
