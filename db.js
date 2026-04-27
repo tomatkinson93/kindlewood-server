@@ -279,6 +279,28 @@ async function initDB() {
   await query(`CREATE INDEX IF NOT EXISTS idx_inv_settlement ON inventory_items(settlement_id)`);
   await query(`CREATE INDEX IF NOT EXISTS idx_inv_equipped ON inventory_items(equipped_to) WHERE equipped_to IS NOT NULL`);
 
+
+  // ── NPC Settlements ───────────────────────────────────────────────────────
+  await query(`
+    CREATE TABLE IF NOT EXISTS npc_settlements (
+      id           SERIAL PRIMARY KEY,
+      name         TEXT NOT NULL,
+      tile_q       INTEGER NOT NULL,
+      tile_r       INTEGER NOT NULL,
+      faction      TEXT NOT NULL DEFAULT 'neutral',
+                                           -- neutral | hostile | kingdom
+      species      TEXT NOT NULL DEFAULT 'mice',
+      tier         TEXT NOT NULL DEFAULT 'village',
+      disposition  TEXT NOT NULL DEFAULT 'friendly',
+                                           -- friendly | neutral | hostile
+      description  TEXT DEFAULT '',
+      is_kingdom   BOOLEAN DEFAULT FALSE,
+      kingdom_tiles JSONB DEFAULT '[]',   -- [{q,r}] extra tiles for kingdom
+      created_at   TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_npc_loc ON npc_settlements(tile_q,tile_r)`);
+
   // ── Quest definitions table ───────────────────────────────────────────────
   await query(`
     CREATE TABLE IF NOT EXISTS quest_definitions (

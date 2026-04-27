@@ -28,7 +28,7 @@ router.get('/world', requireAuth, async (req, res) => {
     );
     const revealed = new Set(fogRes.rows.map(r => `${r.tile_q},${r.tile_r}`));
 
-    // Get all settlements for display
+    // Get all player settlements for display
     const settlementsRes = await query(`
       SELECT s.tile_q, s.tile_r, s.name, s.tier, u.species, u.username
       FROM settlements s JOIN users u ON s.user_id = u.id
@@ -36,13 +36,44 @@ router.get('/world', requireAuth, async (req, res) => {
     `);
     const settlementMap = {};
     settlementsRes.rows.forEach(s => {
-      settlementMap[`${s.tile_q},${s.tile_r}`] = s;
+      settlementMap[`${s.tile_q},${s.tile_r}`] = { ...s, settlement_type: 'player' };
+    });
+
+    // Get NPC settlements
+    const npcRes = await query('SELECT * FROM npc_settlements');
+    // Build set of all kingdom tiles for fast lookup
+    const kingdomTileSet = new Set();
+    npcRes.rows.filter(n => n.is_kingdom).forEach(n => {
+      kingdomTileSet.add(`${n.tile_q},${n.tile_r}`);
+      (n.kingdom_tiles || []).forEach(t => kingdomTileSet.add(`${t.q},${t.r}`));
+    });
+    npcRes.rows.forEach(n => {
+      // Main tile
+      settlementMap[`${n.tile_q},${n.tile_r}`] = {
+        name: n.name, species: n.species, tier: n.tier,
+        disposition: n.disposition, faction: n.faction,
+        description: n.description, is_kingdom: n.is_kingdom,
+        settlement_type: n.is_kingdom ? 'kingdom' : (n.disposition === 'hostile' ? 'hostile' : 'npc'),
+      };
+      // Kingdom extra tiles — mark as kingdom_tile type
+      if (n.is_kingdom) {
+        (n.kingdom_tiles || []).forEach(t => {
+          settlementMap[`${t.q},${t.r}`] = {
+            name: n.name, species: 'all', tier: 'city',
+            disposition: 'friendly', faction: 'kingdom',
+            is_kingdom: true, is_kingdom_annex: true,
+            settlement_type: 'kingdom',
+          };
+        });
+      }
     });
 
     const tiles = tilesRes.rows.map(t => {
       const key = `${t.q},${t.r}`;
-      const isRevealed = revealed.has(key);
       const occupant = settlementMap[key];
+      // NPC and Kingdom tiles are always visible (no fog)
+      const isNpcTile = occupant && (occupant.settlement_type === 'npc' || occupant.settlement_type === 'kingdom' || occupant.settlement_type === 'hostile');
+      const isRevealed = revealed.has(key) || isNpcTile;
       return {
         q: t.q, r: t.r,
         terrain: isRevealed ? t.terrain : 'fog',
@@ -52,6 +83,12 @@ router.get('/world', requireAuth, async (req, res) => {
           species: occupant.species,
           username: occupant.username,
           tier: occupant.tier,
+          disposition: occupant.disposition || null,
+          faction: occupant.faction || null,
+          description: occupant.description || null,
+          is_kingdom: occupant.is_kingdom || false,
+          is_kingdom_annex: occupant.is_kingdom_annex || false,
+          settlement_type: occupant.settlement_type || 'player',
           isOwn: settlement && t.q === settlement.tile_q && t.r === settlement.tile_r,
         } : null,
       };
