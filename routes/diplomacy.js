@@ -72,7 +72,7 @@ router.get('/', requireAuth, async (req, res) => {
       trust_level: getTrustLevel(r.trust),
       trust_levels: TRUST_LEVELS,
     })) });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.error('Diplomacy error:', e); res.status(500).json({ error: e.message }); }
 });
 
 // ── GET /api/diplomacy/:npcId — single relation ──
@@ -102,9 +102,10 @@ router.get('/:npcId', requireAuth, async (req, res) => {
 
     const relRow = rel.rows[0] || null;
 
-    // Calc travel time preview
-    const dist = hexDistanceWrapped(sett.tile_q, sett.tile_r, npc.tile_q, npc.tile_r);
-    const travelSecs = Math.max(10, dist * SECONDS_PER_TILE);
+    // Calc travel time preview — guard against unplaced settlement
+    const travelSecs = (sett.tile_q != null && npc.tile_q != null)
+      ? Math.max(10, hexDistanceWrapped(sett.tile_q, sett.tile_r, npc.tile_q, npc.tile_r) * SECONDS_PER_TILE)
+      : 60;
 
     res.json({
       ok: true,
