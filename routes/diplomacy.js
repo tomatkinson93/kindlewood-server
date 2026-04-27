@@ -114,7 +114,7 @@ router.get('/:npcId', requireAuth, async (req, res) => {
       travel_secs: travelSecs,
       trust_levels: TRUST_LEVELS,
     });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.error('Diplomacy route error:', e.message); res.status(500).json({ error: e.message }); }
 });
 
 // ── POST /api/diplomacy/:npcId/contact — send a citizen to make contact ──
@@ -158,15 +158,26 @@ router.post('/:npcId/contact', requireAuth, async (req, res) => {
     const arrivesAt = new Date(Date.now() + seconds * 1000);
 
     // Upsert relation
-    await query(`
-      INSERT INTO diplomacy_relations (settlement_id, npc_id, status, citizen_id, contact_sent_at, contact_arrives_at, path)
-      VALUES ($1,$2,'contact_sent',$3,NOW(),$4,$5)
-      ON CONFLICT (settlement_id, npc_id)
-      DO UPDATE SET status='contact_sent', citizen_id=$3, contact_sent_at=NOW(), contact_arrives_at=$4, path=$5
-    `, [sett.id, npc.id, citizen_id, arrivesAt, JSON.stringify(path)]);
+    // Try to save path; fall back without it if column missing
+    try {
+      await query(`
+        INSERT INTO diplomacy_relations (settlement_id, npc_id, status, citizen_id, contact_sent_at, contact_arrives_at, path)
+        VALUES ($1,$2,'contact_sent',$3,NOW(),$4,$5)
+        ON CONFLICT (settlement_id, npc_id)
+        DO UPDATE SET status='contact_sent', citizen_id=$3, contact_sent_at=NOW(), contact_arrives_at=$4, path=$5
+      `, [sett.id, npc.id, citizen_id, arrivesAt, JSON.stringify(path)]);
+    } catch(pathErr) {
+      // path column may not exist yet — insert without it
+      await query(`
+        INSERT INTO diplomacy_relations (settlement_id, npc_id, status, citizen_id, contact_sent_at, contact_arrives_at)
+        VALUES ($1,$2,'contact_sent',$3,NOW(),$4)
+        ON CONFLICT (settlement_id, npc_id)
+        DO UPDATE SET status='contact_sent', citizen_id=$3, contact_sent_at=NOW(), contact_arrives_at=$4
+      `, [sett.id, npc.id, citizen_id, arrivesAt]);
+    }
 
     res.json({ ok: true, arrives_at: arrivesAt, seconds, citizen_name: cit.name, npc_name: npc.name });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.error('Diplomacy route error:', e.message); res.status(500).json({ error: e.message }); }
 });
 
 // ── POST /api/diplomacy/:npcId/interact — log an interaction (trade, gift, quest) ──
@@ -193,7 +204,7 @@ router.post('/:npcId/interact', requireAuth, async (req, res) => {
     `, [newTrust, newLevel.status, sett.id, req.params.npcId]);
 
     res.json({ ok: true, trust: newTrust, trust_level: newLevel, levelled_up: newLevel.status !== rel.rows[0].status });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { console.error('Diplomacy route error:', e.message); res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;
