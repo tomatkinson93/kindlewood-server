@@ -301,6 +301,29 @@ async function initDB() {
   `);
   await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_npc_loc ON npc_settlements(tile_q,tile_r)`);
 
+
+  // ── Diplomacy / NPC Relations ────────────────────────────────────────────
+  await query(`
+    CREATE TABLE IF NOT EXISTS diplomacy_relations (
+      id              SERIAL PRIMARY KEY,
+      settlement_id   INTEGER NOT NULL REFERENCES settlements(id) ON DELETE CASCADE,
+      npc_id          INTEGER NOT NULL REFERENCES npc_settlements(id) ON DELETE CASCADE,
+      status          TEXT NOT NULL DEFAULT 'unknown',
+                                           -- unknown | contact_sent | contacted | familiar | allied
+      trust           INTEGER NOT NULL DEFAULT 0,
+                                           -- 0-100: 0=unknown,1-20=contact,21-40=familiar,41-70=friendly,71-100=allied
+      citizen_id      INTEGER REFERENCES citizens(id) ON DELETE SET NULL,
+      contact_sent_at TIMESTAMPTZ,
+      contact_arrives_at TIMESTAMPTZ,
+      last_interaction TIMESTAMPTZ,
+      interactions    INTEGER NOT NULL DEFAULT 0,
+      notes           TEXT DEFAULT '',
+      UNIQUE(settlement_id, npc_id)
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_diplo_settlement ON diplomacy_relations(settlement_id)`);
+  await query(`ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS path JSONB DEFAULT '[]'`).catch(()=>{});
+
   // ── Quest definitions table ───────────────────────────────────────────────
   await query(`
     CREATE TABLE IF NOT EXISTS quest_definitions (

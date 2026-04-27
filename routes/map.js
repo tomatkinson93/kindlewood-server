@@ -53,15 +53,17 @@ router.get('/world', requireAuth, async (req, res) => {
         name: n.name, species: n.species, tier: n.tier,
         disposition: n.disposition, faction: n.faction,
         description: n.description, is_kingdom: n.is_kingdom,
+        npc_id: n.id,
         settlement_type: n.is_kingdom ? 'kingdom' : (n.disposition === 'hostile' ? 'hostile' : 'npc'),
       };
-      // Kingdom extra tiles — mark as kingdom_tile type
+      // Kingdom extra tiles
       if (n.is_kingdom) {
         (n.kingdom_tiles || []).forEach(t => {
           settlementMap[`${t.q},${t.r}`] = {
             name: n.name, species: 'all', tier: 'city',
             disposition: 'friendly', faction: 'kingdom',
             is_kingdom: true, is_kingdom_annex: true,
+            npc_id: n.id,
             settlement_type: 'kingdom',
           };
         });
@@ -88,6 +90,7 @@ router.get('/world', requireAuth, async (req, res) => {
           description: occupant.description || null,
           is_kingdom: occupant.is_kingdom || false,
           is_kingdom_annex: occupant.is_kingdom_annex || false,
+          npc_id: occupant.npc_id || null,
           settlement_type: occupant.settlement_type || 'player',
           isOwn: settlement && t.q === settlement.tile_q && t.r === settlement.tile_r,
         } : null,
