@@ -455,6 +455,23 @@ router.post('/seed-npcs', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+
+
+// ── POST /api/game/migrate — run pending DB migrations ──
+router.post('/migrate', async (req, res) => {
+  const { query } = require('../db');
+  const results = [];
+  const run = async (sql, label) => {
+    try { await query(sql); results.push('OK: ' + label); }
+    catch(e) { results.push('ERR ' + label + ': ' + e.message); }
+  };
+
+  await run("ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS path JSONB DEFAULT '[]'", "diplo path");
+  await run("ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''", "diplo notes");
+
+  res.json({ ok: true, results });
+});
+
 module.exports = router;
 
 // Dev-only: reset placement for testing
