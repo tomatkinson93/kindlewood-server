@@ -445,6 +445,16 @@ router.patch('/cheat/citizen/:id', requireAuth, async (req, res) => {
   }
 });
 
+
+// ── POST /api/game/seed-npcs — seed NPC settlements ──
+router.post('/seed-npcs', async (req, res) => {
+  try {
+    const { seedNpcSettlements } = require('../npc_seed');
+    const n = await seedNpcSettlements();
+    res.json({ ok: true, seeded: n, message: n > 0 ? `Seeded ${n} NPC settlements.` : 'Already seeded.' });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;
 
 // Dev-only: reset placement for testing
