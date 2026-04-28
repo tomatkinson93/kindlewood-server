@@ -472,6 +472,50 @@ router.post('/migrate', async (req, res) => {
   res.json({ ok: true, results });
 });
 
+
+// ── GET /api/game/npc-list — list all NPC settlements ──
+router.get('/npc-list', requireAuth, async (req, res) => {
+  try {
+    const r = await require('../db').query("SELECT id, name, disposition, faction FROM npc_settlements WHERE disposition != 'hostile' ORDER BY name");
+    res.json({ ok: true, npcs: r.rows });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/game/debug-diplomacy — set trust for a relation ──
+router.post('/debug-diplomacy', requireAuth, async (req, res) => {
+  try {
+    const { npc_id, trust } = req.body;
+    const db = require('../db');
+    const settRes = await db.query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const sett = settRes.rows[0];
+    if (!sett) return res.status(404).json({ error: 'No settlement.' });
+
+    const { getTrustLevel } = require('./diplomacy');
+    const level = getTrustLevel(trust);
+
+    await db.query(`
+      INSERT INTO diplomacy_relations (settlement_id, npc_id, status, trust, last_interaction)
+      VALUES ($1, $2, $3, $4, NOW())
+      ON CONFLICT (settlement_id, npc_id)
+      DO UPDATE SET trust=$4, status=$3, last_interaction=NOW()
+    `, [sett.id, npc_id, level.status === 'unknown' ? 'unknown' : level.status, trust]);
+
+    res.json({ ok: true, trust, level });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/game/debug-diplomacy-reset — reset all relations ──
+router.post('/debug-diplomacy-reset', requireAuth, async (req, res) => {
+  try {
+    const db = require('../db');
+    const settRes = await db.query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const sett = settRes.rows[0];
+    if (!sett) return res.status(404).json({ error: 'No settlement.' });
+    await db.query('DELETE FROM diplomacy_relations WHERE settlement_id=$1', [sett.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;
 
 // Dev-only: reset placement for testing
