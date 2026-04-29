@@ -533,6 +533,63 @@ router.post('/debug-diplomacy-reset', requireAuth, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+
+// ── /api/game/items — inline item admin (fallback if item_admin route missing) ──
+router.get('/items', requireAuth, async (req, res) => {
+  try {
+    const r = await require('../db').query('SELECT * FROM item_templates ORDER BY category, rarity_order, name');
+    res.json({ ok: true, items: r.rows });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/items', requireAuth, async (req, res) => {
+  try {
+    const d = req.body;
+    if (!d.item_key || !d.name) return res.status(400).json({ error: 'item_key and name required.' });
+    const db = require('../db');
+    const rarityOrder = { common:1, uncommon:2, rare:3, epic:4, legendary:5 }[d.rarity] || 1;
+    await db.query(`INSERT INTO item_templates
+      (item_key,name,description,icon,category,rarity,rarity_order,quality,equip_slot,
+       stat_bonuses,sell_value,food_value,fish_seasons,fish_difficulty,fish_weight,
+       fish_value,fish_flavour,armor_class,damage_dice,damage_bonus)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+      ON CONFLICT (item_key) DO NOTHING`,
+    [d.item_key,d.name,d.description||'',d.icon||'📦',d.category||'misc',
+     d.rarity||'common',rarityOrder,d.quality||'basic',d.equip_slot||null,
+     JSON.stringify(d.stat_bonuses||{}),d.sell_value||0,d.food_value||0,
+     d.fish_seasons?JSON.stringify(d.fish_seasons):null,
+     d.fish_difficulty||null,d.fish_weight||null,d.fish_value||null,d.fish_flavour||null,
+     d.armor_class||null,d.damage_dice||null,d.damage_bonus||0]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/items/:key', requireAuth, async (req, res) => {
+  try {
+    await require('../db').query('DELETE FROM item_templates WHERE item_key=$1', [req.params.key]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/items/:key/spawn', requireAuth, async (req, res) => {
+  try {
+    const db = require('../db');
+    const settRes = await db.query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const sett = settRes.rows[0];
+    if (!sett) return res.status(404).json({ error: 'No settlement.' });
+    const t = (await db.query('SELECT * FROM item_templates WHERE item_key=$1', [req.params.key])).rows[0];
+    if (!t) return res.status(404).json({ error: 'Item not found.' });
+    await db.query(`INSERT INTO inventory_items
+      (settlement_id,item_key,name,description,icon,category,rarity,quantity,equip_slot,stat_bonuses,source,metadata)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'admin',$11) ON CONFLICT DO NOTHING`,
+      [sett.id,t.item_key,t.name,t.description,t.icon,t.category,t.rarity,
+       parseInt(req.body.quantity)||1,t.equip_slot,JSON.stringify(t.stat_bonuses||{}),
+       JSON.stringify({sell_value:t.sell_value,food_value:t.food_value,
+                       armor_class:t.armor_class,damage_dice:t.damage_dice})]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;
 
 // Dev-only: reset placement for testing
