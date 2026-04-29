@@ -48,8 +48,7 @@ const inventoryRoutes = require('./routes/inventory');
 app.use('/api/inventory', inventoryRoutes);
 const diplomacyRoutes = require('./routes/diplomacy');
 app.use('/api/diplomacy', diplomacyRoutes);
-const itemAdminRoutes = require('./routes/item_admin');
-app.use('/api/item-admin', itemAdminRoutes);
+// item-admin endpoints are in /api/game/items (routes/game.js)
 const housingRoutes = require('./routes/housing');
 app.use('/api/housing', housingRoutes);
 const eventsRoutes = require('./routes/events');
