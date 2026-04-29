@@ -468,6 +468,23 @@ router.post('/migrate', async (req, res) => {
 
   await run("ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS path JSONB DEFAULT '[]'", "diplo path");
   await run("ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''", "diplo notes");
+  await run("ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS quest_source TEXT NOT NULL DEFAULT 'tavern'", "quest source");
+  await run("ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS given_by_npc_id INTEGER", "quest npc id");
+  await run("ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS min_trust INTEGER NOT NULL DEFAULT 0", "quest min trust");
+  await run("ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS drops JSONB DEFAULT '[]'", "quest drops");
+  await run(`CREATE TABLE IF NOT EXISTS item_templates (
+    item_key TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+    icon TEXT NOT NULL DEFAULT '📦', category TEXT NOT NULL DEFAULT 'misc',
+    rarity TEXT NOT NULL DEFAULT 'common', rarity_order INTEGER NOT NULL DEFAULT 1,
+    quality TEXT NOT NULL DEFAULT 'basic', equip_slot TEXT DEFAULT NULL,
+    stat_bonuses JSONB DEFAULT '{}', metadata JSONB DEFAULT '{}',
+    sell_value INTEGER NOT NULL DEFAULT 0, food_value INTEGER NOT NULL DEFAULT 0,
+    fish_seasons JSONB DEFAULT NULL, fish_difficulty INTEGER DEFAULT NULL,
+    fish_weight INTEGER DEFAULT NULL, fish_value INTEGER DEFAULT NULL, fish_flavour TEXT DEFAULT NULL,
+    armor_class INTEGER DEFAULT NULL, damage_dice TEXT DEFAULT NULL,
+    damage_bonus INTEGER DEFAULT 0, item_effects JSONB DEFAULT '[]',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`, "item_templates table");
 
   res.json({ ok: true, results });
 });
