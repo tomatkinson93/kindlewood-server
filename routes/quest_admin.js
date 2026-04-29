@@ -24,7 +24,8 @@ router.post('/', requireAuth, async (req, res) => {
     const {
       id, title, description, flavour, icon, category, quest_type,
       skill_key, base_success, duration_s, reward_gold, rewards,
-      reward_label, requires, flavour_success, flavour_fail, high_bonus, sort_order
+      reward_label, requires, flavour_success, flavour_fail, high_bonus, sort_order,
+      quest_source, given_by_npc_id, min_trust, drops
     } = req.body;
 
     if (!id || !title) return res.status(400).json({ error: 'id and title required.' });
@@ -37,8 +38,9 @@ router.post('/', requireAuth, async (req, res) => {
       `INSERT INTO quest_definitions
          (id, title, description, flavour, icon, category, quest_type, skill_key,
           base_success, duration_s, reward_gold, rewards, reward_label, requires,
-          flavour_success, flavour_fail, high_bonus, sort_order)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+          flavour_success, flavour_fail, high_bonus, sort_order,
+          quest_source, given_by_npc_id, min_trust, drops)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
       [
         id, title, description||'', flavour||'', icon||'📜', category||'general',
         quest_type||'solo', skill_key||null,
@@ -49,7 +51,11 @@ router.post('/', requireAuth, async (req, res) => {
         JSON.stringify(requires||[]),
         flavour_success||'', flavour_fail||'',
         high_bonus ? JSON.stringify(high_bonus) : null,
-        parseInt(sort_order)||0
+        parseInt(sort_order)||0,
+        quest_source||'tavern',
+        given_by_npc_id ? parseInt(given_by_npc_id) : null,
+        parseInt(min_trust)||0,
+        JSON.stringify(drops||[])
       ]
     );
     res.json({ ok: true });
@@ -62,15 +68,16 @@ router.patch('/:id', requireAuth, async (req, res) => {
     const fields = [
       'title','description','flavour','icon','category','quest_type','skill_key',
       'base_success','duration_s','reward_gold','rewards','reward_label','requires',
-      'flavour_success','flavour_fail','high_bonus','sort_order','archived'
+      'flavour_success','flavour_fail','high_bonus','sort_order','archived',
+      'quest_source','given_by_npc_id','min_trust','drops'
     ];
     const updates = [], vals = [];
     let i = 1;
     for (const f of fields) {
       if (req.body[f] === undefined) continue;
       let v = req.body[f];
-      if (['rewards','requires','high_bonus'].includes(f)) v = JSON.stringify(v);
-      if (['base_success','sort_order','duration_s','reward_gold'].includes(f)) v = f === 'base_success' ? parseFloat(v) : parseInt(v);
+      if (['rewards','requires','high_bonus','drops'].includes(f)) v = JSON.stringify(v);
+      if (['base_success','sort_order','duration_s','reward_gold','min_trust','given_by_npc_id'].includes(f)) v = f === 'base_success' ? parseFloat(v) : parseInt(v);
       updates.push(`${f}=$${i++}`); vals.push(v);
     }
     if (!updates.length) return res.status(400).json({ error: 'Nothing to update.' });

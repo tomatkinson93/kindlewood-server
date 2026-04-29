@@ -324,6 +324,15 @@ async function initDB() {
   await query(`CREATE INDEX IF NOT EXISTS idx_diplo_settlement ON diplomacy_relations(settlement_id)`);
   await query(`ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS path JSONB DEFAULT '[]'`).catch(()=>{});
 
+
+  // ── Quest definition new columns ─────────────────────────────────────────
+  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS quest_source TEXT NOT NULL DEFAULT 'tavern'`).catch(()=>{});
+                                                                     -- 'tavern' | 'settlement'
+  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS given_by_npc_id INTEGER REFERENCES npc_settlements(id) ON DELETE SET NULL`).catch(()=>{});
+  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS min_trust INTEGER NOT NULL DEFAULT 0`).catch(()=>{});
+  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS drops JSONB DEFAULT '[]'`).catch(()=>{});
+                                                                     -- [{item_key, name, icon, category, rarity, chance, sell_value}]
+
   // ── Quest definitions table ───────────────────────────────────────────────
   await query(`
     CREATE TABLE IF NOT EXISTS quest_definitions (
