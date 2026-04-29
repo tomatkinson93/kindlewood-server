@@ -48,6 +48,8 @@ const inventoryRoutes = require('./routes/inventory');
 app.use('/api/inventory', inventoryRoutes);
 const diplomacyRoutes = require('./routes/diplomacy');
 app.use('/api/diplomacy', diplomacyRoutes);
+const itemAdminRoutes = require('./routes/item_admin');
+app.use('/api/item-admin', itemAdminRoutes);
 const housingRoutes = require('./routes/housing');
 app.use('/api/housing', housingRoutes);
 const eventsRoutes = require('./routes/events');

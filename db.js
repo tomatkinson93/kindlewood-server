@@ -333,6 +333,39 @@ async function initDB() {
   await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS drops JSONB DEFAULT '[]'`).catch(()=>{});
                                                                      -- [{item_key, name, icon, category, rarity, chance, sell_value}]
 
+
+  // ── Item templates (master item registry) ────────────────────────────────
+  await query(`
+    CREATE TABLE IF NOT EXISTS item_templates (
+      item_key      TEXT PRIMARY KEY,
+      name          TEXT NOT NULL,
+      description   TEXT NOT NULL DEFAULT '',
+      icon          TEXT NOT NULL DEFAULT '📦',
+      category      TEXT NOT NULL DEFAULT 'misc',
+      rarity        TEXT NOT NULL DEFAULT 'common',
+      rarity_order  INTEGER NOT NULL DEFAULT 1,
+      quality       TEXT NOT NULL DEFAULT 'basic',
+                                           -- basic | sturdy | fine | superior | legendary
+      equip_slot    TEXT DEFAULT NULL,     -- weapon | armour | trinket | tool
+      stat_bonuses  JSONB DEFAULT '{}',
+      metadata      JSONB DEFAULT '{}',
+      sell_value    INTEGER NOT NULL DEFAULT 0,
+      food_value    INTEGER NOT NULL DEFAULT 0,
+      -- Fish-specific
+      fish_seasons  JSONB DEFAULT NULL,    -- ["spring","summer","autumn","winter"]
+      fish_difficulty INTEGER DEFAULT NULL, -- 1-10
+      fish_weight   INTEGER DEFAULT NULL,  -- spawn weight in pool
+      fish_value    INTEGER DEFAULT NULL,  -- gold value when caught
+      fish_flavour  TEXT DEFAULT NULL,
+      -- Equipment stats
+      armor_class   INTEGER DEFAULT NULL,  -- AC for armour
+      damage_dice   TEXT DEFAULT NULL,     -- e.g. "1d6+2" for weapons
+      damage_bonus  INTEGER DEFAULT 0,
+      item_effects  JSONB DEFAULT '[]',    -- future: [{type:'sharp',value:10}]
+      created_at    TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   // ── Quest definitions table ───────────────────────────────────────────────
   await query(`
     CREATE TABLE IF NOT EXISTS quest_definitions (
