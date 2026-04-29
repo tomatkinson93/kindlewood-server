@@ -326,12 +326,10 @@ async function initDB() {
 
 
   // ── Quest definition new columns ─────────────────────────────────────────
-  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS quest_source TEXT NOT NULL DEFAULT 'tavern'`).catch(()=>{});
-                                                                     -- 'tavern' | 'settlement'
+  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS quest_source TEXT NOT NULL DEFAULT 'tavern'`).catch(()=>{}); // tavern | settlement
   await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS given_by_npc_id INTEGER REFERENCES npc_settlements(id) ON DELETE SET NULL`).catch(()=>{});
   await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS min_trust INTEGER NOT NULL DEFAULT 0`).catch(()=>{});
-  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS drops JSONB DEFAULT '[]'`).catch(()=>{});
-                                                                     -- [{item_key, name, icon, category, rarity, chance, sell_value}]
+  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS drops JSONB DEFAULT '[]'`).catch(()=>{}); // [{item_key, name, ...}]
 
 
   // ── Item templates (master item registry) ────────────────────────────────
