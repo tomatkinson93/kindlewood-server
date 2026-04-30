@@ -490,6 +490,26 @@ router.post('/migrate', async (req, res) => {
 });
 
 
+// ── GET /api/game/preview-map — generate a map preview without touching DB ──
+//   Query params:
+//     seed — optional integer; defaults to Date.now() so reroll is "random"
+//   Returns { ok, seed, mapW, mapH, tiles: [{q, r, terrain}, ...], counts }
+//   Used by Dev Tools → World → Preview Map Generation. Does NOT write to DB.
+router.get('/preview-map', async (req, res) => {
+  try {
+    const { generateMap, MAP_W, MAP_H } = require('../mapgen');
+    let seed = parseInt(req.query.seed, 10);
+    if (!Number.isFinite(seed)) seed = Date.now();
+    const tiles = generateMap(seed);
+    const counts = {};
+    for (const t of tiles) counts[t.terrain] = (counts[t.terrain] || 0) + 1;
+    res.json({ ok: true, seed, mapW: MAP_W, mapH: MAP_H, tiles, counts });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 // ── GET /api/game/npc-list — list all NPC settlements ──
 router.get('/npc-list', requireAuth, async (req, res) => {
   try {

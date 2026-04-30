@@ -61,15 +61,24 @@ function generateMap(seed=42) {
   const rand=seededRand(seed);
   const tiles=[];
 
-  const noise=Array.from({length:MAP_W},()=>Array.from({length:MAP_H},()=>rand()));
-  const smooth=(q,r)=>{
+  // ── Two independent noise fields ──────────────────────────────────────
+  // Layer 1: elevation — same as before, controls mountain/hills/forest/plains
+  // Layer 2: vegetation density — independently smoothed; breaks up forests
+  //          with clearings and softens biome boundaries.
+  const elevRaw=Array.from({length:MAP_W},()=>Array.from({length:MAP_H},()=>rand()));
+  const vegRaw =Array.from({length:MAP_W},()=>Array.from({length:MAP_H},()=>rand()));
+
+  // Smooth a noise field with a given radius. Larger radius = larger patches.
+  const smoothField=(field,radius)=>(q,r)=>{
     let sum=0,cnt=0;
-    for(let dq=-2;dq<=2;dq++) for(let dr=-2;dr<=2;dr++){
+    for(let dq=-radius;dq<=radius;dq++) for(let dr=-radius;dr<=radius;dr++){
       const nq=q+dq,nr=r+dr;
-      if(nq>=0&&nq<MAP_W&&nr>=0&&nr<MAP_H){sum+=noise[nq][nr];cnt++;}
+      if(nq>=0&&nq<MAP_W&&nr>=0&&nr<MAP_H){sum+=field[nq][nr];cnt++;}
     }
     return sum/cnt;
   };
+  const elev = smoothField(elevRaw, 1); // small patches — proper biome variety
+  const veg  = smoothField(vegRaw,  3); // larger patches — vegetation density
 
   const riverTiles=new Set();
   const numRivers=2+Math.floor(rand()*2);
@@ -106,11 +115,25 @@ function generateMap(seed=42) {
     else if(ruinTiles.has(key))  terrain=TERRAIN.RUINS;
     else if(marshTiles.has(key)) terrain=TERRAIN.MARSH;
     else {
-      const v=smooth(q,r);
-      if(v>0.72)      terrain=TERRAIN.MOUNTAIN;
-      else if(v>0.58) terrain=TERRAIN.HILLS;
-      else if(v>0.42) terrain=TERRAIN.FOREST;
-      else            terrain=TERRAIN.PLAINS;
+      const e=elev(q,r);
+      const v=veg(q,r);
+      // Elevation decides the broad biome.
+      if(e>0.72) {
+        terrain=TERRAIN.MOUNTAIN;
+      } else if(e>0.58) {
+        // Hills band — vegetation lets some forest creep up, plains creep in.
+        if(v>0.62)      terrain=TERRAIN.FOREST;   // wooded hills → forest
+        else if(v<0.38) terrain=TERRAIN.PLAINS;   // bare hills → grassland
+        else            terrain=TERRAIN.HILLS;
+      } else if(e>0.42) {
+        // Forest band — vegetation carves natural clearings into the canopy.
+        if(v<0.42)      terrain=TERRAIN.PLAINS;   // clearing
+        else            terrain=TERRAIN.FOREST;
+      } else {
+        // Plains band — vegetation lets small wooded copses appear.
+        if(v>0.66)      terrain=TERRAIN.FOREST;   // copse
+        else            terrain=TERRAIN.PLAINS;
+      }
     }
     tiles.push({q,r,terrain,settlement_id:null});
   }
