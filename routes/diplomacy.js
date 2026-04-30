@@ -143,10 +143,10 @@ router.post('/:npcId/contact', requireAuth, async (req, res) => {
     const onDiplo = await query("SELECT id FROM diplomacy_relations WHERE citizen_id=$1 AND status='contact_sent'", [citizen_id]);
     if (onDiplo.rows.length) return res.status(400).json({ error: cit.name + ' is already on a diplomatic mission.' });
 
-    // Already contacted?
+    // Check relation status
     const existing = await query('SELECT * FROM diplomacy_relations WHERE settlement_id=$1 AND npc_id=$2', [sett.id, npc.id]);
-    if (existing.rows.length && existing.rows[0].status !== 'unknown') {
-      return res.status(400).json({ error: 'Already in contact with ' + npc.name + '.' });
+    if (existing.rows.length && existing.rows[0].status === 'contact_sent') {
+      return res.status(400).json({ error: 'An envoy is already travelling to ' + npc.name + '.' });
     }
 
     // Calculate travel time
