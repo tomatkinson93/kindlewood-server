@@ -74,9 +74,12 @@ router.get('/world', requireAuth, async (req, res) => {
     const tiles = tilesRes.rows.map(t => {
       const key = `${t.q},${t.r}`;
       const occupant = settlementMap[key];
-      // NPC and Kingdom tiles are always visible (no fog)
-      const isNpcTile = occupant && (occupant.settlement_type === 'npc' || occupant.settlement_type === 'kingdom' || occupant.settlement_type === 'hostile');
-      const isRevealed = revealed.has(key) || isNpcTile;
+      // Kingdom tiles (Ironhaven + its annexes) are always visible as a
+      // navigational reference point. All other NPC settlements (mice,
+      // badgers, hostile Withered, etc.) are hidden by fog until a scout
+      // expedition reveals them.
+      const isKingdom = occupant && occupant.settlement_type === 'kingdom';
+      const isRevealed = revealed.has(key) || isKingdom;
       return {
         q: t.q, r: t.r,
         terrain: isRevealed ? t.terrain : 'fog',
