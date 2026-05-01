@@ -101,6 +101,8 @@ router.get('/world', requireAuth, async (req, res) => {
     res.json({
       ok: true,
       mapSize: mapgen.MAP_SIZE,
+      mapW: mapgen.MAP_W,
+      mapH: mapgen.MAP_H,
       tiles,
       playerSettlement: settlement ? { q: settlement.tile_q, r: settlement.tile_r } : null,
     });
