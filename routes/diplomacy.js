@@ -1,7 +1,8 @@
 const express  = require('express');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
-const { MAP_W, MAP_H, hexDistanceWrapped } = require('../mapgen');
+const mapgen = require('../mapgen');
+const { hexDistanceWrapped } = mapgen;
 
 const router = express.Router();
 
@@ -19,9 +20,11 @@ function getTrustLevel(trust) {
 }
 
 function hexLinePath(q0, r0, q1, r1) {
+  // Read MAP_W/MAP_H live so resizing the map doesn't break travel paths.
+  const W = mapgen.MAP_W, H = mapgen.MAP_H;
   let dq = q1 - q0, dr = r1 - r0;
-  if (Math.abs(dq) > MAP_W / 2) dq = dq > 0 ? dq - MAP_W : dq + MAP_W;
-  if (Math.abs(dr) > MAP_H / 2) dr = dr > 0 ? dr - MAP_H : dr + MAP_H;
+  if (Math.abs(dq) > W / 2) dq = dq > 0 ? dq - W : dq + W;
+  if (Math.abs(dr) > H / 2) dr = dr > 0 ? dr - H : dr + H;
   const tq1 = q0 + dq, tr1 = r0 + dr;
   const s0 = -q0 - r0, s1 = -tq1 - tr1;
   const N = Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr));
@@ -32,7 +35,7 @@ function hexLinePath(q0, r0, q1, r1) {
     let rq = Math.round(fq), rr = Math.round(fr), rs = Math.round(fs);
     if (Math.abs(rq-fq)>Math.abs(rr-fr)&&Math.abs(rq-fq)>Math.abs(rs-fs)) rq=-rr-rs;
     else if (Math.abs(rr-fr)>Math.abs(rs-fs)) rr=-rq-rs;
-    const wq = ((rq%MAP_W)+MAP_W)%MAP_W, wr = ((rr%MAP_H)+MAP_H)%MAP_H;
+    const wq = ((rq%W)+W)%W, wr = ((rr%H)+H)%H;
     if (!path.length || path[path.length-1].q!==wq || path[path.length-1].r!==wr) path.push({q:wq,r:wr});
   }
   return path;

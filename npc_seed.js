@@ -2,7 +2,7 @@
 //  NPC SETTLEMENT SEEDER
 // ══════════════════════════════════════════════
 const { query } = require('./db');
-const { MAP_W, MAP_H } = require('./mapgen');
+const mapgen = require('./mapgen');
 
 // The Great Kingdom tiles: center (0,0) + all 6 neighbours
 const KINGDOM_CENTER = { q: 0, r: 0 };
@@ -10,8 +10,8 @@ const HEX_DIRS = [[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]];
 function kingdomTiles() {
   const tiles = [KINGDOM_CENTER];
   HEX_DIRS.forEach(([dq,dr]) => {
-    const q = ((KINGDOM_CENTER.q + dq) % MAP_W + MAP_W) % MAP_W;
-    const r = ((KINGDOM_CENTER.r + dr) % MAP_H + MAP_H) % MAP_H;
+    const q = ((KINGDOM_CENTER.q + dq) % mapgen.MAP_W + mapgen.MAP_W) % mapgen.MAP_W;
+    const r = ((KINGDOM_CENTER.r + dr) % mapgen.MAP_H + mapgen.MAP_H) % mapgen.MAP_H;
     tiles.push({ q, r });
   });
   return tiles;

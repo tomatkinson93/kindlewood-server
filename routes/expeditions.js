@@ -4,13 +4,16 @@ const requireAuth = require('../middleware/auth');
 
 const router = express.Router();
 
-const { MAP_W, MAP_H, hexDistanceWrapped } = require('../mapgen');
+const mapgen = require('../mapgen');
+const { hexDistanceWrapped } = mapgen;
 const SECONDS_PER_TILE_CLEAR = 8;   // revealed tile
 const SECONDS_PER_TILE_FOG   = 20;  // fog tile — harder to traverse
 
 // Hex line between two axial-coord hexes (wrapping-aware)
 // Uses cube coordinate lerp — standard hex grid algorithm
 function hexLinePath(q0, r0, q1, r1) {
+  // Read MAP_W/MAP_H live so resizing doesn't break in-flight expeditions.
+  const MAP_W = mapgen.MAP_W, MAP_H = mapgen.MAP_H;
   // Find shortest wrapped target
   let dq = q1 - q0, dr = r1 - r0;
   if (Math.abs(dq) > MAP_W / 2) dq = dq > 0 ? dq - MAP_W : dq + MAP_W;

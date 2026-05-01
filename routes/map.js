@@ -1,7 +1,8 @@
 const express = require('express');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
-const { TERRAIN_BONUSES, MAP_SIZE, MAP_W, MAP_H, hexDistanceWrapped, hexDisk } = require('../mapgen');
+const mapgen = require('../mapgen');
+const { TERRAIN_BONUSES, hexDistanceWrapped, hexDisk } = mapgen;
 const { generateStartingCitizens } = require('../citizens');
 
 const router = express.Router();
@@ -99,7 +100,7 @@ router.get('/world', requireAuth, async (req, res) => {
 
     res.json({
       ok: true,
-      mapSize: MAP_SIZE,
+      mapSize: mapgen.MAP_SIZE,
       tiles,
       playerSettlement: settlement ? { q: settlement.tile_q, r: settlement.tile_r } : null,
     });
@@ -142,8 +143,8 @@ router.get('/spawn', requireAuth, async (req, res) => {
     // Find valid spawn centres
     const validCentres = allTiles.filter(t => {
       if (t.terrain === 'mountain') return false;
-      if (t.q < SPAWN_RADIUS || t.q > MAP_W - SPAWN_RADIUS) return false;
-      if (t.r < SPAWN_RADIUS || t.r > MAP_H - SPAWN_RADIUS) return false;
+      if (t.q < SPAWN_RADIUS || t.q > mapgen.MAP_W - SPAWN_RADIUS) return false;
+      if (t.r < SPAWN_RADIUS || t.r > mapgen.MAP_H - SPAWN_RADIUS) return false;
       // Check distance from other settlements
       for (const occ of occupiedRes.rows) {
         if (hexDistanceWrapped(t.q, t.r, occ.tile_q, occ.tile_r) < MIN_PLAYER_DISTANCE) return false;
@@ -326,8 +327,8 @@ router.post('/arrive', requireAuth, async (req, res) => {
 
     // Score tiles by zone preference and distance from others
     const candidates = allTiles.filter(t => {
-      if (t.q < REVEAL_RADIUS + 1 || t.q > MAP_W - REVEAL_RADIUS - 1) return false;
-      if (t.r < REVEAL_RADIUS + 1 || t.r > MAP_H - REVEAL_RADIUS - 1) return false;
+      if (t.q < REVEAL_RADIUS + 1 || t.q > mapgen.MAP_W - REVEAL_RADIUS - 1) return false;
+      if (t.r < REVEAL_RADIUS + 1 || t.r > mapgen.MAP_H - REVEAL_RADIUS - 1) return false;
       if (!preferredTerrains.includes(t.terrain)) return false;
       for (const occ of occupiedRes.rows) {
         if (hexDistanceWrapped(t.q, t.r, occ.tile_q, occ.tile_r) < MIN_PLAYER_DISTANCE) return false;
@@ -340,8 +341,8 @@ router.post('/arrive', requireAuth, async (req, res) => {
     if (pool.length === 0) {
       pool = allTiles.filter(t => {
         if (t.terrain === 'mountain') return false;
-        if (t.q < REVEAL_RADIUS + 1 || t.q > MAP_W - REVEAL_RADIUS - 1) return false;
-        if (t.r < REVEAL_RADIUS + 1 || t.r > MAP_H - REVEAL_RADIUS - 1) return false;
+        if (t.q < REVEAL_RADIUS + 1 || t.q > mapgen.MAP_W - REVEAL_RADIUS - 1) return false;
+        if (t.r < REVEAL_RADIUS + 1 || t.r > mapgen.MAP_H - REVEAL_RADIUS - 1) return false;
         for (const occ of occupiedRes.rows) {
           if (hexDistanceWrapped(t.q, t.r, occ.tile_q, occ.tile_r) < MIN_PLAYER_DISTANCE) return false;
         }
@@ -352,8 +353,8 @@ router.post('/arrive', requireAuth, async (req, res) => {
     if (pool.length === 0) {
       pool = allTiles.filter(t => {
         if (t.terrain === 'mountain') return false;
-        if (t.q < REVEAL_RADIUS + 1 || t.q > MAP_W - REVEAL_RADIUS - 1) return false;
-        if (t.r < REVEAL_RADIUS + 1 || t.r > MAP_H - REVEAL_RADIUS - 1) return false;
+        if (t.q < REVEAL_RADIUS + 1 || t.q > mapgen.MAP_W - REVEAL_RADIUS - 1) return false;
+        if (t.r < REVEAL_RADIUS + 1 || t.r > mapgen.MAP_H - REVEAL_RADIUS - 1) return false;
         return true;
       });
     }

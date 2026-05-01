@@ -497,15 +497,260 @@ router.post('/migrate', async (req, res) => {
 //   Used by Dev Tools → World → Preview Map Generation. Does NOT write to DB.
 router.get('/preview-map', async (req, res) => {
   try {
-    const { generateMap, MAP_W, MAP_H } = require('../mapgen');
+    const mapgen = require('../mapgen');
     let seed = parseInt(req.query.seed, 10);
     if (!Number.isFinite(seed)) seed = Date.now();
-    const tiles = generateMap(seed);
+    // Optional dimension overrides for previewing future map sizes without
+    // touching live module state.
+    const w = parseInt(req.query.w, 10);
+    const h = parseInt(req.query.h, 10);
+    const opts = {};
+    if (Number.isFinite(w) && w >= 4 && w <= 200) opts.w = w;
+    if (Number.isFinite(h) && h >= 4 && h <= 200) opts.h = h;
+    const tiles = mapgen.generateMap(seed, opts);
     const counts = {};
     for (const t of tiles) counts[t.terrain] = (counts[t.terrain] || 0) + 1;
-    res.json({ ok: true, seed, mapW: MAP_W, mapH: MAP_H, tiles, counts });
+    res.json({
+      ok: true, seed,
+      mapW: opts.w || mapgen.MAP_W,
+      mapH: opts.h || mapgen.MAP_H,
+      tiles, counts
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+
+// ── GET /api/game/world/info — current world dims + archive availability ──
+router.get('/world/info', async (req, res) => {
+  try {
+    const { query } = require('../db');
+    const mapgen = require('../mapgen');
+    const meta = await query('SELECT map_w, map_h, current_seed, generated_at FROM world_meta WHERE id=1').catch(() => ({ rows: [] }));
+    const arc  = await query('SELECT map_w, map_h, seed, archived_at FROM archive_meta WHERE id=1').catch(() => ({ rows: [] }));
+    res.json({
+      ok: true,
+      current: meta.rows[0] || { map_w: mapgen.MAP_W, map_h: mapgen.MAP_H },
+      archive: arc.rows[0] || null,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+// ── POST /api/game/world/regenerate — archive current world, generate new ──
+//   Body: { w, h, seed? }
+//   Effects (transactional):
+//     1. Snapshot tiles, settlement placements, npc placements, fog → archive
+//     2. Wipe tiles, fog_of_war, expeditions, settlement placements
+//     3. Generate new map at new dimensions
+//     4. Update world_meta
+//   Note: NPC seeding is NOT re-run automatically — call /seed-npcs after.
+router.post('/world/regenerate', async (req, res) => {
+  const { pool, query } = require('../db');
+  const mapgen = require('../mapgen');
+
+  const w = parseInt(req.body && req.body.w, 10);
+  const h = parseInt(req.body && req.body.h, 10);
+  if (!Number.isFinite(w) || w < 4 || w > 200) return res.status(400).json({ error: 'Invalid w (4–200).' });
+  if (!Number.isFinite(h) || h < 4 || h > 200) return res.status(400).json({ error: 'Invalid h (4–200).' });
+
+  let seed = parseInt(req.body && req.body.seed, 10);
+  if (!Number.isFinite(seed)) seed = Date.now();
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Archive — snapshot of the current world.
+    //    Read settlement placements, NPC placements, fog as JSON aggregates.
+    const curTiles = await client.query('SELECT q, r, terrain FROM tiles');
+    const curSetts = await client.query("SELECT id, tile_q, tile_r FROM settlements WHERE tile_q IS NOT NULL AND tile_r IS NOT NULL");
+    const curNpcs  = await client.query('SELECT * FROM npc_settlements');
+    const curFog   = await client.query('SELECT user_id, tile_q, tile_r FROM fog_of_war');
+    const curMeta  = await client.query('SELECT map_w, map_h, current_seed FROM world_meta WHERE id=1');
+    const curW = curMeta.rows[0]?.map_w || mapgen.MAP_W;
+    const curH = curMeta.rows[0]?.map_h || mapgen.MAP_H;
+
+    await client.query('DELETE FROM tiles_archive');
+    if (curTiles.rows.length) {
+      // Chunk inserts to avoid huge query strings on big maps.
+      const CHUNK = 500;
+      for (let i = 0; i < curTiles.rows.length; i += CHUNK) {
+        const batch = curTiles.rows.slice(i, i + CHUNK);
+        const vals = batch.map((_, j) => `($${j*3+1},$${j*3+2},$${j*3+3})`).join(',');
+        const bp = [];
+        batch.forEach(t => bp.push(t.q, t.r, t.terrain));
+        await client.query(`INSERT INTO tiles_archive (q, r, terrain) VALUES ${vals}`, bp);
+      }
+    }
+
+    await client.query('DELETE FROM archive_meta');
+    await client.query(
+      `INSERT INTO archive_meta (id, map_w, map_h, seed, settlements, npc_settlements, fog, archived_at)
+       VALUES (1, $1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, NOW())`,
+      [
+        curW, curH, curMeta.rows[0]?.current_seed || null,
+        JSON.stringify(curSetts.rows),
+        JSON.stringify(curNpcs.rows),
+        JSON.stringify(curFog.rows),
+      ]
+    );
+
+    // 2. Wipe live world state.
+    await client.query('DELETE FROM fog_of_war');
+    await client.query('DELETE FROM expeditions').catch(()=>{});
+    await client.query('DELETE FROM tiles');
+    await client.query('UPDATE settlements SET tile_q=NULL, tile_r=NULL, rerolls_used=0');
+    // NPC settlements are kept in DB but their tile_q/tile_r values now point
+    // at the wiped tile space — they'll need re-seeding via /seed-npcs.
+    await client.query('DELETE FROM npc_settlements');
+
+    // 3. Set dimensions on mapgen, generate, insert.
+    mapgen.setMapDimensions(w, h);
+    const newTiles = mapgen.generateMap(seed);
+    const CHUNK = 500;
+    for (let i = 0; i < newTiles.length; i += CHUNK) {
+      const batch = newTiles.slice(i, i + CHUNK);
+      const vals = batch.map((_, j) => `($${j*3+1},$${j*3+2},$${j*3+3})`).join(',');
+      const bp = [];
+      batch.forEach(t => bp.push(t.q, t.r, t.terrain));
+      await client.query(`INSERT INTO tiles (q, r, terrain) VALUES ${vals}`, bp);
+    }
+
+    // 4. Update world_meta.
+    await client.query(
+      `INSERT INTO world_meta (id, map_w, map_h, current_seed, generated_at)
+       VALUES (1, $1, $2, $3, NOW())
+       ON CONFLICT (id) DO UPDATE SET map_w=$1, map_h=$2, current_seed=$3, generated_at=NOW()`,
+      [w, h, seed]
+    );
+
+    await client.query('COMMIT');
+    res.json({
+      ok: true,
+      mapW: w, mapH: h, seed,
+      tiles_inserted: newTiles.length,
+      archived: { mapW: curW, mapH: curH, tile_count: curTiles.rows.length, settlement_count: curSetts.rows.length },
+      message: 'Regenerated. NPC settlements were cleared — run "Seed NPC Settlements" to repopulate.',
+    });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(()=>{});
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
+
+// ── POST /api/game/world/restore — restore archived world (one snapshot) ──
+//   Restores: tiles, dimensions, settlement placements, NPC placements, fog.
+//   Discards: in-flight expeditions (cancelled — too messy to migrate).
+router.post('/world/restore', async (req, res) => {
+  const { pool, query } = require('../db');
+  const mapgen = require('../mapgen');
+
+  const arc = await query('SELECT map_w, map_h, seed, settlements, npc_settlements, fog FROM archive_meta WHERE id=1').catch(() => ({ rows: [] }));
+  if (!arc.rows.length) return res.status(404).json({ error: 'No archive found.' });
+  const a = arc.rows[0];
+
+  const archTiles = await query('SELECT q, r, terrain FROM tiles_archive');
+  if (!archTiles.rows.length) return res.status(404).json({ error: 'Archive tiles missing — cannot restore.' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Wipe current.
+    await client.query('DELETE FROM fog_of_war');
+    await client.query('DELETE FROM expeditions').catch(()=>{});
+    await client.query('DELETE FROM tiles');
+    await client.query('UPDATE settlements SET tile_q=NULL, tile_r=NULL');
+    await client.query('DELETE FROM npc_settlements');
+
+    // Restore tiles.
+    const CHUNK = 500;
+    for (let i = 0; i < archTiles.rows.length; i += CHUNK) {
+      const batch = archTiles.rows.slice(i, i + CHUNK);
+      const vals = batch.map((_, j) => `($${j*3+1},$${j*3+2},$${j*3+3})`).join(',');
+      const bp = [];
+      batch.forEach(t => bp.push(t.q, t.r, t.terrain));
+      await client.query(`INSERT INTO tiles (q, r, terrain) VALUES ${vals}`, bp);
+    }
+
+    // Restore settlement placements (only for settlements that still exist).
+    const setts = Array.isArray(a.settlements) ? a.settlements : [];
+    for (const s of setts) {
+      await client.query(
+        'UPDATE settlements SET tile_q=$1, tile_r=$2 WHERE id=$3',
+        [s.tile_q, s.tile_r, s.id]
+      );
+    }
+
+    // Restore NPC settlements from archive. We re-insert with archived ids so
+    // diplomacy_relations rows (which reference npc_id) still resolve.
+    const npcs = Array.isArray(a.npc_settlements) ? a.npc_settlements : [];
+    for (const n of npcs) {
+      // Build dynamic insert from whichever columns the archive captured.
+      const keys = Object.keys(n);
+      const cols = keys.join(',');
+      const placeholders = keys.map((_, i) => `$${i+1}`).join(',');
+      const vals = keys.map(k => {
+        const v = n[k];
+        // pg expects strings or null for jsonb columns; objects need stringifying.
+        return (v && typeof v === 'object') ? JSON.stringify(v) : v;
+      });
+      try {
+        await client.query(
+          `INSERT INTO npc_settlements (${cols}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`,
+          vals
+        );
+      } catch(_) { /* skip individual rows that fail rather than abort restore */ }
+    }
+    // Re-sync the npc_settlements id sequence so future inserts don't clash
+    // with restored ids.
+    await client.query(
+      `SELECT setval(pg_get_serial_sequence('npc_settlements','id'),
+        COALESCE((SELECT MAX(id) FROM npc_settlements), 1), true)`
+    ).catch(()=>{});
+
+    // Restore fog.
+    const fog = Array.isArray(a.fog) ? a.fog : [];
+    if (fog.length) {
+      for (let i = 0; i < fog.length; i += CHUNK) {
+        const batch = fog.slice(i, i + CHUNK);
+        const vals = batch.map((_, j) => `($${j*3+1},$${j*3+2},$${j*3+3})`).join(',');
+        const bp = [];
+        batch.forEach(f => bp.push(f.user_id, f.tile_q, f.tile_r));
+        await client.query(`INSERT INTO fog_of_war (user_id, tile_q, tile_r) VALUES ${vals} ON CONFLICT DO NOTHING`, bp);
+      }
+    }
+
+    // Update dimensions on mapgen + world_meta.
+    mapgen.setMapDimensions(a.map_w, a.map_h);
+    await client.query(
+      `INSERT INTO world_meta (id, map_w, map_h, current_seed, generated_at)
+       VALUES (1, $1, $2, $3, NOW())
+       ON CONFLICT (id) DO UPDATE SET map_w=$1, map_h=$2, current_seed=$3, generated_at=NOW()`,
+      [a.map_w, a.map_h, a.seed]
+    );
+
+    await client.query('COMMIT');
+    res.json({
+      ok: true,
+      mapW: a.map_w, mapH: a.map_h,
+      tiles_restored: archTiles.rows.length,
+      settlements_restored: setts.length,
+      fog_rows_restored: fog.length,
+      message: 'Restored. In-flight expeditions were cancelled.',
+    });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(()=>{});
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
   }
 });
 

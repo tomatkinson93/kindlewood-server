@@ -429,7 +429,58 @@ async function initDB() {
   // Simulation tick tracker on settlements (separate from resource tick)
   await query(`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS last_sim_tick TIMESTAMPTZ DEFAULT NOW()`).catch(()=>{});
 
+  // ── World meta + archive ─────────────────────────────────────────────────
+  // world_meta is a single-row table holding active dimensions / seed.
+  // tiles_archive stores ONE snapshot of the previous world for restore.
+  // archive_meta stores the snapshot's dimensions + serialised settlement and
+  // npc placements + per-user fog so a restore is a complete reversal.
+  await query(`
+    CREATE TABLE IF NOT EXISTS world_meta (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      map_w INTEGER NOT NULL DEFAULT 40,
+      map_h INTEGER NOT NULL DEFAULT 40,
+      current_seed BIGINT,
+      generated_at TIMESTAMPTZ DEFAULT NOW(),
+      CHECK (id = 1)
+    )
+  `);
+  await query(`INSERT INTO world_meta (id) VALUES (1) ON CONFLICT DO NOTHING`).catch(()=>{});
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS tiles_archive (
+      q INTEGER NOT NULL,
+      r INTEGER NOT NULL,
+      terrain TEXT NOT NULL,
+      PRIMARY KEY (q, r)
+    )
+  `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS archive_meta (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      map_w INTEGER NOT NULL,
+      map_h INTEGER NOT NULL,
+      seed BIGINT,
+      settlements JSONB DEFAULT '[]',
+      npc_settlements JSONB DEFAULT '[]',
+      fog JSONB DEFAULT '[]',
+      archived_at TIMESTAMPTZ DEFAULT NOW(),
+      CHECK (id = 1)
+    )
+  `);
+
+  // Apply persisted dimensions to mapgen module so all consumers see live values.
+  try {
+    const r = await query('SELECT map_w, map_h FROM world_meta WHERE id=1');
+    if (r.rows.length) {
+      const mapgen = require('./mapgen');
+      mapgen.setMapDimensions(r.rows[0].map_w, r.rows[0].map_h);
+      console.log(`World dimensions: ${r.rows[0].map_w}x${r.rows[0].map_h}`);
+    }
+  } catch (e) {
+    console.error('Could not load world dimensions:', e.message);
+  }
+
   console.log('Database initialised');
 }
 
-module.exports = { query, initDB };
+module.exports = { query, initDB, pool };
