@@ -430,3 +430,39 @@ router.post('/arrive', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Arrival failed.' });
   }
 });
+
+
+// ── POST /api/map/tile-terrain — change a single tile's terrain ─────────
+//   Body: { q, r, terrain }
+//   Used by the dev/test tile-edit dropdown. Currently open to any logged-in
+//   user for testing convenience; should be admin-gated before launch.
+//   TODO: gate behind admin role check before going live.
+const VALID_TERRAINS = new Set(['plains','forest','hills','river','ruins','mountain','marsh']);
+
+router.post('/tile-terrain', requireAuth, async (req, res) => {
+  try {
+    const q = parseInt(req.body && req.body.q, 10);
+    const r = parseInt(req.body && req.body.r, 10);
+    const terrain = String(req.body && req.body.terrain || '').toLowerCase();
+    if (!Number.isFinite(q) || !Number.isFinite(r)) {
+      return res.status(400).json({ error: 'Invalid coordinates.' });
+    }
+    if (!VALID_TERRAINS.has(terrain)) {
+      return res.status(400).json({ error: 'Invalid terrain. Must be one of: ' + [...VALID_TERRAINS].join(', ') });
+    }
+    if (q < 0 || q >= mapgen.MAP_W || r < 0 || r >= mapgen.MAP_H) {
+      return res.status(400).json({ error: 'Coordinates out of bounds.' });
+    }
+    const result = await query(
+      'UPDATE tiles SET terrain=$1 WHERE q=$2 AND r=$3 RETURNING q, r, terrain',
+      [terrain, q, r]
+    );
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Tile not found.' });
+    }
+    res.json({ ok: true, tile: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update tile.' });
+  }
+});
