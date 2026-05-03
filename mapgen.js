@@ -94,17 +94,128 @@ function generateMap(seed=42, opts={}) {
   const elev = smoothField(elevRaw, 1); // small patches — proper biome variety
   const veg  = smoothField(vegRaw,  3); // larger patches — vegetation density
 
+  // ── River network generation ─────────────────────────────────────────────
+  // Old approach drew straight columns with stochastic lateral drift, which
+  // produced disconnected snakes (the "knight's move" jumps weren't hex
+  // neighbours, leaving visible breaks). New approach:
+  //   1. Plant a few high-elevation source points
+  //   2. Walk each one downward, always moving to a hex-adjacent neighbour
+  //      so the path is continuous, biased toward south + southwest
+  //   3. Spawn occasional tributaries that walk in from the side and merge
+  //      into the trunk
+  //   4. Stop when reaching another river or the south edge
+  //   5. Seed a few standalone lakes (3-7 tile clusters) for variety
+  // All result in tiles tagged as TERRAIN.RIVER; the renderer treats clusters
+  // of 4+ connected river tiles as a "lake" visually.
   const riverTiles=new Set();
-  const numRivers=2+Math.floor(rand()*2);
-  for(let rv=0;rv<numRivers;rv++){
-    let q=Math.floor(rand()*W);
-    for(let r=0;r<H;r++){
-      riverTiles.add(`${q},${r}`);
-      const drift=rand();
-      if(drift<0.35&&q>1) q--;
-      else if(drift<0.7&&q<W-2) q++;
-      if(rand()<0.3&&q>0) riverTiles.add(`${q-1},${r}`);
-      if(rand()<0.3&&q<W-1) riverTiles.add(`${q+1},${r}`);
+  // Hex axial neighbours
+  const NEIGHBOURS_ALL = [[+1,0],[-1,0],[0,+1],[0,-1],[+1,-1],[-1,+1]];
+  // Downhill-biased directions (south + southwest dominant, with east occasional)
+  const FLOW_DIRS_WEIGHTED = [
+    [0,+1],[0,+1],[0,+1],[0,+1],   // south x4
+    [-1,+1],[-1,+1],[-1,+1],       // southwest x3
+    [+1,0],[+1,0],                 // east x2 (occasional drift)
+    [-1,0],                        // west x1 (rare drift)
+  ];
+
+  // Walk one river path from (sq, sr) downward, marking river tiles as we go.
+  // Stops at south edge, when wandering off the map, or on hitting an existing
+  // river (natural merge). Returns the list of tiles visited (for tributary
+  // spawning).
+  const walkRiver = (sq, sr, maxSteps) => {
+    const visited = [];
+    let q = sq, r = sr;
+    for (let i = 0; i < maxSteps; i++) {
+      if (q < 0 || q >= W || r < 0 || r >= H) break;
+      const key = `${q},${r}`;
+      if (riverTiles.has(key) && i > 0) {
+        // Reached an existing river — merge in by adding the join tile then stopping
+        riverTiles.add(key);
+        visited.push({q,r});
+        break;
+      }
+      riverTiles.add(key);
+      visited.push({q,r});
+      // Pick next step from weighted flow directions
+      const [dq,dr] = FLOW_DIRS_WEIGHTED[Math.floor(rand() * FLOW_DIRS_WEIGHTED.length)];
+      q += dq; r += dr;
+    }
+    return visited;
+  };
+
+  // 3-5 sources placed across the top quarter of the map.
+  const numSources = 3 + Math.floor(rand() * 3);
+  const trunkPaths = [];
+  for (let s = 0; s < numSources; s++) {
+    const sq = Math.floor(rand() * W);
+    const sr = Math.floor(rand() * (H * 0.25)); // upper quarter
+    trunkPaths.push(walkRiver(sq, sr, H));
+  }
+
+  // Tributaries — branch off existing trunk tiles, walk a short distance
+  // inward from a side toward the trunk. Adds the "fanning" look.
+  const numTributaries = 4 + Math.floor(rand() * 4);
+  for (let t = 0; t < numTributaries; t++) {
+    if (!trunkPaths.length) break;
+    const trunk = trunkPaths[Math.floor(rand() * trunkPaths.length)];
+    if (trunk.length < 4) continue;
+    // Pick a midpoint of the trunk to be the merge target
+    const target = trunk[Math.floor(trunk.length * (0.2 + rand() * 0.6))];
+    // Start the tributary 4-8 tiles away from the trunk in a perpendicular
+    // direction, then walk toward the target. Walk by greedy-toward-target
+    // with hex-adjacency steps so it looks natural.
+    const sideOffset = 4 + Math.floor(rand() * 5);
+    const side = rand() < 0.5 ? +1 : -1;
+    let q = target.q + side * sideOffset;
+    let r = target.r - Math.floor(rand() * 3); // start slightly upstream
+    for (let step = 0; step < 12; step++) {
+      if (q < 0 || q >= W || r < 0 || r >= H) break;
+      const key = `${q},${r}`;
+      if (riverTiles.has(key) && step > 0) {
+        riverTiles.add(key);
+        break;
+      }
+      riverTiles.add(key);
+      // Choose the hex neighbour that most reduces axial distance to target
+      let bestDir = NEIGHBOURS_ALL[0];
+      let bestDist = Infinity;
+      for (const [dq,dr] of NEIGHBOURS_ALL) {
+        const nq = q + dq, nr = r + dr;
+        // Cube-coord distance (axial → cube via s = -q-r)
+        const dist = (Math.abs(nq - target.q) + Math.abs(nr - target.r)
+          + Math.abs((nq + nr) - (target.q + target.r))) / 2;
+        if (dist < bestDist - 0.001) { bestDist = dist; bestDir = [dq,dr]; }
+      }
+      // Add a small chance to pick a random adjacent direction so the path
+      // isn't a perfectly straight line.
+      const [dq,dr] = rand() < 0.25
+        ? NEIGHBOURS_ALL[Math.floor(rand() * NEIGHBOURS_ALL.length)]
+        : bestDir;
+      q += dq; r += dr;
+    }
+  }
+
+  // Standalone lakes — small water clusters not attached to rivers, for
+  // variety. Each is a flood-fill blob of 3-7 tiles around a random centre.
+  const numLakes = 1 + Math.floor(rand() * 3);
+  for (let l = 0; l < numLakes; l++) {
+    const cq = 4 + Math.floor(rand() * (W - 8));
+    const cr = 4 + Math.floor(rand() * (H - 8));
+    const size = 3 + Math.floor(rand() * 5);
+    const queue = [{q: cq, r: cr}];
+    let placed = 0;
+    while (queue.length && placed < size) {
+      const {q, r} = queue.shift();
+      if (q < 0 || q >= W || r < 0 || r >= H) continue;
+      const key = `${q},${r}`;
+      if (riverTiles.has(key)) continue;
+      riverTiles.add(key);
+      placed++;
+      // Push hex neighbours in random order so the blob grows organically
+      const dirs = NEIGHBOURS_ALL.slice().sort(() => rand() - 0.5);
+      for (const [dq,dr] of dirs) {
+        if (rand() < 0.6) queue.push({q: q+dq, r: r+dr});
+      }
     }
   }
 
