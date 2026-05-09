@@ -55,6 +55,8 @@ const eventsRoutes = require('./routes/events');
 app.use('/api/events', eventsRoutes);
 const relationshipsRoutes = require('./routes/relationships');
 app.use('/api/relationships', relationshipsRoutes);
+const combatRoutes = require('./routes/combat');
+app.use('/api/combat', combatRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err.message);
