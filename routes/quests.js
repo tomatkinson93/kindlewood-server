@@ -260,12 +260,20 @@ const PARTY_QUEST_POOL = [
 ];
 
 // Load all active (non-archived) quests from DB
-// Falls back to hardcoded pools if DB has none
+// Falls back to hardcoded pools if DB has none.
+// IMPORTANT: This powers the *tavern noticeboard* — NPC-village quests
+// (quest_source='settlement') are deliberately filtered out and surfaced via
+// /api/diplomacy/:npcId/quests instead.
 async function getDailyQuests(userId) {
   try {
-    const r = await query("SELECT * FROM quest_definitions WHERE archived=FALSE ORDER BY sort_order ASC, created_at ASC");
+    const r = await query(`
+      SELECT * FROM quest_definitions
+      WHERE archived=FALSE
+        AND COALESCE(quest_source,'tavern') = 'tavern'
+      ORDER BY sort_order ASC, created_at ASC
+    `);
     if (r.rows.length > 0) {
-      // Return ALL non-archived quests — rotation/filtering added later
+      // Return ALL non-archived tavern quests — rotation/filtering added later
       const soloAll  = r.rows.filter(q => q.quest_type === 'solo');
       const partyAll = r.rows.filter(q => q.quest_type === 'party');
       return { solo: soloAll, party: partyAll };
@@ -342,8 +350,19 @@ router.post('/accept', requireAuth, async (req, res) => {
     if (!quest_id || !citizen_id)
       return res.status(400).json({ error: 'quest_id and citizen_id required.' });
 
-    const quest = QUEST_POOL.find(q => q.id === quest_id);
+    // Look up the quest definition: hardcoded pool first, then DB.
+    // DB lookup is required for NPC-village quests, which only exist in quest_definitions.
+    let quest = QUEST_POOL.find(q => q.id === quest_id);
+    let questFromDb = null;
+    if (!quest) {
+      const dbQ = await query('SELECT * FROM quest_definitions WHERE id=$1 AND archived=FALSE', [quest_id]);
+      if (dbQ.rows.length) {
+        questFromDb = dbQ.rows[0];
+        quest = questFromDb;
+      }
+    }
     if (!quest) return res.status(400).json({ error: 'Unknown quest.' });
+    if (quest.quest_type === 'party') return res.status(400).json({ error: 'Use /accept-party for party quests.' });
 
     const settlementRes = await query(
       'SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]
@@ -367,6 +386,14 @@ router.post('/accept', requireAuth, async (req, res) => {
     if (busyRes.rows.length)
       return res.status(400).json({ error: `${citizen.name} is already on a quest.` });
 
+    // Also check party_ids JSONB overlap so a citizen on a party run can't double-up.
+    const partyBusy = await query(
+      "SELECT id FROM settlement_quests WHERE settlement_id=$1 AND status='active' AND quest_type='party' AND party_ids @> $2::jsonb",
+      [settlement.id, JSON.stringify([parseInt(citizen_id)])]
+    );
+    if (partyBusy.rows.length)
+      return res.status(400).json({ error: `${citizen.name} is already in a party.` });
+
     // Check citizen isn't on a scouting expedition
     const scoutRes = await query(
       "SELECT id FROM expeditions WHERE citizen_id=$1 AND status='travelling'",
@@ -374,6 +401,14 @@ router.post('/accept', requireAuth, async (req, res) => {
     );
     if (scoutRes.rows.length)
       return res.status(400).json({ error: `${citizen.name} is out scouting.` });
+
+    // Check citizen isn't on a diplomatic mission.
+    const onDiplo = await query(
+      "SELECT id FROM diplomacy_relations WHERE citizen_id=$1 AND (status='contact_sent' OR pending_action IS NOT NULL)",
+      [citizen_id]
+    );
+    if (onDiplo.rows.length)
+      return res.status(400).json({ error: `${citizen.name} is on a diplomatic mission.` });
 
     // Check this quest isn't already active for this settlement
     const dupeRes = await query(
@@ -383,12 +418,25 @@ router.post('/accept', requireAuth, async (req, res) => {
     if (dupeRes.rows.length)
       return res.status(400).json({ error: 'This quest is already underway.' });
 
+    // For NPC-village quests, also re-check trust at accept time so a relation
+    // that drops below the threshold can't accept any more.
+    if (questFromDb?.quest_source === 'settlement' && questFromDb.given_by_npc_id) {
+      const relCheck = await query(
+        'SELECT trust FROM diplomacy_relations WHERE settlement_id=$1 AND npc_id=$2',
+        [settlement.id, questFromDb.given_by_npc_id]
+      );
+      const trust = relCheck.rows[0]?.trust || 0;
+      if (trust < (questFromDb.min_trust || 0)) {
+        return res.status(400).json({ error: 'Your relations with this settlement no longer meet the requirement.' });
+      }
+    }
+
     const completesAt = new Date(Date.now() + quest.duration_s * 1000);
 
     const result = await query(
       `INSERT INTO settlement_quests
-         (settlement_id, user_id, quest_id, citizen_id, completes_at, status)
-       VALUES ($1,$2,$3,$4,$5,'active') RETURNING *`,
+         (settlement_id, user_id, quest_id, citizen_id, completes_at, status, quest_type)
+       VALUES ($1,$2,$3,$4,$5,'active','solo') RETURNING *`,
       [settlement.id, req.user.userId, quest_id, citizen_id, completesAt]
     );
 
@@ -464,6 +512,17 @@ router.post('/accept-party', requireAuth, async (req, res) => {
     if (scoutRes.rows.length)
       return res.status(400).json({ error: 'A citizen in this party is out scouting.' });
 
+    // Check none are on a diplomatic mission
+    const onDiploRes = await query(
+      "SELECT citizen_id FROM diplomacy_relations WHERE citizen_id = ANY($1) AND (status='contact_sent' OR pending_action IS NOT NULL)",
+      [citizen_ids]
+    );
+    if (onDiploRes.rows.length) {
+      const dId = onDiploRes.rows[0].citizen_id;
+      const dCit = citizenRes.rows.find(c => c.id === dId);
+      return res.status(400).json({ error: `${dCit?.name || 'A citizen'} is on a diplomatic mission.` });
+    }
+
     // Check quest not already active
     const dupeRes = await query(
       "SELECT id FROM settlement_quests WHERE settlement_id=$1 AND quest_id=$2 AND status='active'",
@@ -471,6 +530,18 @@ router.post('/accept-party', requireAuth, async (req, res) => {
     );
     if (dupeRes.rows.length)
       return res.status(400).json({ error: 'This quest is already underway.' });
+
+    // Re-check trust at accept time for NPC-village party quests.
+    if (quest.quest_source === 'settlement' && quest.given_by_npc_id) {
+      const relCheck = await query(
+        'SELECT trust FROM diplomacy_relations WHERE settlement_id=$1 AND npc_id=$2',
+        [settlement.id, quest.given_by_npc_id]
+      );
+      const trust = relCheck.rows[0]?.trust || 0;
+      if (trust < (quest.min_trust || 0)) {
+        return res.status(400).json({ error: 'Your relations with this settlement no longer meet the requirement.' });
+      }
+    }
 
     const completesAt = new Date(Date.now() + quest.duration_s * 1000);
 
@@ -505,20 +576,29 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
     if (run.status === 'collected')
       return res.status(400).json({ error: 'Already collected.' });
 
-    const quest = QUEST_POOL.find(q => q.id === run.quest_id);
+    // Resolve quest definition: hardcoded pools first, then DB.
+    let quest = QUEST_POOL.find(q => q.id === run.quest_id)
+             || PARTY_QUEST_POOL.find(q => q.id === run.quest_id);
+    if (!quest) {
+      const dbQ = await query('SELECT * FROM quest_definitions WHERE id=$1', [run.quest_id]);
+      if (dbQ.rows.length) quest = dbQ.rows[0];
+    }
 
     let goldAwarded = 0;
-    if (run.status === 'completed') {
-      const isPartyRun = quest?.quest_type === 'party' || PARTY_QUEST_POOL.find(q => q.id === run.quest_id);
+    let bonusReward = null;
+    if (run.status === 'completed' && quest) {
+      const isPartyRun = run.quest_type === 'party' || quest.quest_type === 'party';
+
       if (isPartyRun) {
-        const pq = PARTY_QUEST_POOL.find(q => q.id === run.quest_id);
-        const rewards = pq?.rewards || {};
+        // Party rewards live in `rewards` JSONB. Apply each resource delta.
+        const rewards = quest.rewards || {};
         const sets = Object.entries(rewards).map(([k,v]) => `${k} = ${k} + ${v}`).join(', ');
         if (sets) await query(`UPDATE settlements SET ${sets} WHERE id=$1`, [run.settlement_id]);
         goldAwarded = rewards.wealth || 0;
+
         // Award high_bonus item if roll was high
-        if (pq?.high_bonus && (run.success_roll || 0) > (run.success_chance || 0.8)) {
-          const hb = pq.high_bonus;
+        if (quest.high_bonus && (run.success_roll || 0) > (run.success_chance || 0.8)) {
+          const hb = quest.high_bonus;
           await query(
             `INSERT INTO inventory_items (settlement_id, item_key, name, description, icon, category, rarity, quantity, source)
              VALUES ($1,$2,$3,$4,$5,'quest_item','rare',1,$6)
@@ -526,10 +606,38 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
             [run.settlement_id, hb.item?.toLowerCase().replace(/\s+/g,'_') || 'quest_item',
              hb.item || 'Quest Item', hb.desc || '', '✨', run.quest_id]
           );
+          bonusReward = hb;
         }
       } else {
-        goldAwarded = quest?.reward_gold ?? 10;
-        await query('UPDATE settlements SET wealth = wealth + $1 WHERE id=$2', [goldAwarded, run.settlement_id]);
+        // Solo: flat gold reward.
+        goldAwarded = quest.reward_gold ?? 10;
+        if (goldAwarded > 0) {
+          await query('UPDATE settlements SET wealth = wealth + $1 WHERE id=$2', [goldAwarded, run.settlement_id]);
+        }
+      }
+
+      // Item drops (DB-defined). Each drop has an item_key, optional roll_chance (0-1, default 1).
+      if (Array.isArray(quest.drops) && quest.drops.length) {
+        for (const drop of quest.drops) {
+          const chance = drop.roll_chance ?? 1;
+          if (Math.random() > chance) continue;
+          await query(
+            `INSERT INTO inventory_items (settlement_id, item_key, name, description, icon, category, rarity, quantity, source)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+             ON CONFLICT DO NOTHING`,
+            [
+              run.settlement_id,
+              drop.item_key || ('drop_' + (drop.name || 'item').toLowerCase().replace(/\s+/g,'_')),
+              drop.name || 'Quest Drop',
+              drop.description || '',
+              drop.icon || '📦',
+              drop.category || 'misc',
+              drop.rarity || 'common',
+              drop.quantity || 1,
+              run.quest_id,
+            ]
+          );
+        }
       }
     }
 
@@ -538,7 +646,7 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
       [run.id]
     );
 
-    res.json({ ok: true, gold_awarded: goldAwarded, status: run.status });
+    res.json({ ok: true, gold_awarded: goldAwarded, status: run.status, bonus: bonusReward });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to collect quest.' });
@@ -557,9 +665,14 @@ async function resolveCompletedQuests(settlementId) {
 
   for (const run of dueRes.rows) {
     const isParty = run.quest_type === 'party';
-    const quest = isParty
+    // Look up def: hardcoded pool first, then DB. NPC quests live only in DB.
+    let quest = isParty
       ? PARTY_QUEST_POOL.find(q => q.id === run.quest_id)
       : QUEST_POOL.find(q => q.id === run.quest_id);
+    if (!quest) {
+      const dbQ = await query('SELECT * FROM quest_definitions WHERE id=$1', [run.quest_id]);
+      if (dbQ.rows.length) quest = dbQ.rows[0];
+    }
 
     if (!quest) {
       await query("UPDATE settlement_quests SET status='failed' WHERE id=$1", [run.id]);
@@ -635,3 +748,4 @@ async function resolveCompletedQuests(settlementId) {
 module.exports = router;
 module.exports.QUEST_POOL = QUEST_POOL;
 module.exports.PARTY_QUEST_POOL = PARTY_QUEST_POOL;
+module.exports.resolveCompletedQuests = resolveCompletedQuests;

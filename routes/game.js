@@ -468,6 +468,12 @@ router.post('/migrate', async (req, res) => {
 
   await run("ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS path JSONB DEFAULT '[]'", "diplo path");
   await run("ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''", "diplo notes");
+  await run("ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS pending_action TEXT DEFAULT NULL", "diplo pending_action");
+  await run("ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS pending_sent_at TIMESTAMPTZ DEFAULT NULL", "diplo pending_sent_at");
+  await run("ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS pending_arrives_at TIMESTAMPTZ DEFAULT NULL", "diplo pending_arrives_at");
+  await run("ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS pending_trust_gain INTEGER DEFAULT 0", "diplo pending_trust_gain");
+  await run("ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS pending_meta JSONB DEFAULT '{}'", "diplo pending_meta");
+  await run("ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS last_gift_at TIMESTAMPTZ DEFAULT NULL", "diplo last_gift_at");
   await run("ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS quest_source TEXT NOT NULL DEFAULT 'tavern'", "quest source");
   await run("ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS given_by_npc_id INTEGER", "quest npc id");
   await run("ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS min_trust INTEGER NOT NULL DEFAULT 0", "quest min trust");
