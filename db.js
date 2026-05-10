@@ -323,18 +323,6 @@ async function initDB() {
   `);
   await query(`CREATE INDEX IF NOT EXISTS idx_diplo_settlement ON diplomacy_relations(settlement_id)`);
   await query(`ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS path JSONB DEFAULT '[]'`).catch(()=>{});
-  // ── Goodwill envoy / gift envoy support ─────────────────────────────────
-  // pending_action: 'goodwill' | 'gift' (null when nothing in flight beyond contact)
-  // pending_arrives_at: when the in-flight envoy arrives back/at NPC
-  // pending_trust_gain: trust to apply on arrival
-  // pending_meta: arbitrary JSON (e.g. gift tier label, gold spent)
-  // last_gift_at: cooldown for the once-per-day gift
-  await query(`ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS pending_action TEXT DEFAULT NULL`).catch(()=>{});
-  await query(`ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS pending_sent_at TIMESTAMPTZ DEFAULT NULL`).catch(()=>{});
-  await query(`ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS pending_arrives_at TIMESTAMPTZ DEFAULT NULL`).catch(()=>{});
-  await query(`ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS pending_trust_gain INTEGER DEFAULT 0`).catch(()=>{});
-  await query(`ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS pending_meta JSONB DEFAULT '{}'`).catch(()=>{});
-  await query(`ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS last_gift_at TIMESTAMPTZ DEFAULT NULL`).catch(()=>{});
 
 
   // ── Quest definition new columns ─────────────────────────────────────────
@@ -403,6 +391,30 @@ async function initDB() {
   `);
   await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS high_bonus JSONB DEFAULT NULL`).catch(()=>{});
   await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0`).catch(()=>{});
+
+  // ── Enemy definitions (combat) ──────────────────────────────────────────
+  // Mirrors the quest_definitions / item_definitions admin pattern: a global
+  // table editable through Dev Tools. Battles fetch the active set and fall
+  // back to the engine's hardcoded defaults if the table is empty.
+  await query(`
+    CREATE TABLE IF NOT EXISTS enemy_definitions (
+      id            TEXT PRIMARY KEY,
+      name          TEXT NOT NULL,
+      icon          TEXT NOT NULL DEFAULT '👹',
+      flavour       TEXT NOT NULL DEFAULT '',
+      max_hp        INTEGER NOT NULL DEFAULT 20,
+      strength      INTEGER NOT NULL DEFAULT 5,
+      agility       INTEGER NOT NULL DEFAULT 5,
+      endurance     INTEGER NOT NULL DEFAULT 5,
+      combat_skill  INTEGER NOT NULL DEFAULT 1,
+      attack_verb   TEXT NOT NULL DEFAULT 'strikes',
+      reward_weight INTEGER NOT NULL DEFAULT 1,
+      archived      BOOLEAN NOT NULL DEFAULT FALSE,
+      sort_order    INTEGER DEFAULT 0,
+      created_at    TIMESTAMPTZ DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
 
   // ── Relationship / Bonding / Breeding system ──────────────────────────────
 
