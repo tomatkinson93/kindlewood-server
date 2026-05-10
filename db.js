@@ -250,6 +250,45 @@ async function initDB() {
   await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS party_ids JSONB DEFAULT '[]'`).catch(()=>{});
   await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS quest_type TEXT DEFAULT 'solo'`).catch(()=>{});
 
+  // ── Quest combat run-state ──────────────────────────────────────────────
+  // Tracks a battle that may fire mid-quest. Set at quest-acceptance:
+  //   - combat_status starts as 'rolled' (combat is scheduled) or 'none' (peaceful).
+  //   - combat_trigger_at: timestamp when battle should kick off, between
+  //     10%-90% of quest duration.
+  //   - combat_seed: PRNG seed for deterministic auto-resolve. Engine
+  //     accepts this via setRng(makeSeededRng(seed)).
+  //   - auto_resolve_combat: player's choice at accept-time.
+  // Updated as the battle plays:
+  //   - 'rolled' -> 'pending' (trigger fired, awaiting player engage)
+  //              -> 'in_progress' (player has the modal open)
+  //              -> 'resolved' (battle ended; quest clock resumes)
+  //   OR for auto-resolve, 'rolled' -> 'resolved' directly.
+  // combat_clock_paused_at lets us extend completes_at by the pause duration
+  // when manual battles finish, so ignoring a battle for 6 hours doesn't
+  // shorten the quest by 6 hours.
+  await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS combat_status TEXT DEFAULT 'none'`).catch(()=>{});
+  await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS combat_trigger_at TIMESTAMPTZ DEFAULT NULL`).catch(()=>{});
+  await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS combat_resolved_at TIMESTAMPTZ DEFAULT NULL`).catch(()=>{});
+  await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS combat_seed BIGINT DEFAULT NULL`).catch(()=>{});
+  await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS combat_encounter JSONB DEFAULT '[]'`).catch(()=>{});
+  await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS combat_outcome TEXT DEFAULT NULL`).catch(()=>{}); // 'victory'|'defeat'|null
+  await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS combat_log JSONB DEFAULT '[]'`).catch(()=>{});
+  await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS combat_clock_paused_at TIMESTAMPTZ DEFAULT NULL`).catch(()=>{});
+  await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS auto_resolve_combat BOOLEAN NOT NULL DEFAULT FALSE`).catch(()=>{});
+
+  // ── Server-authoritative battle state ────────────────────────────────────
+  // Once the player engages a manual battle, the server snapshots the full
+  // battle state here. Subsequent actions update it. This serves two
+  // purposes:
+  //   1) Refresh/close mid-battle no longer resets the fight — the player
+  //      resumes from this exact state.
+  //   2) The action log lets /resolve replay the battle deterministically
+  //      against the seed and verify the client's claimed outcome.
+  // combat_state shape: { units, round, current_index, turn_order, status, log[]}
+  // combat_actions shape: [{ actor_id, action_key, target_id, applied_round }]
+  await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS combat_state JSONB DEFAULT NULL`).catch(()=>{});
+  await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS combat_actions JSONB DEFAULT '[]'`).catch(()=>{});
+
 
 
   // ── Inventory system ──────────────────────────────────────────────────────
@@ -391,6 +430,13 @@ async function initDB() {
   `);
   await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS high_bonus JSONB DEFAULT NULL`).catch(()=>{});
   await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0`).catch(()=>{});
+
+  // ── Quest combat-trigger fields ─────────────────────────────────────────
+  // combat_chance: 0–100 percent. 0 = peaceful quest (default), 100 = always.
+  // combat_encounter: JSONB list of enemy_definition ids, e.g. ["wild_fox","marsh_rat"].
+  //   When empty and chance > 0, the resolver picks one random enemy at runtime.
+  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS combat_chance INTEGER NOT NULL DEFAULT 0`).catch(()=>{});
+  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS combat_encounter JSONB DEFAULT '[]'`).catch(()=>{});
 
   // ── Enemy definitions (combat) ──────────────────────────────────────────
   // Mirrors the quest_definitions / item_definitions admin pattern: a global

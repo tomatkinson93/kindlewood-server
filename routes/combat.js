@@ -13,6 +13,7 @@
 const express = require('express');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
+const combatResolver = require('../lib/combat_resolver');
 
 const router = express.Router();
 
@@ -192,20 +193,333 @@ router.post('/enemies/seed', requireAuth, async (req, res) => {
   }
 });
 
+// ── GET /api/combat/pending — list battles awaiting player engagement ──
+//    Polled by the Battles menu in the nav bar. Returns lightweight rows;
+//    full encounter spec is fetched at engage time.
+router.get('/pending', requireAuth, async (req, res) => {
+  try {
+    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const sett = settRes.rows[0];
+    if (!sett) return res.json({ ok: true, battles: [] });
+
+    // Run trigger processing so any auto-resolves complete and any new
+    // pending battles surface here on the next request after their trigger.
+    try {
+      const quests = require('./quests');
+      if (quests.processCombatTriggers) await quests.processCombatTriggers(sett.id);
+    } catch (e) { /* non-fatal */ }
+
+    const r = await query(
+      `SELECT sq.id, sq.quest_id, sq.quest_type, sq.party_ids, sq.citizen_id,
+              sq.combat_status, sq.combat_encounter, sq.combat_trigger_at,
+              sq.completes_at, sq.combat_clock_paused_at,
+              c.name as citizen_name,
+              qd.title as quest_title, qd.icon as quest_icon
+       FROM settlement_quests sq
+       LEFT JOIN citizens c ON c.id = sq.citizen_id
+       LEFT JOIN quest_definitions qd ON qd.id = sq.quest_id
+       WHERE sq.settlement_id=$1 AND sq.status='active'
+         AND sq.combat_status IN ('pending','in_progress')
+       ORDER BY sq.combat_trigger_at ASC NULLS LAST`,
+      [sett.id]
+    );
+
+    // Pull party member names so the UI can show "Petra & Wren" without an extra round-trip.
+    const battles = await Promise.all(r.rows.map(async row => {
+      let partyNames = [];
+      if (Array.isArray(row.party_ids) && row.party_ids.length) {
+        const p = await query('SELECT id, name FROM citizens WHERE id = ANY($1)', [row.party_ids]);
+        partyNames = p.rows;
+      }
+      return { ...row, party_members: partyNames };
+    }));
+
+    res.json({ ok: true, battles, count: battles.length });
+  } catch (e) {
+    console.error('combat pending error', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── POST /api/combat/engage/:questRunId — claim a battle ──
+//    First call: rolls initial state from {party, encounter, seed} and stores
+//    it on the quest run. Subsequent calls (resume after refresh/close) just
+//    return the persisted state. The server is the source of truth — the
+//    client never invents state.
+router.post('/engage/:questRunId', requireAuth, async (req, res) => {
+  try {
+    const runId = parseInt(req.params.questRunId);
+    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const sett = settRes.rows[0];
+    if (!sett) return res.status(404).json({ error: 'No settlement.' });
+
+    const r = await query(
+      `SELECT sq.*, qd.title as quest_title, qd.icon as quest_icon
+       FROM settlement_quests sq
+       LEFT JOIN quest_definitions qd ON qd.id = sq.quest_id
+       WHERE sq.id=$1 AND sq.settlement_id=$2 AND sq.status='active'`,
+      [runId, sett.id]
+    );
+    const run = r.rows[0];
+    if (!run) return res.status(404).json({ error: 'Quest not found.' });
+    if (!['pending', 'in_progress'].includes(run.combat_status)) {
+      return res.status(400).json({ error: 'No battle awaiting on that quest.' });
+    }
+
+    let encounter = run.combat_encounter || [];
+    if (typeof encounter === 'string') {
+      try { encounter = JSON.parse(encounter); } catch(e) { encounter = []; }
+    }
+    if (!encounter.length) encounter = ['marsh_rat'];
+
+    const partyIds = (run.quest_type === 'party' && Array.isArray(run.party_ids))
+      ? run.party_ids
+      : [run.citizen_id];
+
+    // Mark in_progress (idempotent — re-engage is fine).
+    await query(`UPDATE settlement_quests SET combat_status='in_progress' WHERE id=$1`, [runId]);
+
+    // Resume path: persisted state already exists, hand it back. The action
+    // log is the canonical history — we replay rather than trusting the
+    // stored snapshot, which guards against state-poisoning if the JSON in
+    // the DB were ever tampered with.
+    let actions = run.combat_actions || [];
+    if (typeof actions === 'string') {
+      try { actions = JSON.parse(actions); } catch(e) { actions = []; }
+    }
+    if (!Array.isArray(actions)) actions = [];
+
+    let replay;
+    try {
+      replay = await combatResolver.replayBattle({
+        citizenIds: partyIds,
+        enemyKeys: encounter,
+        seed: parseInt(run.combat_seed) || 1,
+        actions,
+      });
+    } catch (e) {
+      console.error('engage replay failed', e);
+      return res.status(500).json({ error: 'Battle state corrupt: ' + e.message });
+    }
+
+    const battle = combatResolver.serializeBattle(replay.battle);
+
+    // Persist canonical snapshot so /pending lists can show current HPs.
+    await query(
+      `UPDATE settlement_quests SET combat_state=$1 WHERE id=$2`,
+      [JSON.stringify(battle), runId]
+    );
+
+    res.json({
+      ok: true,
+      quest_run_id: runId,
+      quest_title: run.quest_title || run.quest_id,
+      quest_icon:  run.quest_icon || '⚔',
+      encounter,
+      seed: parseInt(run.combat_seed) || 1,
+      battle,
+      actions,
+    });
+  } catch (e) {
+    console.error('combat engage error', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── POST /api/combat/action/:questRunId — submit a player action ────────
+//    Server replays the full action log + this new action, validates it's
+//    the player's turn and the move is legal, and persists the new state.
+//    Returns the canonical state. The client's local state is throwaway —
+//    if it has drifted, the server's response is the truth.
+router.post('/action/:questRunId', requireAuth, async (req, res) => {
+  try {
+    const runId = parseInt(req.params.questRunId);
+    const { action_key, target_id } = req.body || {};
+    if (!action_key) return res.status(400).json({ error: 'action_key required.' });
+
+    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const sett = settRes.rows[0];
+    if (!sett) return res.status(404).json({ error: 'No settlement.' });
+
+    const r = await query(
+      `SELECT * FROM settlement_quests WHERE id=$1 AND settlement_id=$2 AND status='active'`,
+      [runId, sett.id]
+    );
+    const run = r.rows[0];
+    if (!run) return res.status(404).json({ error: 'Quest not found.' });
+    if (run.combat_status !== 'in_progress') {
+      return res.status(400).json({ error: 'Battle not in progress.' });
+    }
+
+    let encounter = run.combat_encounter || [];
+    if (typeof encounter === 'string') { try { encounter = JSON.parse(encounter); } catch(e){ encounter = []; } }
+    if (!encounter.length) encounter = ['marsh_rat'];
+
+    let actions = run.combat_actions || [];
+    if (typeof actions === 'string') { try { actions = JSON.parse(actions); } catch(e){ actions = []; } }
+    if (!Array.isArray(actions)) actions = [];
+
+    const partyIds = (run.quest_type === 'party' && Array.isArray(run.party_ids))
+      ? run.party_ids
+      : [run.citizen_id];
+
+    // Replay current state to find whose turn it is (we don't trust the
+    // client's claim of who's acting). The action's actor_id is set server-side.
+    let pre;
+    try {
+      pre = await combatResolver.replayBattle({
+        citizenIds: partyIds, enemyKeys: encounter,
+        seed: parseInt(run.combat_seed) || 1, actions,
+      });
+    } catch (e) {
+      return res.status(500).json({ error: 'State corrupt: ' + e.message });
+    }
+    const cur = pre.nextActor;
+    if (!cur || cur.side !== 'player') {
+      return res.status(400).json({ error: "Not the player's turn." });
+    }
+
+    const newAction = { actor_id: cur.id, action_key, target_id: target_id || null };
+    const nextActions = actions.concat([newAction]);
+
+    let post;
+    try {
+      post = await combatResolver.replayBattle({
+        citizenIds: partyIds, enemyKeys: encounter,
+        seed: parseInt(run.combat_seed) || 1, actions: nextActions,
+      });
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid move: ' + e.message });
+    }
+
+    const battle = combatResolver.serializeBattle(post.battle);
+
+    // Persist new state + log.
+    await query(
+      `UPDATE settlement_quests SET combat_state=$1, combat_actions=$2 WHERE id=$3`,
+      [JSON.stringify(battle), JSON.stringify(nextActions), runId]
+    );
+
+    res.json({
+      ok: true,
+      battle,
+      actions: nextActions,
+      battle_ended: battle.status !== 'active',
+    });
+  } catch (e) {
+    console.error('combat action error', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.post('/resolve', requireAuth, async (req, res) => {
   try {
-    const { outcome, wealth_reward, citizen_ids } = req.body || {};
+    // Note: for *quest-linked* battles we ignore the client's claimed outcome
+    // and reward entirely. The server replays the persisted action log and
+    // derives the truth. The client's submission acts only as a "I'm done,
+    // please tally up" trigger. For non-quest test battles (Dev Tools button)
+    // we still trust the client because there's no server state to verify
+    // against — but rewards stay capped by MAX_BATTLE_WEALTH so even a bad
+    // actor can't print money.
+    const { outcome: clientOutcome, wealth_reward, citizen_ids, quest_run_id } = req.body || {};
 
     const settRes = await query('SELECT id, wealth FROM settlements WHERE user_id=$1', [req.user.userId]);
     const sett = settRes.rows[0];
     if (!sett) return res.status(404).json({ error: 'No settlement.' });
 
-    if (outcome !== 'victory') {
-      // Nothing to persist on defeat for now (no permadeath, no penalty yet).
-      return res.json({ ok: true, wealth_after: sett.wealth });
+    let questRun = null;
+    let serverOutcome = null;
+    let serverReward = 0;
+    let serverSurvivors = [];
+    let serverFallen = [];
+    let serverLog = [];
+
+    if (quest_run_id) {
+      const r = await query(
+        `SELECT * FROM settlement_quests WHERE id=$1 AND settlement_id=$2`,
+        [quest_run_id, sett.id]
+      );
+      questRun = r.rows[0];
+      if (!questRun) return res.status(404).json({ error: 'Quest run not found.' });
+      if (!['pending', 'in_progress', 'rolled'].includes(questRun.combat_status)) {
+        return res.status(400).json({ error: 'No active battle on that quest.' });
+      }
+
+      // ── Replay-verify: replay the persisted action log, derive truth.
+      let actions = questRun.combat_actions || [];
+      if (typeof actions === 'string') { try { actions = JSON.parse(actions); } catch(e){ actions = []; } }
+      let encounter = questRun.combat_encounter || [];
+      if (typeof encounter === 'string') { try { encounter = JSON.parse(encounter); } catch(e){ encounter = []; } }
+      if (!encounter.length) encounter = ['marsh_rat'];
+      const partyIds = (questRun.quest_type === 'party' && Array.isArray(questRun.party_ids))
+        ? questRun.party_ids
+        : [questRun.citizen_id];
+
+      let replay;
+      try {
+        replay = await combatResolver.replayBattle({
+          citizenIds: partyIds, enemyKeys: encounter,
+          seed: parseInt(questRun.combat_seed) || 1, actions,
+        });
+      } catch (e) {
+        console.error('resolve replay failed', e);
+        return res.status(500).json({ error: 'Could not verify battle: ' + e.message });
+      }
+
+      if (replay.battle.status === 'active') {
+        return res.status(400).json({ error: 'Battle is not yet finished.' });
+      }
+      serverOutcome = replay.battle.status;  // 'victory' | 'defeat'
+      serverReward  = (replay.battle.reward && replay.battle.reward.wealth) || 0;
+      serverLog     = replay.battle.log.slice();
+      serverSurvivors = replay.battle.units
+        .filter(u => u.side === 'player' && !u.flags.downed)
+        .map(u => ({ id: u.citizen_id, name: u.name, hp: u.hp }));
+      serverFallen = replay.battle.units
+        .filter(u => u.side === 'player' && u.flags.downed)
+        .map(u => ({ id: u.citizen_id, name: u.name }));
+
+      // ── Hybrid acceptance: if the client claims worse-than-or-equal,
+      //    accept silently; if the client claims better, log a warning.
+      //    Either way the SERVER outcome wins.
+      if (clientOutcome && clientOutcome !== serverOutcome) {
+        const clientClaimedBetter = clientOutcome === 'victory' && serverOutcome === 'defeat';
+        if (clientClaimedBetter) {
+          console.warn('[anti-cheat] resolve: client claimed victory, server says defeat. quest_run_id=' + quest_run_id);
+        }
+      }
     }
 
-    const wealth = Math.max(0, Math.min(MAX_BATTLE_WEALTH, parseInt(wealth_reward) || 0));
+    // ── Defeat path. Quest fails; nothing for the citizens.
+    if ((questRun && serverOutcome === 'defeat') || (!questRun && clientOutcome !== 'victory')) {
+      if (questRun) {
+        await query(
+          `UPDATE settlement_quests
+           SET combat_status='resolved', combat_outcome='defeat',
+               combat_resolved_at=NOW(), combat_log=$1,
+               status='failed', completes_at=NOW(),
+               combat_clock_paused_at=NULL
+           WHERE id=$2`,
+          [JSON.stringify(serverLog), quest_run_id]
+        );
+      }
+      return res.json({
+        ok: true,
+        wealth_after: sett.wealth,
+        outcome: 'defeat',
+        quest_failed: !!questRun,
+        survivors: serverSurvivors,
+        fallen: serverFallen,
+      });
+    }
+
+    // ── Victory path. Reward comes from server replay (quest battles) or
+    //    capped client claim (test battles).
+    const claimedWealth = parseInt(wealth_reward) || 0;
+    const wealth = questRun
+      ? Math.max(0, Math.min(MAX_BATTLE_WEALTH, serverReward))
+      : Math.max(0, Math.min(MAX_BATTLE_WEALTH, claimedWealth));
+
     let wealthAfter = sett.wealth;
     if (wealth > 0) {
       const upd = await query(
@@ -215,16 +529,17 @@ router.post('/resolve', requireAuth, async (req, res) => {
       wealthAfter = upd.rows[0]?.wealth ?? sett.wealth + wealth;
     }
 
-    // Bump combat skill on surviving citizens (cap at COMBAT_SKILL_CAP).
-    // We do a small per-citizen probability roll to stop combat skill from
-    // ratcheting up on every fight; that turns 5 quick test battles into a
-    // skill-30 super-citizen. ~50% chance per fight feels honest for MVP.
+    // Bump combat skill on surviving citizens. For quest battles we use the
+    // server-derived survivor list; for test battles we still take the
+    // client's word (no truth to verify against).
     let upgraded = [];
-    if (Array.isArray(citizen_ids) && citizen_ids.length) {
-      // Validate ownership before touching skills.
+    const skillBumpIds = questRun
+      ? serverSurvivors.map(s => s.id).filter(Boolean)
+      : (Array.isArray(citizen_ids) ? citizen_ids.map(Number).filter(Boolean) : []);
+    if (skillBumpIds.length) {
       const own = await query(
         'SELECT id, name, skills FROM citizens WHERE id = ANY($1) AND settlement_id=$2',
-        [citizen_ids.map(Number).filter(Boolean), sett.id]
+        [skillBumpIds, sett.id]
       );
       for (const c of own.rows) {
         if (Math.random() > 0.5) continue;
@@ -237,11 +552,35 @@ router.post('/resolve', requireAuth, async (req, res) => {
       }
     }
 
+    // Quest clock resumption — extend completes_at by the pause duration so
+    // ignoring a battle for hours doesn't shorten the quest.
+    if (questRun) {
+      const pausedAt = questRun.combat_clock_paused_at;
+      let pauseMs = 0;
+      if (pausedAt) {
+        pauseMs = Date.now() - new Date(pausedAt).getTime();
+        if (pauseMs < 0) pauseMs = 0;
+      }
+      await query(
+        `UPDATE settlement_quests
+         SET combat_status='resolved', combat_outcome='victory',
+             combat_resolved_at=NOW(), combat_log=$1,
+             combat_clock_paused_at=NULL,
+             completes_at = completes_at + ($2 || ' milliseconds')::interval
+         WHERE id=$3`,
+        [JSON.stringify(serverLog), String(pauseMs), quest_run_id]
+      );
+    }
+
     res.json({
       ok: true,
+      outcome: 'victory',
       wealth_awarded: wealth,
       wealth_after: wealthAfter,
       upgraded_citizens: upgraded,
+      quest_resumed: !!questRun,
+      survivors: serverSurvivors,
+      fallen: serverFallen,
     });
   } catch (e) {
     console.error('Combat resolve error:', e);
