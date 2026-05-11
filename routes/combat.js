@@ -412,6 +412,45 @@ router.post('/action/:questRunId', requireAuth, async (req, res) => {
   }
 });
 
+// ── POST /api/combat/forfeit/:questRunId — concede a battle ──
+//    Marks the quest failed without requiring battle state. Used to unstick
+//    battles that the player can't (or doesn't want to) complete — e.g.
+//    after a frontend bug, or just to surrender. No reward, no skill bump.
+router.post('/forfeit/:questRunId', requireAuth, async (req, res) => {
+  try {
+    const runId = parseInt(req.params.questRunId);
+    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const sett = settRes.rows[0];
+    if (!sett) return res.status(404).json({ error: 'No settlement.' });
+
+    const r = await query(
+      'SELECT id, combat_status FROM settlement_quests WHERE id=$1 AND settlement_id=$2',
+      [runId, sett.id]
+    );
+    const run = r.rows[0];
+    if (!run) return res.status(404).json({ error: 'Quest not found.' });
+    if (!['rolled', 'pending', 'in_progress'].includes(run.combat_status)) {
+      return res.status(400).json({ error: 'No battle to forfeit on that quest.' });
+    }
+
+    await query(
+      `UPDATE settlement_quests
+       SET combat_status='resolved', combat_outcome='defeat',
+           combat_resolved_at=NOW(),
+           combat_log=$1,
+           status='failed', completes_at=NOW(),
+           combat_clock_paused_at=NULL
+       WHERE id=$2`,
+      [JSON.stringify(['The party forfeited.']), runId]
+    );
+
+    res.json({ ok: true, quest_failed: true });
+  } catch (e) {
+    console.error('forfeit error', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.post('/resolve', requireAuth, async (req, res) => {
   try {
     // Note: for *quest-linked* battles we ignore the client's claimed outcome
