@@ -773,6 +773,18 @@ async function processCombatTriggers(settlementId) {
            WHERE id=$2`,
           [JSON.stringify(battleResult.log || []), run.id]
         );
+        // Pyrrhic victory? Roll injuries for any citizens who fell mid-fight.
+        try {
+          await combatResolver.applyBattleAftermath({
+            battle: battleResult.battle,
+            outcome: 'victory',
+            settlementId,
+            questRunId: run.id,
+            encounter,
+          });
+        } catch (e) {
+          console.error('auto-resolve aftermath (victory) failed for run', run.id, e);
+        }
       } else {
         // Defeat ends the quest. completes_at is moved to NOW so collection
         // can happen immediately and the player isn't left wondering.
@@ -784,6 +796,17 @@ async function processCombatTriggers(settlementId) {
            WHERE id=$2`,
           [JSON.stringify(battleResult.log || []), run.id]
         );
+        try {
+          await combatResolver.applyBattleAftermath({
+            battle: battleResult.battle,
+            outcome: 'defeat',
+            settlementId,
+            questRunId: run.id,
+            encounter,
+          });
+        } catch (e) {
+          console.error('auto-resolve aftermath (defeat) failed for run', run.id, e);
+        }
       }
     } else {
       // Manual: pause the quest clock, surface the battle to the player.

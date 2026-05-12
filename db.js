@@ -289,6 +289,59 @@ async function initDB() {
   await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS combat_state JSONB DEFAULT NULL`).catch(()=>{});
   await query(`ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS combat_actions JSONB DEFAULT '[]'`).catch(()=>{});
 
+  // ── Injuries & narrative memory ──────────────────────────────────────────
+  // Two-table model:
+  //
+  // citizen_events  — PERMANENT history. Never deleted, even on citizen
+  //                   death. This is what enables "your grandfather lost a
+  //                   leg fighting a fox in spring of year 3" generations
+  //                   later. Every notable life moment goes here: injuries,
+  //                   key battle victories, eventually weddings/childbirth
+  //                   too if we choose to backfill them.
+  //
+  // citizen_conditions — ACTIVE effects only. Things like "broken arm:
+  //                      -2 strength until next week" live here. When a
+  //                      condition expires or is healed, the row is removed.
+  //                      The matching event in citizen_events persists.
+  //
+  // Tracking them separately keeps the "what currently affects this citizen"
+  // queries small and the "what happened to this citizen ever" queries
+  // honest. The cost of duplicating the body_part + severity onto both is
+  // tiny and avoids messy joins.
+  await query(`
+    CREATE TABLE IF NOT EXISTS citizen_events (
+      id SERIAL PRIMARY KEY,
+      citizen_id INTEGER NOT NULL REFERENCES citizens(id) ON DELETE CASCADE,
+      settlement_id INTEGER NOT NULL REFERENCES settlements(id),
+      event_type TEXT NOT NULL,         -- 'injury','death','combat_victory', etc.
+      severity TEXT,                    -- 'scratch','wound','scar','crippling','fatal'
+      body_part TEXT,                   -- 'head','eye','arm','hand','leg','torso',...
+      narrative TEXT NOT NULL,          -- evocative one-liner shown in profile
+      source_battle_id INTEGER,         -- references settlement_quests.id (combat run)
+      meta JSONB DEFAULT '{}',          -- room for future fields without migrations
+      occurred_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_citizen_events_citizen ON citizen_events(citizen_id)`).catch(()=>{});
+  await query(`CREATE INDEX IF NOT EXISTS idx_citizen_events_settlement ON citizen_events(settlement_id)`).catch(()=>{});
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS citizen_conditions (
+      id SERIAL PRIMARY KEY,
+      citizen_id INTEGER NOT NULL REFERENCES citizens(id) ON DELETE CASCADE,
+      condition_type TEXT NOT NULL,     -- 'injury' (extensible later: 'illness','blessing'...)
+      body_part TEXT,
+      severity TEXT,
+      stat_modifiers JSONB DEFAULT '{}',-- { strength: -2, agility: -1 }
+      acquired_at TIMESTAMPTZ DEFAULT NOW(),
+      expires_at TIMESTAMPTZ,           -- NULL means permanent (e.g. crippling)
+      source_event_id INTEGER REFERENCES citizen_events(id) ON DELETE SET NULL
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_citizen_conditions_citizen ON citizen_conditions(citizen_id)`).catch(()=>{});
+  // Partial index for "currently active" lookups (the common query path):
+  await query(`CREATE INDEX IF NOT EXISTS idx_citizen_conditions_active ON citizen_conditions(citizen_id) WHERE expires_at IS NULL OR expires_at > NOW()`).catch(()=>{});
+
 
 
   // ── Inventory system ──────────────────────────────────────────────────────

@@ -472,6 +472,8 @@ router.post('/resolve', requireAuth, async (req, res) => {
     let serverSurvivors = [];
     let serverFallen = [];
     let serverLog = [];
+    let replayedBattle = null;     // surfaces outside the questRun block so
+    let resolvedEncounter = null;  // aftermath/aftermath-victory can use them.
 
     if (quest_run_id) {
       const r = await query(
@@ -490,6 +492,7 @@ router.post('/resolve', requireAuth, async (req, res) => {
       let encounter = questRun.combat_encounter || [];
       if (typeof encounter === 'string') { try { encounter = JSON.parse(encounter); } catch(e){ encounter = []; } }
       if (!encounter.length) encounter = ['marsh_rat'];
+      resolvedEncounter = encounter;
       const partyIds = (questRun.quest_type === 'party' && Array.isArray(questRun.party_ids))
         ? questRun.party_ids
         : [questRun.citizen_id];
@@ -504,6 +507,7 @@ router.post('/resolve', requireAuth, async (req, res) => {
         console.error('resolve replay failed', e);
         return res.status(500).json({ error: 'Could not verify battle: ' + e.message });
       }
+      replayedBattle = replay.battle;
 
       if (replay.battle.status === 'active') {
         return res.status(400).json({ error: 'Battle is not yet finished.' });
@@ -531,7 +535,21 @@ router.post('/resolve', requireAuth, async (req, res) => {
 
     // ── Defeat path. Quest fails; nothing for the citizens.
     if ((questRun && serverOutcome === 'defeat') || (!questRun && clientOutcome !== 'victory')) {
+      // Aftermath BEFORE the response so the resolution screen can show injuries.
+      let injuryEvents = [];
       if (questRun) {
+        try {
+          injuryEvents = await combatResolver.applyBattleAftermath({
+            battle: replayedBattle,
+            outcome: 'defeat',
+            settlementId: sett.id,
+            questRunId: quest_run_id,
+            encounter: resolvedEncounter,
+          });
+        } catch (e) {
+          console.error('aftermath (defeat) failed', e);
+        }
+
         await query(
           `UPDATE settlement_quests
            SET combat_status='resolved', combat_outcome='defeat',
@@ -549,6 +567,7 @@ router.post('/resolve', requireAuth, async (req, res) => {
         quest_failed: !!questRun,
         survivors: serverSurvivors,
         fallen: serverFallen,
+        injuries: injuryEvents,
       });
     }
 
@@ -611,6 +630,24 @@ router.post('/resolve', requireAuth, async (req, res) => {
       );
     }
 
+    // ── Victory aftermath: only fallen citizens roll for injury. Clean
+    //    victors walk away unscathed. Test battles (no questRun) skip this
+    //    since they have no DB-side citizen state to inject events into.
+    let injuryEvents = [];
+    if (questRun) {
+      try {
+        injuryEvents = await combatResolver.applyBattleAftermath({
+          battle: replayedBattle,
+          outcome: 'victory',
+          settlementId: sett.id,
+          questRunId: quest_run_id,
+          encounter: resolvedEncounter,
+        });
+      } catch (e) {
+        console.error('aftermath (victory) failed', e);
+      }
+    }
+
     res.json({
       ok: true,
       outcome: 'victory',
@@ -620,9 +657,138 @@ router.post('/resolve', requireAuth, async (req, res) => {
       quest_resumed: !!questRun,
       survivors: serverSurvivors,
       fallen: serverFallen,
+      injuries: injuryEvents,
     });
   } catch (e) {
     console.error('Combat resolve error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+//  INJURY ENDPOINTS — read citizen history, manually inflict/heal (admin)
+// ══════════════════════════════════════════════════════════════════════════
+
+// GET /api/combat/citizen/:id/events — full event log for a citizen
+//    Used by the citizen profile to show "Scars & Memories". Permission:
+//    citizen must belong to the requesting user's settlement.
+router.get('/citizen/:id/events', requireAuth, async (req, res) => {
+  try {
+    const citId = parseInt(req.params.id);
+    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const sett = settRes.rows[0];
+    if (!sett) return res.status(404).json({ error: 'No settlement.' });
+
+    const own = await query('SELECT id FROM citizens WHERE id=$1 AND settlement_id=$2', [citId, sett.id]);
+    if (!own.rows.length) return res.status(404).json({ error: 'Citizen not found.' });
+
+    const events = await query(
+      `SELECT id, event_type, severity, body_part, narrative, source_battle_id, occurred_at
+       FROM citizen_events
+       WHERE citizen_id=$1
+       ORDER BY occurred_at DESC`,
+      [citId]
+    );
+    const conditions = await query(
+      `SELECT id, condition_type, body_part, severity, stat_modifiers, acquired_at, expires_at
+       FROM citizen_conditions
+       WHERE citizen_id=$1
+         AND (expires_at IS NULL OR expires_at > NOW())
+       ORDER BY acquired_at DESC`,
+      [citId]
+    );
+
+    res.json({
+      ok: true,
+      citizen_id: citId,
+      events: events.rows,
+      conditions: conditions.rows,
+    });
+  } catch (e) {
+    console.error('citizen events fetch error', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/combat/admin/inflict — DEV ONLY. Manually inflict an injury.
+// Body: { citizen_id, severity?, body_part? } — any omitted field is rolled.
+router.post('/admin/inflict', requireAuth, async (req, res) => {
+  try {
+    const { citizen_id, severity, body_part } = req.body || {};
+    const cid = parseInt(citizen_id);
+    if (!cid) return res.status(400).json({ error: 'citizen_id required.' });
+    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const sett = settRes.rows[0];
+    if (!sett) return res.status(404).json({ error: 'No settlement.' });
+
+    const cit = await query(
+      'SELECT id, name, life_stage FROM citizens WHERE id=$1 AND settlement_id=$2',
+      [cid, sett.id]
+    );
+    if (!cit.rows.length) return res.status(404).json({ error: 'Citizen not found.' });
+    const citizen = cit.rows[0];
+
+    // Use the same roll machinery so admin injuries look like normal ones.
+    // If severity/body_part overrides are provided, splice them in afterwards.
+    const rolled = combatResolver.rollInjuryFor({ life_stage: citizen.life_stage });
+    if (severity) {
+      rolled.severity = severity;
+      // Recompute stat modifiers & heal_days for the overridden severity
+      const INJURY_TABLE = require('../lib/injury_table');
+      const cfg = INJURY_TABLE.SEVERITY_EFFECTS[severity];
+      if (cfg) {
+        rolled.stat_modifiers = { ...(cfg.modifiers_by_part[rolled.body_part] || {}) };
+        rolled.heal_days = cfg.heal_days;
+      }
+    }
+    if (body_part) {
+      rolled.body_part = body_part;
+      const INJURY_TABLE = require('../lib/injury_table');
+      const cfg = INJURY_TABLE.SEVERITY_EFFECTS[rolled.severity];
+      if (cfg) rolled.stat_modifiers = { ...(cfg.modifiers_by_part[body_part] || {}) };
+    }
+
+    // Write directly using the resolver's internal flow. We synthesize a
+    // minimal "battle" stub with one player + one enemy so narrative templates
+    // have an antagonist to name.
+    const fakeBattle = {
+      units: [
+        { side: 'player', citizen_id: citizen.id, name: citizen.name, flags: { downed: true } },
+        { side: 'enemy', name: 'a Dev Tools incident' },
+      ],
+    };
+    const events = await combatResolver.applyBattleAftermath({
+      battle: fakeBattle,
+      outcome: 'defeat',     // force the roll path
+      settlementId: sett.id,
+      questRunId: null,
+      encounter: [],
+    });
+
+    res.json({ ok: true, events });
+  } catch (e) {
+    console.error('admin inflict error', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/combat/admin/heal — DEV ONLY. Clear all active conditions on a citizen.
+router.post('/admin/heal', requireAuth, async (req, res) => {
+  try {
+    const { citizen_id } = req.body || {};
+    const cid = parseInt(citizen_id);
+    if (!cid) return res.status(400).json({ error: 'citizen_id required.' });
+    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const sett = settRes.rows[0];
+    if (!sett) return res.status(404).json({ error: 'No settlement.' });
+
+    const own = await query('SELECT id FROM citizens WHERE id=$1 AND settlement_id=$2', [cid, sett.id]);
+    if (!own.rows.length) return res.status(404).json({ error: 'Citizen not found.' });
+
+    const r = await query('DELETE FROM citizen_conditions WHERE citizen_id=$1', [cid]);
+    res.json({ ok: true, conditions_removed: r.rowCount });
+  } catch (e) {
+    console.error('admin heal error', e);
     res.status(500).json({ error: e.message });
   }
 });
