@@ -728,96 +728,119 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
 // Should be called BEFORE resolveCompletedQuests so a battle that's about to
 // trigger doesn't get bypassed by completion happening first.
 async function processCombatTriggers(settlementId) {
-  const due = await query(
-    `SELECT * FROM settlement_quests
-     WHERE settlement_id=$1 AND status='active'
-       AND combat_status='rolled'
-       AND combat_trigger_at IS NOT NULL
-       AND combat_trigger_at <= NOW()`,
-    [settlementId]
-  );
+  // Same race-protection pattern as resolveCompletedQuests. Two concurrent
+  // pollers without locking would both see status='rolled' for the same
+  // run and both kick off auto-resolution — that's how duplicate combat_log
+  // / event rows / aftermath rolls used to slip through.
+  const { pool } = require('../db');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
 
-  for (const run of due.rows) {
-    let encounter = run.combat_encounter || [];
-    if (typeof encounter === 'string') {
-      try { encounter = JSON.parse(encounter); } catch(e) { encounter = []; }
-    }
-    if (!encounter.length) {
-      encounter = await _pickFallbackEnemy();
-    }
+    const due = await client.query(
+      `SELECT * FROM settlement_quests
+       WHERE settlement_id=$1 AND status='active'
+         AND combat_status='rolled'
+         AND combat_trigger_at IS NOT NULL
+         AND combat_trigger_at <= NOW()
+       FOR UPDATE SKIP LOCKED`,
+      [settlementId]
+    );
 
-    if (run.auto_resolve_combat) {
-      // Headless simulation. Outcome is deterministic from the seed.
-      const partyIds = (run.quest_type === 'party' && Array.isArray(run.party_ids))
-        ? run.party_ids
-        : [run.citizen_id];
-
-      let battleResult;
-      try {
-        battleResult = await combatResolver.autoResolveBattle({
-          citizenIds: partyIds,
-          enemyKeys: encounter,
-          seed: parseInt(run.combat_seed) || 1,
-        });
-      } catch (e) {
-        console.error('auto-resolve crashed for quest run', run.id, e);
-        battleResult = { outcome: 'defeat', log: ['Auto-resolve failed: ' + e.message], reward: { wealth: 0 }, rounds: 0 };
+    for (const run of due.rows) {
+      let encounter = run.combat_encounter || [];
+      if (typeof encounter === 'string') {
+        try { encounter = JSON.parse(encounter); } catch(e) { encounter = []; }
+      }
+      if (!encounter.length) {
+        encounter = await _pickFallbackEnemy();
       }
 
-      if (battleResult.outcome === 'victory') {
-        // Quest continues; combat reward will be added at quest collection.
-        await query(
-          `UPDATE settlement_quests
-           SET combat_status='resolved', combat_outcome='victory',
-               combat_resolved_at=NOW(), combat_log=$1
-           WHERE id=$2`,
-          [JSON.stringify(battleResult.log || []), run.id]
-        );
-        // Pyrrhic victory? Roll injuries for any citizens who fell mid-fight.
+      if (run.auto_resolve_combat) {
+        const partyIds = (run.quest_type === 'party' && Array.isArray(run.party_ids))
+          ? run.party_ids
+          : [run.citizen_id];
+
+        let battleResult;
         try {
-          await combatResolver.applyBattleAftermath({
-            battle: battleResult.battle,
-            outcome: 'victory',
-            settlementId,
-            questRunId: run.id,
-            encounter,
+          battleResult = await combatResolver.autoResolveBattle({
+            citizenIds: partyIds,
+            enemyKeys: encounter,
+            seed: parseInt(run.combat_seed) || 1,
           });
         } catch (e) {
-          console.error('auto-resolve aftermath (victory) failed for run', run.id, e);
+          console.error('auto-resolve crashed for quest run', run.id, e);
+          battleResult = { outcome: 'defeat', log: ['Auto-resolve failed: ' + e.message], reward: { wealth: 0 }, rounds: 0 };
+        }
+
+        if (battleResult.outcome === 'victory') {
+          // Quest continues; combat reward will be added at quest collection.
+          // We persist the full battle snapshot so the "View Battle" report
+          // later can show end-of-fight unit HPs, who fell, etc.
+          const stateJson = JSON.stringify(
+            combatResolver.serializeBattle(battleResult.battle)
+          );
+          await client.query(
+            `UPDATE settlement_quests
+             SET combat_status='resolved', combat_outcome='victory',
+                 combat_resolved_at=NOW(), combat_log=$1, combat_state=$2
+             WHERE id=$3`,
+            [JSON.stringify(battleResult.log || []), stateJson, run.id]
+          );
+          // Pyrrhic victory? Roll injuries for any citizens who fell mid-fight.
+          try {
+            await combatResolver.applyBattleAftermath({
+              battle: battleResult.battle,
+              outcome: 'victory',
+              settlementId,
+              questRunId: run.id,
+              encounter,
+            });
+          } catch (e) {
+            console.error('auto-resolve aftermath (victory) failed for run', run.id, e);
+          }
+        } else {
+          const stateJson = JSON.stringify(
+            combatResolver.serializeBattle(battleResult.battle)
+          );
+          await client.query(
+            `UPDATE settlement_quests
+             SET combat_status='resolved', combat_outcome='defeat',
+                 combat_resolved_at=NOW(), combat_log=$1, combat_state=$2,
+                 status='failed', completes_at=NOW()
+             WHERE id=$3`,
+            [JSON.stringify(battleResult.log || []), stateJson, run.id]
+          );
+          try {
+            await combatResolver.applyBattleAftermath({
+              battle: battleResult.battle,
+              outcome: 'defeat',
+              settlementId,
+              questRunId: run.id,
+              encounter,
+            });
+          } catch (e) {
+            console.error('auto-resolve aftermath (defeat) failed for run', run.id, e);
+          }
         }
       } else {
-        // Defeat ends the quest. completes_at is moved to NOW so collection
-        // can happen immediately and the player isn't left wondering.
-        await query(
+        // Manual battle: pause the quest clock and flag for player attention.
+        await client.query(
           `UPDATE settlement_quests
-           SET combat_status='resolved', combat_outcome='defeat',
-               combat_resolved_at=NOW(), combat_log=$1,
-               status='failed', completes_at=NOW()
+           SET combat_status='pending', combat_clock_paused_at=NOW(),
+               combat_encounter=$1
            WHERE id=$2`,
-          [JSON.stringify(battleResult.log || []), run.id]
+          [JSON.stringify(encounter), run.id]
         );
-        try {
-          await combatResolver.applyBattleAftermath({
-            battle: battleResult.battle,
-            outcome: 'defeat',
-            settlementId,
-            questRunId: run.id,
-            encounter,
-          });
-        } catch (e) {
-          console.error('auto-resolve aftermath (defeat) failed for run', run.id, e);
-        }
       }
-    } else {
-      // Manual: pause the quest clock, surface the battle to the player.
-      await query(
-        `UPDATE settlement_quests
-         SET combat_status='pending', combat_clock_paused_at=NOW(),
-             combat_encounter=$1
-         WHERE id=$2`,
-        [JSON.stringify(encounter), run.id]
-      );
     }
+
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
   }
 }
 
@@ -828,94 +851,116 @@ async function resolveCompletedQuests(settlementId) {
   // in-progress battle must NOT complete: the player needs to engage.
   await processCombatTriggers(settlementId);
 
-  const dueRes = await query(
-    `SELECT q.*, c.skills as citizen_skills
-     FROM settlement_quests q
-     LEFT JOIN citizens c ON q.citizen_id = c.id
-     WHERE q.settlement_id=$1 AND q.status='active' AND q.completes_at <= NOW()
-       AND COALESCE(q.combat_status,'none') NOT IN ('pending','in_progress')`,
-    [settlementId]
-  );
+  // We wrap the whole select-then-process loop in a transaction with
+  // FOR UPDATE SKIP LOCKED. Without the transaction, FOR UPDATE releases
+  // its row locks as soon as the SELECT statement finishes, leaving the
+  // critical section unprotected. Inside a transaction the lock is held
+  // until COMMIT, which is exactly what we want: concurrent pollers see
+  // the row as locked and skip it.
+  //
+  // Background: the quest poller fires every 15s (or every 5s during
+  // combat-pending), and the active-quests endpoint also resolves on demand.
+  // Without this lock, two concurrent requests would both decide a random
+  // outcome for the same row and both INSERT chronicle events — which is
+  // exactly the duplicate-bell bug we saw.
+  const { pool } = require('../db');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
 
-  for (const run of dueRes.rows) {
-    const isParty = run.quest_type === 'party';
-    // Look up def: hardcoded pool first, then DB. NPC quests live only in DB.
-    let quest = isParty
-      ? PARTY_QUEST_POOL.find(q => q.id === run.quest_id)
-      : QUEST_POOL.find(q => q.id === run.quest_id);
-    if (!quest) {
-      const dbQ = await query('SELECT * FROM quest_definitions WHERE id=$1', [run.quest_id]);
-      if (dbQ.rows.length) quest = dbQ.rows[0];
-    }
-
-    if (!quest) {
-      await query("UPDATE settlement_quests SET status='failed' WHERE id=$1", [run.id]);
-      continue;
-    }
-
-    let successChance, roll, outcome;
-
-    if (isParty) {
-      // Party quest: average skill across all party members' relevant skills
-      const partyIds = run.party_ids || [];
-      let totalSkill = 0, count = 0;
-      if (partyIds.length > 0) {
-        const pRes = await query('SELECT skills FROM citizens WHERE id = ANY($1)', [partyIds]);
-        quest.requires.forEach((req, i) => {
-          const member = pRes.rows[i];
-          if (member) {
-            totalSkill += (member.skills?.[req.skill_key] ?? 1);
-            count++;
-          }
-        });
-      }
-      const avgSkill = count > 0 ? totalSkill / count : 1;
-      successChance = Math.min(0.95, quest.base_success + (avgSkill - 1) * 0.04);
-      roll = Math.random();
-      outcome = roll < successChance ? 'completed' : 'failed';
-
-      // Award relationship points between all party members
-      const relDelta = outcome === 'completed' ? 8 : -3;
-      const partyIdArr = run.party_ids || [];
-      for (let i = 0; i < partyIdArr.length; i++) {
-        for (let j = i + 1; j < partyIdArr.length; j++) {
-          const aId = Math.min(partyIdArr[i], partyIdArr[j]);
-          const bId = Math.max(partyIdArr[i], partyIdArr[j]);
-          await query(
-            `INSERT INTO citizen_relationships (settlement_id, citizen_a_id, citizen_b_id, score, state)
-             VALUES ($1,$2,$3,GREATEST(0,LEAST(100,50+$4)),'acquaintances')
-             ON CONFLICT (citizen_a_id, citizen_b_id)
-             DO UPDATE SET score = GREATEST(0, LEAST(100, citizen_relationships.score + $4)),
-                           last_updated = NOW()`,
-            [settlementId, aId, bId, relDelta]
-          );
-        }
-      }
-
-      // Chronicle event
-      const partyNamesRes = await query('SELECT name FROM citizens WHERE id = ANY($1)', [partyIdArr]);
-      const names = partyNamesRes.rows.map(r => r.name).join(', ');
-      const evtMsg = outcome === 'completed'
-        ? `The party — ${names} — returned triumphant from "${quest.title}". 🎉`
-        : `The party — ${names} — failed their quest: "${quest.title}". 😔`;
-      await query(
-        'INSERT INTO settlement_events (settlement_id, type, message, citizen_ids) VALUES ($1,$2,$3,$4)',
-        [settlementId, outcome === 'completed' ? 'quest_success' : 'quest_fail', evtMsg, JSON.stringify(partyIdArr)]
-      );
-
-    } else {
-      // Solo quest
-      const skills = run.citizen_skills || {};
-      const skillVal = skills[quest.skill_key] ?? 1;
-      successChance = Math.min(0.95, quest.base_success + (skillVal - 1) * 0.04);
-      roll = Math.random();
-      outcome = roll < successChance ? 'completed' : 'failed';
-    }
-
-    await query(
-      "UPDATE settlement_quests SET status=$1, resolved_at=NOW(), success_roll=$2, success_chance=$3 WHERE id=$4",
-      [outcome, roll, successChance, run.id]
+    const dueRes = await client.query(
+      `SELECT q.*, c.skills as citizen_skills
+       FROM settlement_quests q
+       LEFT JOIN citizens c ON q.citizen_id = c.id
+       WHERE q.settlement_id=$1 AND q.status='active' AND q.completes_at <= NOW()
+         AND COALESCE(q.combat_status,'none') NOT IN ('pending','in_progress')
+       FOR UPDATE OF q SKIP LOCKED`,
+      [settlementId]
     );
+
+    for (const run of dueRes.rows) {
+      const isParty = run.quest_type === 'party';
+      // Look up def: hardcoded pool first, then DB. NPC quests live only in DB.
+      let quest = isParty
+        ? PARTY_QUEST_POOL.find(q => q.id === run.quest_id)
+        : QUEST_POOL.find(q => q.id === run.quest_id);
+      if (!quest) {
+        const dbQ = await client.query('SELECT * FROM quest_definitions WHERE id=$1', [run.quest_id]);
+        if (dbQ.rows.length) quest = dbQ.rows[0];
+      }
+
+      if (!quest) {
+        await client.query("UPDATE settlement_quests SET status='failed' WHERE id=$1", [run.id]);
+        continue;
+      }
+
+      let successChance, roll, outcome;
+
+      if (isParty) {
+        const partyIds = run.party_ids || [];
+        let totalSkill = 0, count = 0;
+        if (partyIds.length > 0) {
+          const pRes = await client.query('SELECT skills FROM citizens WHERE id = ANY($1)', [partyIds]);
+          quest.requires.forEach((req, i) => {
+            const member = pRes.rows[i];
+            if (member) {
+              totalSkill += (member.skills?.[req.skill_key] ?? 1);
+              count++;
+            }
+          });
+        }
+        const avgSkill = count > 0 ? totalSkill / count : 1;
+        successChance = Math.min(0.95, quest.base_success + (avgSkill - 1) * 0.04);
+        roll = Math.random();
+        outcome = roll < successChance ? 'completed' : 'failed';
+
+        const relDelta = outcome === 'completed' ? 8 : -3;
+        const partyIdArr = run.party_ids || [];
+        for (let i = 0; i < partyIdArr.length; i++) {
+          for (let j = i + 1; j < partyIdArr.length; j++) {
+            const aId = Math.min(partyIdArr[i], partyIdArr[j]);
+            const bId = Math.max(partyIdArr[i], partyIdArr[j]);
+            await client.query(
+              `INSERT INTO citizen_relationships (settlement_id, citizen_a_id, citizen_b_id, score, state)
+               VALUES ($1,$2,$3,GREATEST(0,LEAST(100,50+$4)),'acquaintances')
+               ON CONFLICT (citizen_a_id, citizen_b_id)
+               DO UPDATE SET score = GREATEST(0, LEAST(100, citizen_relationships.score + $4)),
+                             last_updated = NOW()`,
+              [settlementId, aId, bId, relDelta]
+            );
+          }
+        }
+
+        const partyNamesRes = await client.query('SELECT name FROM citizens WHERE id = ANY($1)', [partyIdArr]);
+        const names = partyNamesRes.rows.map(r => r.name).join(', ');
+        const evtMsg = outcome === 'completed'
+          ? `The party — ${names} — returned triumphant from "${quest.title}". 🎉`
+          : `The party — ${names} — failed their quest: "${quest.title}". 😔`;
+        await client.query(
+          'INSERT INTO settlement_events (settlement_id, type, message, citizen_ids) VALUES ($1,$2,$3,$4)',
+          [settlementId, outcome === 'completed' ? 'quest_success' : 'quest_fail', evtMsg, JSON.stringify(partyIdArr)]
+        );
+
+      } else {
+        const skills = run.citizen_skills || {};
+        const skillVal = skills[quest.skill_key] ?? 1;
+        successChance = Math.min(0.95, quest.base_success + (skillVal - 1) * 0.04);
+        roll = Math.random();
+        outcome = roll < successChance ? 'completed' : 'failed';
+      }
+
+      await client.query(
+        "UPDATE settlement_quests SET status=$1, resolved_at=NOW(), success_roll=$2, success_chance=$3 WHERE id=$4",
+        [outcome, roll, successChance, run.id]
+      );
+    }
+
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
   }
 }
 

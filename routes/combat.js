@@ -669,6 +669,81 @@ router.post('/resolve', requireAuth, async (req, res) => {
 //  INJURY ENDPOINTS — read citizen history, manually inflict/heal (admin)
 // ══════════════════════════════════════════════════════════════════════════
 
+// GET /api/combat/report/:questRunId — after-action report for a battle
+//    Returns: outcome, encounter, party (with hp end-states), log, rewards,
+//    injuries that resulted from this battle.
+//    Used by the "View Battle" button on collectible quest cards.
+router.get('/report/:questRunId', requireAuth, async (req, res) => {
+  try {
+    const runId = parseInt(req.params.questRunId);
+    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const sett = settRes.rows[0];
+    if (!sett) return res.status(404).json({ error: 'No settlement.' });
+
+    const r = await query(
+      `SELECT sq.*, qd.title as quest_title, qd.icon as quest_icon, qd.reward_gold
+       FROM settlement_quests sq
+       LEFT JOIN quest_definitions qd ON qd.id = sq.quest_id
+       WHERE sq.id=$1 AND sq.settlement_id=$2`,
+      [runId, sett.id]
+    );
+    const run = r.rows[0];
+    if (!run) return res.status(404).json({ error: 'Quest run not found.' });
+    if (!run.combat_outcome) {
+      return res.status(404).json({ error: 'No battle on this quest.' });
+    }
+
+    // Pull party + citizen names
+    const partyIds = (run.quest_type === 'party' && Array.isArray(run.party_ids))
+      ? run.party_ids
+      : [run.citizen_id].filter(Boolean);
+    const partyRes = partyIds.length
+      ? await query('SELECT id, name, life_stage FROM citizens WHERE id = ANY($1)', [partyIds])
+      : { rows: [] };
+
+    // Pull any citizen_events that came out of this battle (the
+    // source_battle_id column is the quest_run_id we just queried).
+    const eventsRes = await query(
+      `SELECT id, citizen_id, event_type, severity, body_part, narrative, occurred_at
+       FROM citizen_events WHERE source_battle_id=$1
+       ORDER BY occurred_at ASC`,
+      [runId]
+    );
+
+    // Battle state (the engine snapshot) tells us final HPs and who fell.
+    let battleState = run.combat_state;
+    if (typeof battleState === 'string') {
+      try { battleState = JSON.parse(battleState); } catch(e) { battleState = null; }
+    }
+    let combatLog = run.combat_log;
+    if (typeof combatLog === 'string') {
+      try { combatLog = JSON.parse(combatLog); } catch(e) { combatLog = []; }
+    }
+    let encounter = run.combat_encounter;
+    if (typeof encounter === 'string') {
+      try { encounter = JSON.parse(encounter); } catch(e) { encounter = []; }
+    }
+
+    res.json({
+      ok: true,
+      quest_run_id: runId,
+      quest_title: run.quest_title || run.quest_id,
+      quest_icon:  run.quest_icon || '⚔',
+      outcome:     run.combat_outcome,
+      encounter:   encounter || [],
+      log:         combatLog || [],
+      battle_state: battleState,
+      party:       partyRes.rows,
+      injury_events: eventsRes.rows,
+      reward_wealth: run.combat_outcome === 'victory' ? (run.reward_gold || 0) : 0,
+      resolved_at: run.combat_resolved_at,
+    });
+  } catch (e) {
+    console.error('combat report error', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/combat/citizen/:id/events — full event log for a citizen
 //    Used by the citizen profile to show "Scars & Memories". Permission:
 //    citizen must belong to the requesting user's settlement.
