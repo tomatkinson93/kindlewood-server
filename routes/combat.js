@@ -14,6 +14,7 @@ const express = require('express');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
 const combatResolver = require('../lib/combat_resolver');
+const eventBus = require('../lib/event_bus');
 
 const router = express.Router();
 
@@ -444,6 +445,18 @@ router.post('/forfeit/:questRunId', requireAuth, async (req, res) => {
       [JSON.stringify(['The party forfeited.']), runId]
     );
 
+    // Push: forfeit ends both the battle and the quest.
+    eventBus.publish(sett.id, {
+      type: 'combat_resolved',
+      quest_run_id: runId,
+      outcome: 'defeat',
+    });
+    eventBus.publish(sett.id, {
+      type: 'quest_resolved',
+      quest_run_id: runId,
+      outcome: 'failed',
+    });
+
     res.json({ ok: true, quest_failed: true });
   } catch (e) {
     console.error('forfeit error', e);
@@ -559,6 +572,17 @@ router.post('/resolve', requireAuth, async (req, res) => {
            WHERE id=$2`,
           [JSON.stringify(serverLog), quest_run_id]
         );
+        // Push: manual battle ended in defeat. Quest now fails.
+        eventBus.publish(sett.id, {
+          type: 'combat_resolved',
+          quest_run_id,
+          outcome: 'defeat',
+        });
+        eventBus.publish(sett.id, {
+          type: 'quest_resolved',
+          quest_run_id,
+          outcome: 'failed',
+        });
       }
       return res.json({
         ok: true,
@@ -646,6 +670,17 @@ router.post('/resolve', requireAuth, async (req, res) => {
       } catch (e) {
         console.error('aftermath (victory) failed', e);
       }
+    }
+
+    // Push: manual battle ended in victory. Quest continues — its timer
+    // will resume from where it was paused, so frontend re-fetches to pick
+    // up the new completes_at.
+    if (questRun) {
+      eventBus.publish(sett.id, {
+        type: 'combat_resolved',
+        quest_run_id,
+        outcome: 'victory',
+      });
     }
 
     res.json({

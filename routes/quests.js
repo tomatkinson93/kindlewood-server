@@ -2,6 +2,7 @@ const express = require('express');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
 const combatResolver = require('../lib/combat_resolver');
+const eventBus = require('../lib/event_bus');
 
 // ── Combat-trigger helpers ──────────────────────────────────────────────
 // A quest with combat_chance > 0 may fire a battle mid-flight. At accept
@@ -799,6 +800,14 @@ async function processCombatTriggers(settlementId) {
           } catch (e) {
             console.error('auto-resolve aftermath (victory) failed for run', run.id, e);
           }
+          // Push: combat finished. The quest keeps ticking, so we don't
+          // publish quest_resolved here — that'll come from resolveCompletedQuests
+          // when the quest's clock runs out.
+          eventBus.publish(settlementId, {
+            type: 'combat_resolved',
+            quest_run_id: run.id,
+            outcome: 'victory',
+          });
         } else {
           const stateJson = JSON.stringify(
             combatResolver.serializeBattle(battleResult.battle)
@@ -822,6 +831,18 @@ async function processCombatTriggers(settlementId) {
           } catch (e) {
             console.error('auto-resolve aftermath (defeat) failed for run', run.id, e);
           }
+          // Push: defeat ends the quest right now, so both events fire.
+          // Frontend coalesces these into one refresh by re-fetching.
+          eventBus.publish(settlementId, {
+            type: 'combat_resolved',
+            quest_run_id: run.id,
+            outcome: 'defeat',
+          });
+          eventBus.publish(settlementId, {
+            type: 'quest_resolved',
+            quest_run_id: run.id,
+            outcome: 'failed',
+          });
         }
       } else {
         // Manual battle: pause the quest clock and flag for player attention.
@@ -832,6 +853,12 @@ async function processCombatTriggers(settlementId) {
            WHERE id=$2`,
           [JSON.stringify(encounter), run.id]
         );
+        // Push: a new battle awaits. Frontend refreshes battles badge +
+        // freezes the quest's countdown.
+        eventBus.publish(settlementId, {
+          type: 'combat_pending',
+          quest_run_id: run.id,
+        });
       }
     }
 
@@ -953,6 +980,12 @@ async function resolveCompletedQuests(settlementId) {
         "UPDATE settlement_quests SET status=$1, resolved_at=NOW(), success_roll=$2, success_chance=$3 WHERE id=$4",
         [outcome, roll, successChance, run.id]
       );
+      // Push: quest concluded. Frontend reloads quests + toasts.
+      eventBus.publish(settlementId, {
+        type: 'quest_resolved',
+        quest_run_id: run.id,
+        outcome,
+      });
     }
 
     await client.query('COMMIT');

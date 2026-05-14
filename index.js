@@ -57,6 +57,8 @@ const relationshipsRoutes = require('./routes/relationships');
 app.use('/api/relationships', relationshipsRoutes);
 const combatRoutes = require('./routes/combat');
 app.use('/api/combat', combatRoutes);
+const streamRoutes = require('./routes/stream');
+app.use('/api/stream', streamRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err.message);
