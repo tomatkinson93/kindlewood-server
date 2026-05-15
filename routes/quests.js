@@ -640,11 +640,19 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
       [req.params.id, req.user.userId]
     );
     const run = questRunRes.rows[0];
-    if (!run) return res.status(404).json({ error: 'Quest not found.' });
-    if (run.status === 'active')
+    if (!run) {
+      console.warn('[collect] 404 — no row for id=%s user=%s', req.params.id, req.user.userId);
+      return res.status(404).json({ error: 'Quest not found.' });
+    }
+    if (run.status === 'active') {
+      console.warn('[collect] 400 still-active — id=%s status=%s combat_status=%s completes_at=%s now=%s',
+        run.id, run.status, run.combat_status, run.completes_at, new Date().toISOString());
       return res.status(400).json({ error: 'Quest still in progress.' });
-    if (run.status === 'collected')
+    }
+    if (run.status === 'collected') {
+      console.warn('[collect] 400 already-collected — id=%s', run.id);
       return res.status(400).json({ error: 'Already collected.' });
+    }
 
     // Resolve quest definition: hardcoded pools first, then DB.
     let quest = QUEST_POOL.find(q => q.id === run.quest_id)
