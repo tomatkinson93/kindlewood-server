@@ -735,6 +735,13 @@ async function processCombatTriggers(settlementId) {
   // / event rows / aftermath rolls used to slip through.
   const { pool } = require('../db');
   const client = await pool.connect();
+  // Buffer events here and publish after COMMIT. Publishing during the
+  // transaction creates a race: subscribers re-fetch /api/quests in
+  // response to the event, and that fetch can land BEFORE the commit
+  // visible to it, returning stale rows. With the worker driving
+  // resolution out-of-band (rather than the HTTP handler returning post-
+  // commit state in its response), the race becomes routinely observable.
+  const pendingEvents = [];
   try {
     await client.query('BEGIN');
 
@@ -800,10 +807,10 @@ async function processCombatTriggers(settlementId) {
           } catch (e) {
             console.error('auto-resolve aftermath (victory) failed for run', run.id, e);
           }
-          // Push: combat finished. The quest keeps ticking, so we don't
+          // Buffer: combat finished. The quest keeps ticking, so we don't
           // publish quest_resolved here — that'll come from resolveCompletedQuests
-          // when the quest's clock runs out.
-          eventBus.publish(settlementId, {
+          // when the quest's clock runs out. Flushed after COMMIT.
+          pendingEvents.push({
             type: 'combat_resolved',
             quest_run_id: run.id,
             outcome: 'victory',
@@ -831,14 +838,15 @@ async function processCombatTriggers(settlementId) {
           } catch (e) {
             console.error('auto-resolve aftermath (defeat) failed for run', run.id, e);
           }
-          // Push: defeat ends the quest right now, so both events fire.
+          // Buffer: defeat ends the quest right now, so both events fire.
           // Frontend coalesces these into one refresh by re-fetching.
-          eventBus.publish(settlementId, {
+          // Flushed after COMMIT.
+          pendingEvents.push({
             type: 'combat_resolved',
             quest_run_id: run.id,
             outcome: 'defeat',
           });
-          eventBus.publish(settlementId, {
+          pendingEvents.push({
             type: 'quest_resolved',
             quest_run_id: run.id,
             outcome: 'failed',
@@ -853,9 +861,9 @@ async function processCombatTriggers(settlementId) {
            WHERE id=$2`,
           [JSON.stringify(encounter), run.id]
         );
-        // Push: a new battle awaits. Frontend refreshes battles badge +
-        // freezes the quest's countdown.
-        eventBus.publish(settlementId, {
+        // Buffer: a new battle awaits. Frontend refreshes battles badge +
+        // freezes the quest's countdown. Flushed after COMMIT.
+        pendingEvents.push({
           type: 'combat_pending',
           quest_run_id: run.id,
         });
@@ -868,6 +876,16 @@ async function processCombatTriggers(settlementId) {
     throw e;
   } finally {
     client.release();
+  }
+
+  // Publish AFTER commit. By the time a subscriber's handler reads the DB,
+  // the new row state is visible. Each publish is wrapped so one bad
+  // subscriber can't stop the rest from firing — though the bus's publish
+  // is already synchronous and catches subscriber errors itself, this is
+  // belt-and-braces.
+  for (const ev of pendingEvents) {
+    try { eventBus.publish(settlementId, ev); }
+    catch (e) { console.error('[processCombatTriggers] publish failed', e); }
   }
 }
 
@@ -892,6 +910,9 @@ async function resolveCompletedQuests(settlementId) {
   // exactly the duplicate-bell bug we saw.
   const { pool } = require('../db');
   const client = await pool.connect();
+  // See processCombatTriggers for the same pattern: buffer events, publish
+  // after COMMIT so subscribers' re-fetches see post-commit state.
+  const pendingEvents = [];
   try {
     await client.query('BEGIN');
 
@@ -980,8 +1001,9 @@ async function resolveCompletedQuests(settlementId) {
         "UPDATE settlement_quests SET status=$1, resolved_at=NOW(), success_roll=$2, success_chance=$3 WHERE id=$4",
         [outcome, roll, successChance, run.id]
       );
-      // Push: quest concluded. Frontend reloads quests + toasts.
-      eventBus.publish(settlementId, {
+      // Buffer: quest concluded. Frontend reloads quests + toasts. Flushed
+      // after COMMIT so subscribers' re-fetches see the new status.
+      pendingEvents.push({
         type: 'quest_resolved',
         quest_run_id: run.id,
         outcome,
@@ -994,6 +1016,12 @@ async function resolveCompletedQuests(settlementId) {
     throw e;
   } finally {
     client.release();
+  }
+
+  // Publish AFTER commit. Same reasoning as processCombatTriggers.
+  for (const ev of pendingEvents) {
+    try { eventBus.publish(settlementId, ev); }
+    catch (e) { console.error('[resolveCompletedQuests] publish failed', e); }
   }
 }
 
