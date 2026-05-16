@@ -350,8 +350,19 @@ router.get('/', requireAuth, async (req, res) => {
     const settlement = settlementRes.rows[0];
     if (!settlement) return res.status(404).json({ error: 'No settlement.' });
 
-    // Auto-resolve any completed quests
-    await resolveCompletedQuests(settlement.id);
+    // NOTE: GET /api/quests used to call resolveCompletedQuests here as a
+    // safety net. With the quest_worker running on a 30s tick, that call
+    // became redundant — and worse, it caused a UI flicker. The handler is
+    // hit by every SSE event (combat_pending, combat_resolved, quest_resolved
+    // all trigger refreshActiveQuests on the client). Three concurrent GETs
+    // would each fire resolveCompletedQuests, and even with FOR UPDATE SKIP
+    // LOCKED the outer SELECT on this handler could land before another
+    // request's UPDATE committed, returning a row still marked 'active'
+    // while a parallel request returned the same row as 'completed'. The
+    // client assigned whichever response landed last to _questData, so the
+    // modal flickered between Collect-button and Returning… for as long as
+    // the requests took to drain. The worker is the single writer now; this
+    // handler is a pure read.
 
     // Active quests for this settlement
     const activeRes = await query(
