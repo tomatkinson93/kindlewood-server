@@ -241,26 +241,49 @@ function calculateRatesBreakdown(buildings, citizens, species) {
     };
   }
 
-  // Building contributions. One entry per building per affected resource.
-  // We don't aggregate "2 Forager Huts at level 1 + 1 at level 2 = 24 food"
-  // — that grouping is a UI concern, and showing each building individually
-  // lets the player see "the level-2 hut produces more than the level-1s."
+  // Building contributions, grouped by type+level. Multiple Granaries at
+  // level 1 collapse into one row ("Granary ×3 (lvl 1): +12"); a Granary
+  // at level 1 and one at level 2 produce two rows so the player can still
+  // see per-level numbers. Grouping inside the breakdown rather than the
+  // UI because the API response should already be clean — UI is a render
+  // layer, not a normalisation layer.
+  //
+  // We accumulate per-(type, level) into temp maps so the additive math
+  // matches the flat calculateRates exactly, then push grouped rows to
+  // the breakdown. building_ids array carries every contributing building
+  // for potential future deep-link UI; building_id stays null on grouped
+  // rows since there's no single one to point at.
+  const buildingGroups = new Map(); // key = `${type}|${level}|${res}` → { def, level, count, perBuilding, total, ids }
   for (const b of buildings) {
     const def = BUILDINGS[b.type];
     if (!def) continue;
     const effect = def.effect(b.level);
-    const label = `${def.label} (lvl ${b.level})`;
     for (const [res, val] of Object.entries(effect)) {
       if (breakdown[res] === undefined) continue; // skip non-economic effects like reveal_radius
-      breakdown[res].sources.push({
-        kind: 'building',
-        label,
-        building_id: b.id ?? null,
-        building_type: b.type,
-        value: val,
-      });
-      breakdown[res].total += val;
+      const key = `${b.type}|${b.level}|${res}`;
+      let g = buildingGroups.get(key);
+      if (!g) {
+        g = { def, type: b.type, level: b.level, res, count: 0, perBuilding: val, total: 0, ids: [] };
+        buildingGroups.set(key, g);
+      }
+      g.count += 1;
+      g.total += val;
+      if (b.id != null) g.ids.push(b.id);
     }
+  }
+  for (const g of buildingGroups.values()) {
+    const countLabel = g.count > 1 ? ` ×${g.count}` : '';
+    breakdown[g.res].sources.push({
+      kind: 'building',
+      label: `${g.def.label}${countLabel} (lvl ${g.level})`,
+      building_type: g.type,
+      level: g.level,
+      count: g.count,
+      per_building: g.perBuilding,
+      building_ids: g.ids,
+      value: g.total,
+    });
+    breakdown[g.res].total += g.total;
   }
 
   // Citizen role contributions. Group by role (one row per role per resource)
