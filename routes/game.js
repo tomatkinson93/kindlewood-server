@@ -2,7 +2,7 @@ const { getCurrentSeason, applySeasonModifiers } = require('../seasons');
 const { runSimulation } = require('../simulation');
 const { generateCitizen } = require('../citizens');
 const express = require('express');
-const { calculateRates } = require('../buildings');
+const { calculateRates, calculateRatesBreakdown, applyBreakdownSeasonModifiers } = require('../buildings');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
 
@@ -141,6 +141,49 @@ router.patch('/settlement/rename', requireAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Rename failed.' });
+  }
+});
+
+// ── Resource breakdown ──
+// Returns the per-source decomposition that drives the resource modal /
+// hover tooltip. Same data inputs as GET /settlement, but with id+name on
+// citizens (so the modal can show "Wren, Pip" and link to the citizen
+// modal) and the breakdown structured per-resource rather than as flat
+// totals. Cheap: two indexed selects + a synchronous compute. Called once
+// per modal open / hover-tooltip prime.
+router.get('/resource-breakdown', requireAuth, async (req, res) => {
+  try {
+    const userResult = await query('SELECT * FROM users WHERE id=$1', [req.user.userId]);
+    const user = userResult.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+
+    const settlementResult = await query(
+      'SELECT id FROM settlements WHERE user_id=$1', [user.id]
+    );
+    const settlement = settlementResult.rows[0];
+    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+
+    const buildingsResult = await query(
+      'SELECT id, type, level FROM buildings WHERE settlement_id=$1',
+      [settlement.id]
+    );
+    const citizensResult = await query(
+      'SELECT id, name, role FROM citizens WHERE settlement_id=$1',
+      [settlement.id]
+    );
+
+    const season = getCurrentSeason();
+    const base = calculateRatesBreakdown(buildingsResult.rows, citizensResult.rows, user.species);
+    const breakdown = applyBreakdownSeasonModifiers(base, season);
+
+    res.json({
+      ok: true,
+      breakdown,
+      season: { id: season.id, name: season.name, emoji: season.emoji },
+    });
+  } catch (err) {
+    console.error('[resource-breakdown]', err);
+    res.status(500).json({ error: 'Failed to load resource breakdown.' });
   }
 });
 
