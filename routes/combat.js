@@ -681,6 +681,11 @@ router.post('/resolve', requireAuth, async (req, res) => {
         quest_run_id,
         outcome: 'victory',
       });
+
+      const { resolveCompletedQuests } = require('./quests');
+      resolveCompletedQuests(sett.id).catch(e =>
+        console.error('post-combat resolve check failed', e)
+      );
     }
 
     res.json({
