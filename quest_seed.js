@@ -9,13 +9,19 @@ async function seedQuestDefinitions() {
     ...PARTY_QUEST_POOL.map(q => ({ ...q, quest_type: 'party' })),
   ];
   for (const q of all) {
-    const exists = await query('SELECT id, reward_gold FROM quest_definitions WHERE id=$1', [q.id]);
+    const exists = await query('SELECT id, reward_gold, archived FROM quest_definitions WHERE id=$1', [q.id]);
     if (exists.rows.length) {
-      // Back-fill reward_gold if the row was seeded by an older version that omitted it.
+      // Back-fill reward_gold and restore archived built-in quests.
       const storedGold = exists.rows[0].reward_gold;
+      const isArchived = exists.rows[0].archived;
       const expectedGold = parseInt(q.reward_gold) || 0;
-      if ((storedGold === null || storedGold === 0) && expectedGold > 0) {
-        await query('UPDATE quest_definitions SET reward_gold=$1 WHERE id=$2', [expectedGold, q.id]);
+      const needsGoldFix = (storedGold === null || storedGold === 0) && expectedGold > 0;
+      if (needsGoldFix || isArchived) {
+        if (needsGoldFix) {
+          await query('UPDATE quest_definitions SET reward_gold=$1, archived=FALSE WHERE id=$2', [expectedGold, q.id]);
+        } else {
+          await query('UPDATE quest_definitions SET archived=FALSE WHERE id=$1', [q.id]);
+        }
         count++;
       }
       continue;

@@ -4,7 +4,7 @@ const requireAuth = require('../middleware/auth');
 const combatResolver = require('../lib/combat_resolver');
 const eventBus = require('../lib/event_bus');
 
-// ── Combat-trigger helpers ──────────────────────────────────────────────
+// ── Combat-trigger helpers ────────────────────────────────────────────────
 // A quest with combat_chance > 0 may fire a battle mid-flight. At accept
 // time we roll once: did combat happen, and if so, when? The trigger time
 // sits between 10% and 90% of the quest's duration so it never fires on
@@ -56,16 +56,16 @@ async function _pickFallbackEnemy() {
 
 const router = express.Router();
 
-// ══════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 //  QUEST DEFINITIONS
 //  skill_key: the citizen skill used for success roll
 //  base_success: base chance (0–1) before skill modifier
 //  duration_s: seconds the quest takes
 //  reward_gold: gold awarded on success (partial on near-miss)
-// ══════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 
 const QUEST_POOL = [
-  // ── Gathering ──────────────────────────────
+  // ── Gathering ──────────────────────────────────────────────────
   {
     id: 'q_gather_herbs',
     title: 'Gather Healing Herbs',
@@ -105,7 +105,7 @@ const QUEST_POOL = [
     flavour_success: 'returns soaked but grinning, a haul of fine fish in tow.',
     flavour_fail: 'returns dry and empty-handed. The fish weren\'t biting.',
   },
-  // ── Scouting ───────────────────────────────
+  // ── Scouting ───────────────────────────────────────────────────
   {
     id: 'q_scout_ruins',
     title: 'Investigate Old Ruins',
@@ -132,7 +132,7 @@ const QUEST_POOL = [
     flavour_success: 'delivers a clean map. The merchant guild will pay well for this.',
     flavour_fail: 'got turned around in the fog. No usable map this time.',
   },
-  // ── Combat ─────────────────────────────────
+  // ── Combat ─────────────────────────────────────────────────────
   {
     id: 'q_drive_off_bandits',
     title: 'Drive Off River Bandits',
@@ -172,7 +172,7 @@ const QUEST_POOL = [
     flavour_success: 'kept the convoy safe all the way. The merchant paid in full.',
     flavour_fail: 'the convoy was ambushed. No payment this time.',
   },
-  // ── Crafting ───────────────────────────────
+  // ── Crafting ───────────────────────────────────────────────────
   {
     id: 'q_craft_tools_order',
     title: 'Fulfil a Craftwork Order',
@@ -202,11 +202,11 @@ const QUEST_POOL = [
 ];
 
 
-// ══════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 //  PARTY QUEST DEFINITIONS
 //  requires: array of { role_label, skill_key, description }
 //  Each member contributes their skill to the overall success roll
-// ══════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 
 const PARTY_QUEST_POOL = [
   {
@@ -732,7 +732,12 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
       [run.id]
     );
 
-    res.json({ ok: true, gold_awarded: goldAwarded, status: run.status, bonus: bonusReward });
+    let wealthAfter = null;
+    if (goldAwarded > 0) {
+      const wRes = await query('SELECT wealth FROM settlements WHERE id=$1', [run.settlement_id]);
+      wealthAfter = wRes.rows[0]?.wealth ?? null;
+    }
+    res.json({ ok: true, gold_awarded: goldAwarded, status: run.status, bonus: bonusReward, wealth_after: wealthAfter });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to collect quest.' });
