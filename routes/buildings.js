@@ -217,12 +217,33 @@ router.post('/remove', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Building not found or not built.' });
     }
 
+    const { BUILDINGS } = require('../buildings');
+    const def = BUILDINGS[buildingId];
+
+    // Refund 50% of base build cost
+    const refund = {};
+    if (def?.cost) {
+      for (const [r, v] of Object.entries(def.cost)) {
+        refund[r] = Math.floor(v * 0.5);
+      }
+      if (Object.keys(refund).length) {
+        await query(`
+          UPDATE settlements SET
+            food   = food   + $1,
+            timber = timber + $2,
+            stone  = stone  + $3,
+            metal  = metal  + $4,
+            wealth = wealth + $5
+          WHERE id = $6
+        `, [refund.food||0, refund.timber||0, refund.stone||0, refund.metal||0, refund.wealth||0, settlement.id]);
+      }
+    }
+
     // Remove from DB
     await query('DELETE FROM buildings WHERE settlement_id=$1 AND type=$2', [settlement.id, buildingId]);
 
     // Remove associated house if this is a housing building
-    const { BUILDINGS } = require('../buildings');
-    if (BUILDINGS[buildingId]?.isHousing) {
+    if (def?.isHousing) {
       await removeHouseForSettlement(settlement.id, buildingId);
     }
 
@@ -239,7 +260,7 @@ router.post('/remove', requireAuth, async (req, res) => {
       );
     }
 
-    res.json({ ok: true });
+    res.json({ ok: true, refund });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Demolition failed.' });
