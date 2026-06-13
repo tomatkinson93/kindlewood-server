@@ -10,8 +10,7 @@ const gameRoutes = require('./routes/game');
 const mapRoutes = require('./routes/map');
 const citizenRoutes = require('./routes/citizens');
 const buildingRoutes = require('./routes/buildings');
-const roomRoutes = require('./routes/rooms');
-app.use('/api/rooms', roomRoutes);
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -65,7 +64,8 @@ const combatRoutes = require('./routes/combat');
 app.use('/api/combat', combatRoutes);
 const streamRoutes = require('./routes/stream');
 app.use('/api/stream', streamRoutes);
-
+const roomRoutes = require('./routes/rooms');
+app.use('/api/rooms', roomRoutes);
 app.use((err, req, res, next) => {
   console.error(err.message);
   res.status(500).json({ error: 'Internal server error.' });
