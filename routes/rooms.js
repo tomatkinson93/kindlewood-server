@@ -84,6 +84,21 @@ router.post('/:code/start', (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// ── Host adds / removes an AI courtier ──
+router.post('/:code/ai/add', (req, res) => {
+  const u = user(req); if (!u) return res.status(401).json({ error: 'Not signed in' });
+  const room = withRoom(req, res); if (!room) return;
+  try { rooms.addAI(room, u.id, req.body && req.body.name); res.json({ room: rooms.publicView(room) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+router.post('/:code/ai/remove', (req, res) => {
+  const u = user(req); if (!u) return res.status(401).json({ error: 'Not signed in' });
+  const room = withRoom(req, res); if (!room) return;
+  try { rooms.removeAI(room, u.id, req.body && req.body.id); res.json({ ok: true }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 // ── Relay an in-game action (Phase-2 seam) ──
 router.post('/:code/action', (req, res) => {
   const u = user(req); if (!u) return res.status(401).json({ error: 'Not signed in' });
@@ -104,7 +119,10 @@ router.get('/:code/stream', (req, res) => {
     'X-Accel-Buffering': 'no',
   });
   res.flushHeaders?.();
-  res.write(`data: ${JSON.stringify({ type: 'snapshot', room: rooms.publicView(room) })}\n\n`);
+  const snap = rooms.publicView(room);
+  snap.youAreHost = (room.hostId === u.id);
+  snap.youId = u.id;
+  res.write(`data: ${JSON.stringify({ type: 'snapshot', room: snap })}\n\n`);
 
   rooms.subscribe(room, u.id, res);
   const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch (e) {} }, 25000);
