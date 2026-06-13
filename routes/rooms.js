@@ -107,6 +107,25 @@ router.post('/:code/action', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Chat: public/local/all or a private whisper to one player ──
+router.post('/:code/chat', (req, res) => {
+  const u = user(req); if (!u) return res.status(401).json({ error: 'Not signed in' });
+  const room = withRoom(req, res); if (!room) return;
+  const { text, to } = req.body || {};
+  const clean = String(text || '').slice(0, 300).trim();
+  if (!clean) return res.json({ ok: true });
+  rooms.chat(room, u.id, u.name, clean, to);
+  res.json({ ok: true });
+});
+
+// ── Typing indicator: broadcasts WHO is typing, never the text or target ──
+router.post('/:code/typing', (req, res) => {
+  const u = user(req); if (!u) return res.status(401).json({ error: 'Not signed in' });
+  const room = withRoom(req, res); if (!room) return;
+  rooms.typing(room, u.id, !!(req.body && req.body.on));
+  res.json({ ok: true });
+});
+
 // ── SSE: subscribe to a room ──
 router.get('/:code/stream', (req, res) => {
   const u = user(req); if (!u) return res.status(401).end();
