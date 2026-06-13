@@ -9,14 +9,29 @@
 //   app.use('/api/rooms', roomRoutes);
 
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const router = express.Router();
 const rooms = require('../lib/game_rooms');
 
-// requireAuth populates req.user ({ id, name }) elsewhere in the app.
-// Falls back gracefully if the middleware isn't wired on this router.
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
+
+// Mirrors stream.js: accept the JWT from the `token` cookie, a Bearer
+// header, or the ?token= query string. The query fallback exists because
+// the API is cross-origin (kindlewood-api.onrender.com vs kindlewood.quest)
+// and EventSource cannot send headers or reliably carry third-party cookies.
+// Identity field is `userId` to match the auth.js JWT payload.
 function user(req) {
-  if (req.user) return { id: req.user.id, name: req.user.name || req.user.username || 'Player' };
-  return null;
+  let token = req.cookies && req.cookies.token;
+  const authHeader = req.headers.authorization;
+  if (!token && authHeader && authHeader.startsWith('Bearer ')) token = authHeader.slice(7);
+  if (!token && req.query && req.query.token) token = String(req.query.token);
+  if (!token) return null;
+  try {
+    const p = jwt.verify(token, JWT_SECRET);
+    return { id: p.userId, name: p.username || 'Player' };
+  } catch {
+    return null;
+  }
 }
 
 function withRoom(req, res) {
