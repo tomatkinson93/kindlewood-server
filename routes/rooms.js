@@ -107,12 +107,20 @@ router.post('/:code/action', (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Host resolves an AI seat the engine is waiting on ──
+// ── Host ticks the AI clock (server decides + applies) ──
 router.post('/:code/ai-action', (req, res) => {
   const u = user(req); if (!u) return res.status(401).json({ error: 'Not signed in' });
   const room = withRoom(req, res); if (!room) return;
-  rooms.aiAction(room, u.id, req.body || {});
-  res.json({ ok: true });
+  const did = rooms.aiAction(room, u.id);
+  res.json({ ok: true, resolved: !!did });
+});
+
+// ── Host force-ends the match (e.g. a player left and won't return) ──
+router.post('/:code/end', (req, res) => {
+  const u = user(req); if (!u) return res.status(401).json({ error: 'Not signed in' });
+  const room = withRoom(req, res); if (!room) return;
+  try { rooms.endMatch(room, u.id); res.json({ ok: true }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 // ── Chat: public/local/all or a private whisper to one player ──
@@ -156,16 +164,29 @@ router.get('/:code/stream', (req, res) => {
   // player their current redacted state right away.
   if (room.status === 'playing' && room.engine && room.state) {
     try { res.write(`data: ${JSON.stringify({ type: 'game_state', state: room.engine.view(room.state, u.id) })}\n\n`); } catch (e) {}
+    rooms.notePresence(room, u.id, true); // back online
   }
   const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch (e) {} }, 25000);
 
   req.on('close', () => {
     clearInterval(ping);
     rooms.unsubscribe(room, u.id, res);
-    // If they have no other open tab and we're still in the lobby, drop them
     const fresh = rooms.get(room.code);
-    if (fresh && fresh.status === 'lobby' && !fresh.subscribers.has(u.id)) {
-      rooms.leave(fresh, u.id);
+    if (!fresh) return;
+    if (fresh.status === 'lobby') {
+      // In the lobby, leaving frees the seat immediately.
+      if (!fresh.subscribers.has(u.id)) rooms.leave(fresh, u.id);
+    } else if (fresh.status === 'playing') {
+      // Mid-match: don't remove them. After a grace window with no
+      // reconnection, mark them absent so the host can choose to end.
+      if (!fresh.subscribers.has(u.id)) {
+        setTimeout(() => {
+          const r2 = rooms.get(fresh.code);
+          if (r2 && r2.status === 'playing' && !r2.subscribers.has(u.id)) {
+            rooms.notePresence(r2, u.id, false);
+          }
+        }, 8000); // 8s grace for a refresh/blip before flagging absent
+      }
     }
   });
 });
