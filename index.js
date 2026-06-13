@@ -10,7 +10,8 @@ const gameRoutes = require('./routes/game');
 const mapRoutes = require('./routes/map');
 const citizenRoutes = require('./routes/citizens');
 const buildingRoutes = require('./routes/buildings');
-
+const roomRoutes = require('./routes/rooms');
+app.use('/api/rooms', roomRoutes);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
