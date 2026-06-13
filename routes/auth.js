@@ -60,7 +60,10 @@ router.post('/register', async (req, res) => {
 
     const token = jwt.sign({ userId, username, species }, JWT_SECRET, { expiresIn: '7d' });
     res.cookie('token', token, COOKIE_OPTIONS);
-    res.json({ ok: true, username, species });
+    // Also return the token in the body. The site and API are different
+    // origins, so the cookie above is third-party and browsers often drop
+    // it; the client stores this token and sends it as a Bearer header.
+    res.json({ ok: true, username, species, token });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Registration failed.' });
@@ -83,7 +86,7 @@ router.post('/login', async (req, res) => {
       JWT_SECRET, { expiresIn: '7d' }
     );
     res.cookie('token', token, COOKIE_OPTIONS);
-    res.json({ ok: true, username: user.username, species: user.species });
+    res.json({ ok: true, username: user.username, species: user.species, token });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Login failed.' });
@@ -102,7 +105,7 @@ router.get('/me', (req, res) => {
   if (!token) return res.status(401).json({ error: 'Not authenticated.' });
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    res.json({ ok: true, username: payload.username, species: payload.species });
+    res.json({ ok: true, userId: payload.userId, username: payload.username, species: payload.species });
   } catch {
     res.status(401).json({ error: 'Session expired.' });
   }
