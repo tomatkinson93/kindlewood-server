@@ -99,11 +99,19 @@ router.post('/:code/ai/remove', (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-// ── Relay an in-game action (Phase-2 seam) ──
+// ── A player's own game action ──
 router.post('/:code/action', (req, res) => {
   const u = user(req); if (!u) return res.status(401).json({ error: 'Not signed in' });
   const room = withRoom(req, res); if (!room) return;
-  rooms.relay(room, u.id, req.body);
+  rooms.gameAction(room, u.id, req.body || {});
+  res.json({ ok: true });
+});
+
+// ── Host resolves an AI seat the engine is waiting on ──
+router.post('/:code/ai-action', (req, res) => {
+  const u = user(req); if (!u) return res.status(401).json({ error: 'Not signed in' });
+  const room = withRoom(req, res); if (!room) return;
+  rooms.aiAction(room, u.id, req.body || {});
   res.json({ ok: true });
 });
 
@@ -144,6 +152,11 @@ router.get('/:code/stream', (req, res) => {
   res.write(`data: ${JSON.stringify({ type: 'snapshot', room: snap })}\n\n`);
 
   rooms.subscribe(room, u.id, res);
+  // If a match is already underway (e.g. this is a reconnect), send this
+  // player their current redacted state right away.
+  if (room.status === 'playing' && room.engine && room.state) {
+    try { res.write(`data: ${JSON.stringify({ type: 'game_state', state: room.engine.view(room.state, u.id) })}\n\n`); } catch (e) {}
+  }
   const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch (e) {} }, 25000);
 
   req.on('close', () => {
