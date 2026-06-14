@@ -65,10 +65,15 @@ app.use('/api/combat', combatRoutes);
 const streamRoutes = require('./routes/stream');
 app.use('/api/stream', streamRoutes);
 const roomRoutes = require('./routes/rooms');
+const gameStatsRoutes = require('./routes/game_stats');
+app.use('/api/stats', gameStatsRoutes);
+const presenceRoutes = require('./routes/presence');
+app.use('/api/presence', presenceRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use((err, req, res, next) => {
   console.error(err.message);
   res.status(500).json({ error: 'Internal server error.' });
+
 });
 
 initDB().then(() => {
