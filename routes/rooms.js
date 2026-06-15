@@ -136,6 +136,17 @@ router.post('/:code/chat', (req, res) => {
 });
 
 // ── Typing indicator: broadcasts WHO is typing, never the text or target ──
+// ── Cursor position relay (multiplayer pointers) ──
+router.post('/:code/cursor', (req, res) => {
+  const u = user(req);
+  if (!u) return res.status(401).json({ error: 'Not signed in' });
+  const room = rooms.get(req.params.code);
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+  const b = req.body || {};
+  rooms.cursor(room, u.id, u.name, +b.x || 0, +b.y || 0);
+  res.json({ ok: true });
+});
+
 router.post('/:code/typing', (req, res) => {
   const u = user(req); if (!u) return res.status(401).json({ error: 'Not signed in' });
   const room = withRoom(req, res); if (!room) return;
