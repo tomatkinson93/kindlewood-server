@@ -62,6 +62,8 @@ const relationshipsRoutes = require('./routes/relationships');
 app.use('/api/relationships', relationshipsRoutes);
 const combatRoutes = require('./routes/combat');
 app.use('/api/combat', combatRoutes);
+const deckRoutes = require('./routes/decks');
+app.use('/api/decks', deckRoutes);
 const streamRoutes = require('./routes/stream');
 app.use('/api/stream', streamRoutes);
 const roomRoutes = require('./routes/rooms');
