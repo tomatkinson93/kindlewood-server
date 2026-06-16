@@ -297,6 +297,7 @@ router.post('/engage/:questRunId', requireAuth, async (req, res) => {
         enemyKeys: encounter,
         seed: parseInt(run.combat_seed) || 1,
         actions,
+        settlementId: sett.id,
       });
     } catch (e) {
       console.error('engage replay failed', e);
@@ -335,7 +336,7 @@ router.post('/engage/:questRunId', requireAuth, async (req, res) => {
 router.post('/action/:questRunId', requireAuth, async (req, res) => {
   try {
     const runId = parseInt(req.params.questRunId);
-    const { action_key, target_id } = req.body || {};
+    const { action_key, target_id, hand_index } = req.body || {};
     if (!action_key) return res.status(400).json({ error: 'action_key required.' });
 
     const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
@@ -371,6 +372,7 @@ router.post('/action/:questRunId', requireAuth, async (req, res) => {
       pre = await combatResolver.replayBattle({
         citizenIds: partyIds, enemyKeys: encounter,
         seed: parseInt(run.combat_seed) || 1, actions,
+        settlementId: sett.id,
       });
     } catch (e) {
       return res.status(500).json({ error: 'State corrupt: ' + e.message });
@@ -380,7 +382,13 @@ router.post('/action/:questRunId', requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Not the player's turn." });
     }
 
+    // Build the logged action. For card plays we persist hand_index so the
+    // replay can reproduce exactly which card left the hand. target_id is kept
+    // for enemy/ally-targeted cards (null lets the engine auto-pick).
     const newAction = { actor_id: cur.id, action_key, target_id: target_id || null };
+    if (action_key === 'card' && hand_index != null) {
+      newAction.hand_index = hand_index | 0;
+    }
     const nextActions = actions.concat([newAction]);
 
     let post;
@@ -388,6 +396,7 @@ router.post('/action/:questRunId', requireAuth, async (req, res) => {
       post = await combatResolver.replayBattle({
         citizenIds: partyIds, enemyKeys: encounter,
         seed: parseInt(run.combat_seed) || 1, actions: nextActions,
+        settlementId: sett.id,
       });
     } catch (e) {
       return res.status(400).json({ error: 'Invalid move: ' + e.message });
@@ -515,6 +524,7 @@ router.post('/resolve', requireAuth, async (req, res) => {
         replay = await combatResolver.replayBattle({
           citizenIds: partyIds, enemyKeys: encounter,
           seed: parseInt(questRun.combat_seed) || 1, actions,
+          settlementId: sett.id,
         });
       } catch (e) {
         console.error('resolve replay failed', e);
