@@ -86,7 +86,7 @@ router.get('/', requireAuth, async (req, res) => {
     const catalog = {};
     Object.keys(CARD_DEFS.CARDS).forEach((k) => {
       const c = CARD_DEFS.CARDS[k];
-      catalog[k] = { key: c.key, name: c.name, cost: c.cost, type: c.type, desc: c.desc };
+      catalog[k] = { key: c.key, name: c.name, cost: c.cost, type: c.type, target: c.target, desc: c.desc };
     });
 
     res.json({
