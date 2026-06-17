@@ -64,6 +64,8 @@ const combatRoutes = require('./routes/combat');
 app.use('/api/combat', combatRoutes);
 const deckRoutes = require('./routes/decks');
 app.use('/api/decks', deckRoutes);
+const cardAdminRoutes = require('./routes/card_admin');
+app.use('/api/card-admin', cardAdminRoutes);
 const streamRoutes = require('./routes/stream');
 app.use('/api/stream', streamRoutes);
 const roomRoutes = require('./routes/rooms');
