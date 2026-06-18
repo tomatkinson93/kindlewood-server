@@ -14,6 +14,25 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../db');
 const CARD_DEFS = require('../lib/card_definitions');
+let CARD_REGISTRY = null;
+try { CARD_REGISTRY = require('../lib/card_registry'); } catch (e) {}
+
+// Load DB cards into the registry so deck validation/catalog see custom cards.
+async function _ensureCards() {
+  if (!CARD_REGISTRY) return;
+  try {
+    const r = await query('SELECT * FROM card_templates');
+    if (r.rows && r.rows.length) CARD_REGISTRY.loadRows(r.rows);
+  } catch (e) { /* table may not exist yet; fall back to code cards */ }
+}
+function _getCard(key) {
+  if (CARD_REGISTRY && CARD_REGISTRY.getCard(key)) return CARD_REGISTRY.getCard(key);
+  return CARD_DEFS.getCard(key);
+}
+function _allCards() {
+  if (CARD_REGISTRY && CARD_REGISTRY.allCards) return CARD_REGISTRY.allCards();
+  return CARD_DEFS.CARDS;
+}
 
 // auth.js exports the middleware directly: module.exports = function requireAuth.
 const requireAuth = require('../middleware/auth');
@@ -32,8 +51,9 @@ async function getUnlockedSet(settlementId) {
   return new Set(r.rows.map((row) => row.card_key));
 }
 
-// Validate a { cardKey: count } map: keys must exist as defs AND be unlocked,
-// counts must be positive integers. Returns { ok, clean, error }.
+// Validate a { cardKey: count } map: keys must exist as defs (unlock check is
+// currently disabled for testing — any defined card may be added). Counts must
+// be positive integers. Deck size must be 12–30. Returns { ok, clean, error }.
 function validateDeckMap(map, unlockedSet) {
   if (!map || typeof map !== 'object' || Array.isArray(map)) {
     return { ok: false, error: 'cards must be an object of { cardKey: count }' };
@@ -41,14 +61,15 @@ function validateDeckMap(map, unlockedSet) {
   const clean = {};
   let total = 0;
   for (const key of Object.keys(map)) {
-    if (!CARD_DEFS.getCard(key)) return { ok: false, error: `unknown card: ${key}` };
-    if (!unlockedSet.has(key)) return { ok: false, error: `card not unlocked: ${key}` };
+    if (!_getCard(key)) return { ok: false, error: `unknown card: ${key}` };
+    // Unlock requirement intentionally disabled for now (testing); re-enable by
+    // uncommenting: if (!unlockedSet.has(key)) return { ok:false, error:`card not unlocked: ${key}` };
     const n = parseInt(map[key], 10);
     if (!Number.isFinite(n) || n < 0) return { ok: false, error: `bad count for ${key}` };
     if (n > 0) { clean[key] = n; total += n; }
   }
-  if (total < 1) return { ok: false, error: 'deck must contain at least 1 card' };
-  if (total > 60) return { ok: false, error: 'deck too large (max 60)' };
+  if (total < 12) return { ok: false, error: `deck must have at least 12 cards (has ${total})` };
+  if (total > 30) return { ok: false, error: `deck cannot exceed 30 cards (has ${total})` };
   return { ok: true, clean };
 }
 
@@ -69,6 +90,7 @@ async function getActiveDeckMap(settlementId) {
 // GET /api/decks — list templates + unlocked cards + full card catalog
 router.get('/', requireAuth, async (req, res) => {
   try {
+    await _ensureCards();
     const sett = await getSettlement(req.user.userId);
     if (!sett) return res.status(404).json({ error: 'No settlement.' });
 
@@ -81,18 +103,21 @@ router.get('/', requireAuth, async (req, res) => {
       getUnlockedSet(sett.id),
     ]);
 
-    // Expose card metadata so the client can render names/costs/desc without
-    // shipping the effect functions (which it gets from card-definitions.js).
+    // Expose full card metadata (registry-aware) so the deck builder can show
+    // every available card with its cost/type/target/art.
+    const all = _allCards();
     const catalog = {};
-    Object.keys(CARD_DEFS.CARDS).forEach((k) => {
-      const c = CARD_DEFS.CARDS[k];
-      catalog[k] = { key: c.key, name: c.name, cost: c.cost, type: c.type, target: c.target, desc: c.desc };
+    Object.keys(all).forEach((k) => {
+      const c = all[k];
+      catalog[k] = { key: c.key, name: c.name, cost: c.cost, type: c.type, target: c.target, desc: c.desc, rarity: c.rarity, art_url: c.art_url || null };
     });
 
     res.json({
       templates: templates.rows,
       unlocked: Array.from(unlocked),
       catalog,
+      deck_min: 12,
+      deck_max: 30,
     });
   } catch (e) {
     console.error('GET /api/decks error', e);
@@ -103,6 +128,7 @@ router.get('/', requireAuth, async (req, res) => {
 // POST /api/decks — create a template { name, cards }
 router.post('/', requireAuth, async (req, res) => {
   try {
+    await _ensureCards();
     const sett = await getSettlement(req.user.userId);
     if (!sett) return res.status(404).json({ error: 'No settlement.' });
 
@@ -126,6 +152,7 @@ router.post('/', requireAuth, async (req, res) => {
 // PUT /api/decks/:id — update a template's name/cards
 router.put('/:id', requireAuth, async (req, res) => {
   try {
+    await _ensureCards();
     const sett = await getSettlement(req.user.userId);
     if (!sett) return res.status(404).json({ error: 'No settlement.' });
     const id = parseInt(req.params.id, 10);
