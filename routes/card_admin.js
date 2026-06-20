@@ -54,11 +54,14 @@ router.post('/', requireAuth, async (req, res) => {
     if (TARGETS.indexOf(d.target) === -1) return res.status(400).json({ error: 'Invalid target.' });
 
     await query(`INSERT INTO card_templates
-      (card_key, name, cost, card_type, target, rarity, rarity_order, description, formula, art_url, sfx, metadata)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      (card_key, name, cost, card_type, target, rarity, rarity_order, description, formula, art_url, sfx, hit, pierce_count, pierce_falloff, metadata)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [d.card_key, d.name, (d.cost | 0), d.card_type, d.target,
        d.rarity || 'common', rarityOrder(d.rarity), d.description || '',
-       d.formula || '', d.art_url || null, d.sfx || null, JSON.stringify(d.metadata || {})]);
+       d.formula || '', d.art_url || null, d.sfx || null,
+       d.hit || 'choose', (d.pierce_count != null ? (d.pierce_count | 0) : null),
+       (d.pierce_falloff != null ? Number(d.pierce_falloff) : 1.0),
+       JSON.stringify(d.metadata || {})]);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -74,7 +77,7 @@ router.patch('/:key', requireAuth, async (req, res) => {
     if (d.card_type !== undefined && CARD_TYPES.indexOf(d.card_type) === -1) return res.status(400).json({ error: 'Invalid card_type.' });
     if (d.target !== undefined && TARGETS.indexOf(d.target) === -1) return res.status(400).json({ error: 'Invalid target.' });
 
-    const allowed = ['name', 'cost', 'card_type', 'target', 'rarity', 'description', 'formula', 'art_url', 'sfx', 'metadata'];
+    const allowed = ['name', 'cost', 'card_type', 'target', 'rarity', 'description', 'formula', 'art_url', 'sfx', 'hit', 'pierce_count', 'pierce_falloff', 'metadata'];
     const sets = [], vals = [];
     let i = 1;
     for (const f of allowed) {
