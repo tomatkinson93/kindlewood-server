@@ -68,6 +68,39 @@ function _validateEnemy(body, isNew) {
     return Math.max(lo, Math.min(hi, n));
   };
 
+  // Sanitise the moves array. Each move: key, name, formula, target, hit,
+  // pierce params, intent, weight. Formula is validated lightly here (full
+  // validation lives in the formula module; the engine also guards at runtime).
+  const VALID_HITS = ['choose', 'front', 'pierce', 'aoe'];
+  const VALID_TARGETS = ['enemy', 'self', 'ally', 'all_enemies', 'all_allies', 'choose'];
+  const VALID_INTENTS = ['attack', 'block', 'buff', 'debuff', 'move', 'special'];
+  const moves = Array.isArray(body.moves) ? body.moves.slice(0, 12).map((m, i) => {
+    const key = (m.key || ('move_' + (i + 1))).trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+    return {
+      key,
+      name: (m.name || 'Move').toString().slice(0, 40),
+      formula: (m.formula || '').toString().slice(0, 500),
+      target: VALID_TARGETS.includes(m.target) ? m.target : 'enemy',
+      hit: VALID_HITS.includes(m.hit) ? m.hit : 'choose',
+      pierce_count: (m.pierce_count != null && m.pierce_count !== '') ? intIn(m.pierce_count, 1, 10, null) : null,
+      pierce_falloff: (m.pierce_falloff != null && m.pierce_falloff !== '') ? Math.max(0, Math.min(1, Number(m.pierce_falloff))) : 1.0,
+      intent: VALID_INTENTS.includes(m.intent) ? m.intent : 'attack',
+      weight: intIn(m.weight, 1, 100, 1),
+    };
+  }) : [];
+
+  const drops = Array.isArray(body.drops) ? body.drops.slice(0, 20).map((d) => ({
+    item: (d.item || '').toString().slice(0, 60),
+    chance: Math.max(0, Math.min(1, Number(d.chance != null ? d.chance : 1))),
+    min: intIn(d.min, 0, 999, 1),
+    max: intIn(d.max, 0, 999, 1),
+  })).filter(d => d.item) : [];
+
+  const move_mode = (body.move_mode === 'weighted') ? 'weighted' : 'sequence';
+  let hp_min = (body.hp_min != null && body.hp_min !== '') ? intIn(body.hp_min, 1, 500, null) : null;
+  let hp_max = (body.hp_max != null && body.hp_max !== '') ? intIn(body.hp_max, 1, 500, null) : null;
+  if (hp_min != null && hp_max != null && hp_min > hp_max) { const t = hp_min; hp_min = hp_max; hp_max = t; }
+
   return {
     id,
     name,
@@ -81,6 +114,7 @@ function _validateEnemy(body, isNew) {
     attack_verb:   (body.attack_verb || 'strikes').trim().slice(0, 40),
     reward_weight: intIn(body.reward_weight, 0,   10,  1),
     sort_order:    intIn(body.sort_order,    0,   9999, 100),
+    moves, move_mode, hp_min, hp_max, drops,
   };
 }
 
@@ -93,10 +127,11 @@ router.post('/enemies', requireAuth, async (req, res) => {
 
     await query(
       `INSERT INTO enemy_definitions
-       (id, name, icon, flavour, max_hp, strength, agility, endurance, combat_skill, attack_verb, reward_weight, sort_order)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+       (id, name, icon, flavour, max_hp, strength, agility, endurance, combat_skill, attack_verb, reward_weight, sort_order, moves, move_mode, hp_min, hp_max, drops)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
       [e.id, e.name, e.icon, e.flavour, e.max_hp, e.strength, e.agility, e.endurance,
-       e.combat_skill, e.attack_verb, e.reward_weight, e.sort_order]
+       e.combat_skill, e.attack_verb, e.reward_weight, e.sort_order,
+       JSON.stringify(e.moves), e.move_mode, e.hp_min, e.hp_max, JSON.stringify(e.drops)]
     );
     res.json({ ok: true, enemy: e });
   } catch (err) {
@@ -117,11 +152,13 @@ router.patch('/enemies/:id', requireAuth, async (req, res) => {
       `UPDATE enemy_definitions SET
          name=$1, icon=$2, flavour=$3, max_hp=$4, strength=$5, agility=$6,
          endurance=$7, combat_skill=$8, attack_verb=$9, reward_weight=$10,
-         sort_order=$11, updated_at=NOW()
-       WHERE id=$12`,
+         sort_order=$11, moves=$12, move_mode=$13, hp_min=$14, hp_max=$15,
+         drops=$16, updated_at=NOW()
+       WHERE id=$17`,
       [e.name, e.icon, e.flavour, e.max_hp, e.strength, e.agility,
        e.endurance, e.combat_skill, e.attack_verb, e.reward_weight,
-       e.sort_order, id]
+       e.sort_order, JSON.stringify(e.moves), e.move_mode, e.hp_min, e.hp_max,
+       JSON.stringify(e.drops), id]
     );
     res.json({ ok: true, enemy: { ...e, id } });
   } catch (err) {
