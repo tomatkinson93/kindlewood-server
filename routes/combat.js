@@ -336,7 +336,7 @@ router.post('/engage/:questRunId', requireAuth, async (req, res) => {
 router.post('/action/:questRunId', requireAuth, async (req, res) => {
   try {
     const runId = parseInt(req.params.questRunId);
-    const { action_key, target_id, hand_index } = req.body || {};
+    const { action_key, target_id, hand_index, delta } = req.body || {};
     if (!action_key) return res.status(400).json({ error: 'action_key required.' });
 
     const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
@@ -388,6 +388,10 @@ router.post('/action/:questRunId', requireAuth, async (req, res) => {
     const newAction = { actor_id: cur.id, action_key, target_id: target_id || null };
     if (action_key === 'card' && hand_index != null) {
       newAction.hand_index = hand_index | 0;
+    }
+    if (action_key === 'move') {
+      // Clamp to ±1 per action; the engine moves one step and spends 1 energy.
+      newAction.delta = (delta | 0) >= 0 ? 1 : -1;
     }
     const nextActions = actions.concat([newAction]);
 
