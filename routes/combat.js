@@ -86,6 +86,7 @@ function _validateEnemy(body, isNew) {
       pierce_falloff: (m.pierce_falloff != null && m.pierce_falloff !== '') ? Math.max(0, Math.min(1, Number(m.pierce_falloff))) : 1.0,
       intent: VALID_INTENTS.includes(m.intent) ? m.intent : 'attack',
       weight: intIn(m.weight, 1, 100, 1),
+      sfx: (m.sfx || '').toString().slice(0, 80),
     };
   }) : [];
 
