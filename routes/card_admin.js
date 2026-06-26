@@ -84,7 +84,12 @@ router.patch('/:key', requireAuth, async (req, res) => {
     for (const f of allowed) {
       if (d[f] === undefined) continue;
       sets.push(`${f}=$${i++}`);
-      vals.push(f === 'metadata' ? JSON.stringify(d[f]) : (f === 'cost' ? (d[f] | 0) : d[f]));
+      let v;
+      if (f === 'metadata') v = JSON.stringify(d[f]);
+      else if (f === 'cost') v = (d[f] | 0);
+      else if (f === 'wither') v = (d[f] === true || d[f] === 'true' || d[f] === 1); // strict boolean
+      else v = d[f];
+      vals.push(v);
     }
     if (d.rarity !== undefined) { sets.push(`rarity_order=$${i++}`); vals.push(rarityOrder(d.rarity)); }
     sets.push(`updated_at=now()`);
