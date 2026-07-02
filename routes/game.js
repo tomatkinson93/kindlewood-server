@@ -1,5 +1,6 @@
 const { getCurrentSeason, applySeasonModifiers } = require('../seasons');
 const { runSimulation } = require('../simulation');
+const { applyConsumption, getFamineSummary, buildUpkeepBreakdownSource } = require('../famine');
 const { generateCitizen } = require('../citizens');
 const express = require('express');
 const { calculateRates, calculateRatesBreakdown, applyBreakdownSeasonModifiers } = require('../buildings');
@@ -43,6 +44,24 @@ async function applyTick(settlement, species) {
     SET food=$1, timber=$2, stone=$3, metal=$4, wealth=$5, last_tick=NOW()
     WHERE id=$6
   `, [updated.food, updated.timber, updated.stone, updated.metal, updated.wealth, settlement.id]);
+
+  // ── Consumption & famine tick ──
+  // MUST run AFTER the production write above: applyConsumption deducts food
+  // in the DB, and the production UPDATE writes an in-memory-computed food
+  // value that would clobber a deduction made before it. Internally gated by
+  // last_consumption_at (15-min quanta) + compare-and-swap, so calling it on
+  // every tick from any endpoint is safe and cheap (one SELECT when there's
+  // nothing to do). When a window actually applied, re-read food so the
+  // value we return reflects the deduction.
+  try {
+    const famineResult = await applyConsumption(settlement.id);
+    if (famineResult) {
+      const freshFood = await query('SELECT food FROM settlements WHERE id=$1', [settlement.id]);
+      if (freshFood.rows[0]) updated.food = freshFood.rows[0].food;
+    }
+  } catch (famineErr) {
+    console.error('[famine] consumption tick error:', famineErr.message);
+  }
 
   // Run relationship/bonding/breeding simulation (gated by last_sim_tick)
   try {
@@ -88,6 +107,16 @@ router.get('/settlement', requireAuth, async (req, res) => {
     const baseRates = calculateRates(buildingsResult.rows, citizensResult.rows, user.species);
     const rates = applySeasonModifiers(baseRates, season);
 
+    // Famine status for the warning banner (spec Q5). rates.food is the
+    // post-season production side of hours-to-empty; upkeep is computed
+    // inside from the citizen roster + season foodConsumption.
+    let famine = null;
+    try {
+      famine = await getFamineSummary(settlement.id, rates.food);
+    } catch (famineErr) {
+      console.error('[famine] summary error:', famineErr.message);
+    }
+
     console.log(`SETTLEMENT returning tile_q=${settlement.tile_q} for user=${req.user.userId}`);
     res.json({
       ok: true,
@@ -115,6 +144,7 @@ router.get('/settlement', requireAuth, async (req, res) => {
           return Math.min(100, base + tavernkeepCount * 10);
         })(),
         last_tick: settlement.last_tick,
+        famine,
       },
       buildings: buildingsResult.rows,
       species: user.species,
@@ -175,6 +205,18 @@ router.get('/resource-breakdown', requireAuth, async (req, res) => {
     const season = getCurrentSeason();
     const base = calculateRatesBreakdown(buildingsResult.rows, citizensResult.rows, user.species);
     const breakdown = applyBreakdownSeasonModifiers(base, season);
+
+    // Citizen food upkeep — negative source row (🍽 in the modal, "Upkeep"
+    // in the tooltip). Pushed AFTER the season multiplier on purpose: the
+    // production season modifier scales output, while upkeep applies its
+    // own seasonal foodConsumption internally (winter ×1.20).
+    try {
+      const upkeepSrc = await buildUpkeepBreakdownSource(settlement.id);
+      breakdown.food.sources.push(upkeepSrc);
+      breakdown.food.total = Math.round((breakdown.food.total + upkeepSrc.value) * 10) / 10;
+    } catch (famineErr) {
+      console.error('[famine] upkeep breakdown error:', famineErr.message);
+    }
 
     res.json({
       ok: true,
@@ -521,6 +563,13 @@ router.post('/migrate', async (req, res) => {
   await run("ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS given_by_npc_id INTEGER", "quest npc id");
   await run("ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS min_trust INTEGER NOT NULL DEFAULT 0", "quest min trust");
   await run("ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS drops JSONB DEFAULT '[]'", "quest drops");
+
+  // 009_consumption_famine — quantized consumption clock, fractional food
+  // carry, death-cause discriminator, condition lookup index.
+  await run("ALTER TABLE settlements ADD COLUMN IF NOT EXISTS last_consumption_at TIMESTAMPTZ NOT NULL DEFAULT NOW()", "famine last_consumption_at");
+  await run("ALTER TABLE settlements ADD COLUMN IF NOT EXISTS consumption_carry NUMERIC(8,4) NOT NULL DEFAULT 0", "famine consumption_carry");
+  await run("ALTER TABLE citizen_events ADD COLUMN IF NOT EXISTS cause TEXT DEFAULT NULL", "famine citizen_events.cause");
+  await run("CREATE INDEX IF NOT EXISTS idx_citizen_conditions_type ON citizen_conditions (citizen_id, condition_type)", "famine conditions index");
   await run(`CREATE TABLE IF NOT EXISTS item_templates (
     item_key TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
     icon TEXT NOT NULL DEFAULT '📦', category TEXT NOT NULL DEFAULT 'misc',

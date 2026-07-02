@@ -18,6 +18,7 @@ const HAPPINESS_FACTORS = {
   trait_charming:{ label: 'Charming trait',      value: +2,  icon: '✨' },
   trait_frail:   { label: 'Frail (low health)',  value: -6,  icon: '🩹' },
   low_food:      { label: 'Settlement low on food', value: -8, icon: '🍽' },
+  hungry:        { label: 'Hungry',              value: -6,  icon: '🥣' },
   season_spring: { label: 'Spring cheer',        value: +4,  icon: '🌸' },
   season_winter: { label: 'Winter blues',        value: -5,  icon: '❄️' },
 };
@@ -73,6 +74,13 @@ function calculateHappinessFactors(citizen, context = {}) {
   // Settlement food
   if (context.lowFood) {
     factors.push(HAPPINESS_FACTORS.low_food);
+  }
+
+  // Personal hunger (famine ladder stage b′ — spec Q2). Reads the citizen
+  // row directly; no new context plumbing needed. Threshold matches
+  // famine.js HUNGRY_THRESHOLD.
+  if ((citizen.life?.hunger ?? 0) >= 70) {
+    factors.push(HAPPINESS_FACTORS.hungry);
   }
 
   // Season
