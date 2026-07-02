@@ -7,6 +7,13 @@ const { getCurrentSeason } = require('../seasons');
 
 const router = express.Router();
 
+// Famine ladder display thresholds — must match famine.js
+// (HUNGRY_THRESHOLD=70, STARVING_THRESHOLD=90).
+function hungerStateOf(c) {
+  const h = c.life?.hunger ?? 0;
+  return h >= 90 ? 'starving' : h >= 70 ? 'hungry' : 'fed';
+}
+
 // Get all citizens for the player's settlement
 router.get('/', requireAuth, async (req, res) => {
   try {
@@ -149,6 +156,7 @@ router.get('/', requireAuth, async (req, res) => {
         happiness_factors: factors,
         happiness_computed: computed,
         breeding_status: breedingStatus,
+        hunger_state: hungerStateOf(c),   // famine ladder badge (fed|hungry|starving)
       };
     });
 
@@ -183,6 +191,7 @@ router.get('/:id', requireAuth, async (req, res) => {
         visible_traits: c.visible_traits || [],
         revealed_hidden_traits: [],
         born_at: c.born_at,
+        hunger_state: hungerStateOf(c),
       }
     });
   } catch (err) {
