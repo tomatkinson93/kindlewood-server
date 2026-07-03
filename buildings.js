@@ -130,7 +130,10 @@ const ROLE_BUILDING_MAP = {
 };
 
 // Calculate total resource rates for a settlement
-function calculateRates(buildings, citizens, species) {
+// `outposts` (010): [{ terrain, level }, ...] — optional 4th param so the
+// two pre-outpost call sites keep working unchanged. Yields are integer /hr
+// by config, so the production floor in applyTick gains no new residue.
+function calculateRates(buildings, citizens, species, outposts = []) {
   const BASE_RATES = {
     Mice:    { food:20, timber:10, stone:5,  metal:3,  wealth:8  },
     Badgers: { food:12, timber:15, stone:12, metal:8,  wealth:5  },
@@ -184,6 +187,18 @@ function calculateRates(buildings, citizens, species) {
     }
   }
 
+  // Outpost yields (010) — primary × level per outpost (secondaries are a
+  // config flip in outposts_config.js, no change needed here).
+  if (Array.isArray(outposts) && outposts.length) {
+    const { outpostYields } = require('./outposts_config');
+    for (const o of outposts) {
+      const y = outpostYields(o.terrain, o.level);
+      for (const [res, val] of Object.entries(y)) {
+        if (rates[res] !== undefined) rates[res] += val;
+      }
+    }
+  }
+
   return rates;
 }
 
@@ -201,7 +216,11 @@ function calculateRates(buildings, citizens, species) {
 // The arithmetic mirrors calculateRates exactly. Both functions could
 // share a single internal pass — but I'd rather have two readable
 // functions than one clever one, given how often these get touched.
-function calculateRatesBreakdown(buildings, citizens, species) {
+// `outposts` (010): [{ id, tile_q, tile_r, terrain, level }, ...] — one
+// source row per outpost per resource (kind: 'outpost'), pushed BEFORE the
+// season multiplier so applyBreakdownSeasonModifiers scales it like every
+// other production source.
+function calculateRatesBreakdown(buildings, citizens, species, outposts = []) {
   const BASE_RATES = {
     Mice:    { food:20, timber:10, stone:5,  metal:3,  wealth:8  },
     Badgers: { food:12, timber:15, stone:12, metal:8,  wealth:5  },
@@ -317,6 +336,31 @@ function calculateRatesBreakdown(buildings, citizens, species) {
         citizens: members.map(m => ({ id: m.id, name: m.name })),
       });
       breakdown[res].total += total;
+    }
+  }
+
+  // Outpost contributions (010). One row per outpost per resource so the
+  // player sees exactly what each stands for — "Farmstead (12·30): +6".
+  // tile coords ride along for a future deep-link (pan map to tile).
+  if (Array.isArray(outposts) && outposts.length) {
+    const { OUTPOST_CONFIG, outpostYields } = require('./outposts_config');
+    for (const o of outposts) {
+      const cfg = OUTPOST_CONFIG[o.terrain] || {};
+      const y = outpostYields(o.terrain, o.level);
+      for (const [res, val] of Object.entries(y)) {
+        if (breakdown[res] === undefined) continue;
+        breakdown[res].sources.push({
+          kind: 'outpost',
+          terrain: o.terrain,
+          outpost_id: o.id != null ? o.id : null,
+          tile_q: o.tile_q,
+          tile_r: o.tile_r,
+          level: o.level || 1,
+          label: `${cfg.name || 'Outpost'} (${o.tile_q}·${o.tile_r})${(o.level || 1) > 1 ? ` lvl ${o.level}` : ''}`,
+          value: val,
+        });
+        breakdown[res].total += val;
+      }
     }
   }
 

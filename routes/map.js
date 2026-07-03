@@ -42,6 +42,26 @@ router.get('/world', requireAuth, async (req, res) => {
 
     // Get NPC settlements
     const npcRes = await query('SELECT * FROM npc_settlements');
+
+    // Outposts (010) — all of them, with owner names, keyed by tile. Also
+    // a settlement-name lookup for claim-only tiles (claimed_by without an
+    // outpost — possible via the standalone claim route). .catch → empty
+    // pre-migration.
+    const outpostsRes = await query(`
+      SELECT o.id, o.settlement_id, o.tile_q, o.tile_r, o.terrain, o.level,
+             s.name AS owner_name, s.user_id AS owner_user_id
+        FROM outposts o JOIN settlements s ON s.id = o.settlement_id
+    `).catch(() => ({ rows: [] }));
+    const outpostMap = {};
+    outpostsRes.rows.forEach(o => { outpostMap[`${o.tile_q},${o.tile_r}`] = o; });
+    const claimNameById = {};
+    const claimIdsRes = await query(`
+      SELECT DISTINCT s.id, s.name, s.user_id
+        FROM tiles t JOIN settlements s ON s.id = t.claimed_by
+       WHERE t.claimed_by IS NOT NULL
+    `).catch(() => ({ rows: [] }));
+    claimIdsRes.rows.forEach(s => { claimNameById[s.id] = s; });
+
     // Build set of all kingdom tiles for fast lookup
     const kingdomTileSet = new Set();
     npcRes.rows.filter(n => n.is_kingdom).forEach(n => {
@@ -80,10 +100,26 @@ router.get('/world', requireAuth, async (req, res) => {
       // expedition reveals them.
       const isKingdom = occupant && occupant.settlement_type === 'kingdom';
       const isRevealed = revealed.has(key) || isKingdom;
+
+      // Outposts (010) — only surfaced on revealed tiles; fog keeps secrets.
+      const op = isRevealed ? outpostMap[key] : null;
+      const claimedBy = isRevealed ? (t.claimed_by ?? null) : null;
+      const claimOwner = claimedBy != null ? claimNameById[claimedBy] : null;
+      const claimMine = !!(settlement && claimedBy === settlement.id);
+
       return {
         q: t.q, r: t.r,
         terrain: isRevealed ? t.terrain : 'fog',
         revealed: isRevealed,
+        claimed_by_me: claimMine,
+        claim_owner: (claimedBy != null && !claimMine) ? (claimOwner?.name || 'another settlement') : null,
+        outpost: op ? {
+          id: op.id,
+          terrain: op.terrain,
+          level: op.level,
+          mine: !!(settlement && op.settlement_id === settlement.id),
+          owner: op.owner_name,
+        } : null,
         settlement: isRevealed && occupant ? {
           name: occupant.name,
           species: occupant.species,
@@ -126,6 +162,10 @@ router.get('/spawn', requireAuth, async (req, res) => {
     if (!settlement) return res.status(404).json({ error: 'No settlement found.' });
     if (settlement.world_version < 2) {
       await query('UPDATE settlements SET tile_q=NULL, tile_r=NULL WHERE id=$1', [settlement.id]);
+      // Outposts (010) — a stale-world resettle orphans outposts around the
+      // old home; clear them and their claims (no refund — fresh start).
+      await query('DELETE FROM outposts WHERE settlement_id=$1', [settlement.id]).catch(()=>{});
+      await query('UPDATE tiles SET claimed_by=NULL, claimed_at=NULL WHERE claimed_by=$1', [settlement.id]).catch(()=>{});
       settlement.tile_q = null;
     }
     if (settlement.tile_q !== null) return res.status(400).json({ error: 'Already placed.' });
@@ -223,6 +263,10 @@ router.post('/place', requireAuth, async (req, res) => {
     // If world_version is stale, treat as unplaced regardless of tile_q
     if (settlement.world_version < 2) {
       await query('UPDATE settlements SET tile_q=NULL, tile_r=NULL WHERE id=$1', [settlement.id]);
+      // Outposts (010) — a stale-world resettle orphans outposts around the
+      // old home; clear them and their claims (no refund — fresh start).
+      await query('DELETE FROM outposts WHERE settlement_id=$1', [settlement.id]).catch(()=>{});
+      await query('UPDATE tiles SET claimed_by=NULL, claimed_at=NULL WHERE claimed_by=$1', [settlement.id]).catch(()=>{});
       settlement.tile_q = null; settlement.tile_r = null;
     }
     if (settlement.tile_q !== null) return res.status(400).json({ error: 'Already placed.' });
@@ -315,6 +359,10 @@ router.post('/arrive', requireAuth, async (req, res) => {
     // If world_version is stale, treat as unplaced regardless of tile_q
     if (settlement.world_version < 2) {
       await query('UPDATE settlements SET tile_q=NULL, tile_r=NULL WHERE id=$1', [settlement.id]);
+      // Outposts (010) — a stale-world resettle orphans outposts around the
+      // old home; clear them and their claims (no refund — fresh start).
+      await query('DELETE FROM outposts WHERE settlement_id=$1', [settlement.id]).catch(()=>{});
+      await query('UPDATE tiles SET claimed_by=NULL, claimed_at=NULL WHERE claimed_by=$1', [settlement.id]).catch(()=>{});
       settlement.tile_q = null; settlement.tile_r = null;
     }
     if (settlement.tile_q !== null) return res.status(400).json({ error: 'Already placed.' });

@@ -24,12 +24,15 @@ async function applyTick(settlement, species) {
   const hoursElapsed = (now - lastTick) / (1000 * 60 * 60);
   if (hoursElapsed < 0.005) return settlement;
 
-  const [bRes, cRes] = await Promise.all([
+  const [bRes, cRes, oRes] = await Promise.all([
     query('SELECT type, level FROM buildings WHERE settlement_id=$1', [settlement.id]),
     query('SELECT role FROM citizens WHERE settlement_id=$1', [settlement.id]),
+    // Outposts (010) — yields ride this same last_tick accrual; no separate
+    // clock. .catch → [] so pre-migration DBs keep ticking.
+    query('SELECT id, tile_q, tile_r, terrain, level FROM outposts WHERE settlement_id=$1', [settlement.id]).catch(() => ({ rows: [] })),
   ]);
   const season = getCurrentSeason();
-  const baseRates = calculateRates(bRes.rows, cRes.rows, species);
+  const baseRates = calculateRates(bRes.rows, cRes.rows, species, oRes.rows);
   const rates = applySeasonModifiers(baseRates, season);
   const updated = {
     food:   Math.floor(settlement.food   + rates.food   * hoursElapsed),
@@ -103,8 +106,14 @@ router.get('/settlement', requireAuth, async (req, res) => {
       'SELECT role FROM citizens WHERE settlement_id=$1',
       [settlement.id]
     );
+    // Outposts (010) — same rows feed the rate calc so the topbar +N/hr
+    // reflects them the moment one is founded.
+    const outpostsResult = await query(
+      'SELECT id, tile_q, tile_r, terrain, level FROM outposts WHERE settlement_id=$1',
+      [settlement.id]
+    ).catch(() => ({ rows: [] }));
     const season = getCurrentSeason();
-    const baseRates = calculateRates(buildingsResult.rows, citizensResult.rows, user.species);
+    const baseRates = calculateRates(buildingsResult.rows, citizensResult.rows, user.species, outpostsResult.rows);
     const rates = applySeasonModifiers(baseRates, season);
 
     // Famine status for the warning banner (spec Q5). rates.food is the
@@ -202,8 +211,14 @@ router.get('/resource-breakdown', requireAuth, async (req, res) => {
       [settlement.id]
     );
 
+    // Outposts (010) — one source row per outpost in the modal.
+    const outpostsResult = await query(
+      'SELECT id, tile_q, tile_r, terrain, level FROM outposts WHERE settlement_id=$1',
+      [settlement.id]
+    ).catch(() => ({ rows: [] }));
+
     const season = getCurrentSeason();
-    const base = calculateRatesBreakdown(buildingsResult.rows, citizensResult.rows, user.species);
+    const base = calculateRatesBreakdown(buildingsResult.rows, citizensResult.rows, user.species, outpostsResult.rows);
     const breakdown = applyBreakdownSeasonModifiers(base, season);
 
     // Citizen food upkeep — negative source row (🍽 in the modal, "Upkeep"
@@ -216,6 +231,20 @@ router.get('/resource-breakdown', requireAuth, async (req, res) => {
       breakdown.food.total = Math.round((breakdown.food.total + upkeepSrc.value) * 10) / 10;
     } catch (famineErr) {
       console.error('[famine] upkeep breakdown error:', famineErr.message);
+    }
+
+    // Outpost food upkeep (010) — sibling negative row. Season-FLAT by
+    // design (spec §5): winter already squeezes outpost yields via the
+    // production modifier, so upkeep stays constant year-round.
+    try {
+      const { buildOutpostUpkeepBreakdownSource } = require('../famine');
+      const opSrc = await buildOutpostUpkeepBreakdownSource(settlement.id);
+      if (opSrc) {
+        breakdown.food.sources.push(opSrc);
+        breakdown.food.total = Math.round((breakdown.food.total + opSrc.value) * 10) / 10;
+      }
+    } catch (opErr) {
+      console.error('[outposts] upkeep breakdown error:', opErr.message);
     }
 
     res.json({
@@ -584,6 +613,27 @@ router.post('/migrate', async (req, res) => {
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`, "item_templates table");
 
+  // 010_tiles_outposts — tile claims + outposts. Yields go through
+  // calculateRates (production/last_tick path); food upkeep goes through
+  // famine consumption (quantized carry) — see outposts_v1_spec.md §5.
+  // level + assigned_citizen_id are reserved for future upgrades/workers.
+  await run("ALTER TABLE tiles ADD COLUMN IF NOT EXISTS claimed_by INTEGER DEFAULT NULL REFERENCES settlements(id) ON DELETE SET NULL", "tiles claimed_by");
+  await run("ALTER TABLE tiles ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ DEFAULT NULL", "tiles claimed_at");
+  await run(`CREATE TABLE IF NOT EXISTS outposts (
+    id SERIAL PRIMARY KEY,
+    settlement_id INTEGER NOT NULL REFERENCES settlements(id) ON DELETE CASCADE,
+    tile_q INTEGER NOT NULL,
+    tile_r INTEGER NOT NULL,
+    terrain TEXT NOT NULL,
+    level INTEGER NOT NULL DEFAULT 1,
+    assigned_citizen_id INTEGER DEFAULT NULL REFERENCES citizens(id) ON DELETE SET NULL,
+    built_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (tile_q, tile_r)
+  )`, "outposts table");
+  await run("CREATE INDEX IF NOT EXISTS idx_outposts_settlement ON outposts (settlement_id)", "outposts settlement index");
+  await run("CREATE INDEX IF NOT EXISTS idx_tiles_claimed_by ON tiles (claimed_by) WHERE claimed_by IS NOT NULL", "tiles claimed_by index");
+  await run("ALTER TABLE archive_meta ADD COLUMN IF NOT EXISTS outposts JSONB DEFAULT '[]'", "archive outposts snapshot");
+
   res.json({ ok: true, results });
 });
 
@@ -668,6 +718,8 @@ router.post('/world/regenerate', async (req, res) => {
     const curSetts = await client.query("SELECT id, tile_q, tile_r FROM settlements WHERE tile_q IS NOT NULL AND tile_r IS NOT NULL");
     const curNpcs  = await client.query('SELECT * FROM npc_settlements');
     const curFog   = await client.query('SELECT user_id, tile_q, tile_r FROM fog_of_war');
+    // Outposts (010) — snapshot before the wipe. .catch → [] pre-migration.
+    const curOutposts = await client.query('SELECT * FROM outposts').catch(() => ({ rows: [] }));
     const curMeta  = await client.query('SELECT map_w, map_h, current_seed FROM world_meta WHERE id=1');
     const curW = curMeta.rows[0]?.map_w || mapgen.MAP_W;
     const curH = curMeta.rows[0]?.map_h || mapgen.MAP_H;
@@ -687,19 +739,23 @@ router.post('/world/regenerate', async (req, res) => {
 
     await client.query('DELETE FROM archive_meta');
     await client.query(
-      `INSERT INTO archive_meta (id, map_w, map_h, seed, settlements, npc_settlements, fog, archived_at)
-       VALUES (1, $1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, NOW())`,
+      `INSERT INTO archive_meta (id, map_w, map_h, seed, settlements, npc_settlements, fog, outposts, archived_at)
+       VALUES (1, $1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, NOW())`,
       [
         curW, curH, curMeta.rows[0]?.current_seed || null,
         JSON.stringify(curSetts.rows),
         JSON.stringify(curNpcs.rows),
         JSON.stringify(curFog.rows),
+        JSON.stringify(curOutposts.rows),
       ]
     );
 
     // 2. Wipe live world state.
     await client.query('DELETE FROM fog_of_war');
     await client.query('DELETE FROM expeditions').catch(()=>{});
+    // Outposts (010) — must go with the tiles they sit on; claims live in
+    // the tiles table and vanish with it.
+    await client.query('DELETE FROM outposts').catch(()=>{});
     await client.query('DELETE FROM tiles');
     await client.query('UPDATE settlements SET tile_q=NULL, tile_r=NULL, rerolls_used=0');
     // NPC settlements are kept in DB but their tile_q/tile_r values now point
@@ -750,7 +806,7 @@ router.post('/world/restore', async (req, res) => {
   const { pool, query } = require('../db');
   const mapgen = require('../mapgen');
 
-  const arc = await query('SELECT map_w, map_h, seed, settlements, npc_settlements, fog FROM archive_meta WHERE id=1').catch(() => ({ rows: [] }));
+  const arc = await query('SELECT * FROM archive_meta WHERE id=1').catch(() => ({ rows: [] }));
   if (!arc.rows.length) return res.status(404).json({ error: 'No archive found.' });
   const a = arc.rows[0];
 
@@ -764,6 +820,7 @@ router.post('/world/restore', async (req, res) => {
     // Wipe current.
     await client.query('DELETE FROM fog_of_war');
     await client.query('DELETE FROM expeditions').catch(()=>{});
+    await client.query('DELETE FROM outposts').catch(()=>{});
     await client.query('DELETE FROM tiles');
     await client.query('UPDATE settlements SET tile_q=NULL, tile_r=NULL');
     await client.query('DELETE FROM npc_settlements');
@@ -824,6 +881,24 @@ router.post('/world/restore', async (req, res) => {
         batch.forEach(f => bp.push(f.user_id, f.tile_q, f.tile_r));
         await client.query(`INSERT INTO fog_of_war (user_id, tile_q, tile_r) VALUES ${vals} ON CONFLICT DO NOTHING`, bp);
       }
+    }
+
+    // Restore outposts (010) + their tile claims. The archived tiles were
+    // just restored, so coordinates resolve; settlements that no longer
+    // exist are skipped row-by-row rather than aborting the restore.
+    const archOutposts = Array.isArray(a.outposts) ? a.outposts : [];
+    for (const o of archOutposts) {
+      try {
+        await client.query(
+          `INSERT INTO outposts (settlement_id, tile_q, tile_r, terrain, level, built_at)
+           VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+          [o.settlement_id, o.tile_q, o.tile_r, o.terrain, o.level || 1, o.built_at || new Date().toISOString()]
+        );
+        await client.query(
+          'UPDATE tiles SET claimed_by=$1, claimed_at=NOW() WHERE q=$2 AND r=$3',
+          [o.settlement_id, o.tile_q, o.tile_r]
+        );
+      } catch(_) { /* skip individual rows that fail rather than abort restore */ }
     }
 
     // Update dimensions on mapgen + world_meta.

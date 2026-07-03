@@ -26,6 +26,8 @@ const { query } = require('./db');
 const { SEASONS } = require('./seasons');
 const { FAMINE_NARRATIVES } = require('./lib/injury_table');
 const { writeDeathEvent } = require('./deaths');
+// Outposts (010) — per-outpost food upkeep, season-flat (spec §5).
+const { OUTPOST_FOOD_UPKEEP_PER_HR } = require('./outposts_config');
 
 // ── Constants (spec Q1–Q4 + decision log) ────────────────────────────────
 const QUANTUM_MS         = 15 * 60 * 1000;   // 15-minute consumption quanta
@@ -127,6 +129,13 @@ function simulateConsumption(state, nQuanta, startMs) {
   let foodF = Number(state.foodF) || 0;
   const events = [];
 
+  // Outposts (010): each outpost consumes OUTPOST_FOOD_UPKEEP_PER_HR,
+  // SEASON-FLAT (winter squeezes yields, not upkeep — spec §5), deducted
+  // AFTER the citizen feeding loop each quantum (citizens eat first;
+  // unfed outposts carry no penalty in v1). Stays pure & deterministic.
+  const outpostCount = Math.max(0, Math.floor(Number(state.outpostCount) || 0));
+  const outpostRationPerQuantum = outpostCount * OUTPOST_FOOD_UPKEEP_PER_HR * QUANTUM_HOURS;
+
   const livingCount = citizens.filter(c => c.life_stage !== 'deceased').length;
   const deathCap = livingCount <= FAMINE_GRACE_MIN_POP
     ? 0
@@ -212,6 +221,11 @@ function simulateConsumption(state, nQuanta, startMs) {
         }
       }
     }
+
+    // Outpost upkeep (010) — after citizens are fed, clamped at zero.
+    if (outpostRationPerQuantum > 0) {
+      foodF = Math.max(0, foodF - outpostRationPerQuantum);
+    }
   }
 
   return { foodF, citizens, events, deaths };
@@ -264,18 +278,28 @@ async function applyConsumption(settlementId) {
       WHERE settlement_id=$1 AND life_stage != 'deceased'`,
     [settlementId]
   );
-  if (!cRes.rows.length) return { quanta: nQuanta, deaths: 0, events: [] };
 
-  const condRes = await query(
+  // Outposts (010) — count for season-flat upkeep. .catch → 0 pre-migration.
+  const oCountRes = await query(
+    'SELECT COUNT(*)::int AS n FROM outposts WHERE settlement_id=$1',
+    [settlementId]
+  ).catch(() => ({ rows: [{ n: 0 }] }));
+  const outpostCount = oCountRes.rows[0]?.n || 0;
+
+  // No mouths at all (citizen or outpost) — nothing to simulate.
+  if (!cRes.rows.length && outpostCount === 0) return { quanta: nQuanta, deaths: 0, events: [] };
+
+  const condRes = cRes.rows.length ? await query(
     `SELECT citizen_id FROM citizen_conditions
       WHERE condition_type='starving'
         AND citizen_id = ANY($1::int[])`,
     [cRes.rows.map(c => c.id)]
-  );
+  ) : { rows: [] };
   const starvingSet = new Set(condRes.rows.map(r => r.citizen_id));
 
   const state = {
     foodF: (Number(s.food) || 0) + (Number(s.consumption_carry) || 0),
+    outpostCount,
     citizens: cRes.rows.map(c => ({
       id: c.id,
       name: c.name,
@@ -384,6 +408,16 @@ async function getFamineSummary(settlementId, foodProductionPerHour = 0) {
     if (h >= STARVING_THRESHOLD) starving++;
   }
 
+  // Outposts (010) — season-flat upkeep joins the consumption side so
+  // hours-to-empty and the warning banner see the real burn rate.
+  const oCountRes = await query(
+    'SELECT COUNT(*)::int AS n FROM outposts WHERE settlement_id=$1',
+    [settlementId]
+  ).catch(() => ({ rows: [{ n: 0 }] }));
+  const outpostCount = oCountRes.rows[0]?.n || 0;
+  const outpostUpkeep = outpostCount * OUTPOST_FOOD_UPKEEP_PER_HR;
+  upkeep += outpostUpkeep;
+
   const net = foodProductionPerHour - upkeep;
   const hoursToEmpty = net < 0 && food > 0 ? Math.round((food / -net) * 10) / 10 : null;
 
@@ -398,6 +432,8 @@ async function getFamineSummary(settlementId, foodProductionPerHour = 0) {
     unfed_count: unfed,
     starving_count: starving,
     upkeep_per_hour: Math.round(upkeep * 10) / 10,
+    outpost_count: outpostCount,
+    outpost_upkeep_per_hour: outpostUpkeep,
   };
 }
 
@@ -429,11 +465,33 @@ async function buildUpkeepBreakdownSource(settlementId) {
   };
 }
 
+// ── Outpost upkeep breakdown row (010) ────────────────────────────────────
+// Sibling of buildUpkeepBreakdownSource. Returns null when the settlement
+// has no outposts so callers can skip the row entirely. Season-flat by
+// design (spec §5) — no seasonNote, the number never moves with the year.
+async function buildOutpostUpkeepBreakdownSource(settlementId) {
+  const oRes = await query(
+    'SELECT COUNT(*)::int AS n FROM outposts WHERE settlement_id=$1',
+    [settlementId]
+  ).catch(() => ({ rows: [{ n: 0 }] }));
+  const n = oRes.rows[0]?.n || 0;
+  if (n < 1) return null;
+  const total = n * OUTPOST_FOOD_UPKEEP_PER_HR;
+  return {
+    kind: 'outpost_upkeep',
+    label: `Outpost upkeep (×${n})`,
+    per_hour: total,
+    count: n,
+    value: -total,
+  };
+}
+
 module.exports = {
   // tick + API
   applyConsumption,
   getFamineSummary,
   buildUpkeepBreakdownSource,
+  buildOutpostUpkeepBreakdownSource,
   // pure/test surface
   simulateConsumption,
   upkeepPerHour,
