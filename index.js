@@ -43,6 +43,7 @@ app.use('/api/game', gameRoutes);
 app.use('/api/map', mapRoutes);
 app.use('/api/citizens', citizenRoutes);
 app.use('/api/buildings', buildingRoutes);
+app.use('/api/game/outposts', require('./routes/outposts'));
 const expeditionRoutes = require('./routes/expeditions');
 app.use('/api/expeditions', expeditionRoutes);
 const questRoutes = require('./routes/quests');
@@ -76,7 +77,6 @@ app.use('/api/stats', gameStatsRoutes);
 const presenceRoutes = require('./routes/presence');
 app.use('/api/presence', presenceRoutes);
 app.use('/api/rooms', roomRoutes);
-app.use('/api/game/outposts', require('./routes/outposts'));
 app.use((err, req, res, next) => {
   console.error(err.message);
   res.status(500).json({ error: 'Internal server error.' });
