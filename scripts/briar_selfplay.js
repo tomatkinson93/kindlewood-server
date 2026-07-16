@@ -12,21 +12,15 @@
 
 const E = require('../lib/briar_engine');
 
-const AI_ROSTER = ['Old Bracken', 'Sly Whisper', 'Marigold', 'Thorn', 'Bramblefoot', 'Quill'];
+// The four defined personalities; neutral fillers only when a table needs >4.
+const DEFINED_COURTIERS = ['Old Bracken', 'Sly Whisper', 'Marigold', 'Thorn'];
+const FILLER_COURTIERS = ['Bramblefoot', 'Quill'];
 const ROLES = ['elder', 'adder', 'magpie', 'owl', 'hedgewitch'];
 const TURN_CAP = 4000;   // engine steps before we call a game stalled
 
-// Mirror of the engine's threat scoring (incl. grudges) so the harness can ask
-// "did the AI target its own perceived #1 threat?" without reaching into
-// engine internals.
-function threatOf(p, x) {
-  const cards = x.cards.filter(c => !c.revealed).length;
-  let s = cards * 10 + x.acorns;
-  if (x.acorns >= 7) s += 12;
-  if (x.acorns >= 10) s += 20;
-  s += (p.grudges && p.grudges[x.seat]) || 0;
-  return s;
-}
+// The engine exports its own threat scoring, so "did the AI target its own
+// perceived #1 threat?" is measured against exactly what the AI optimises.
+const threatOf = (g, p, x) => E.threatOf(g, p, x);
 
 // Which seat is the engine waiting on? Uses the engine's own single-source-of-
 // truth helper (all seats are AI here, so the first pending seat always acts).
@@ -75,10 +69,14 @@ function checkInvariants(g, seed, problems) {
 }
 
 function playGame(seed, nPlayers, difficulty, agg) {
-  const seats = [];
-  for (let i = 0; i < nPlayers; i++) {
-    seats.push({ seat: i, id: 'ai:' + i, name: AI_ROSTER[i % AI_ROSTER.length], isAI: true });
-  }
+  // Assign courtiers to seats in a per-game shuffled order, so personality
+  // win-rate isn't confounded with turn-order/seat position (real matches
+  // shuffle seating too). Uses a seed-derived RNG independent of the game's.
+  const pool = nPlayers <= DEFINED_COURTIERS.length
+    ? DEFINED_COURTIERS.slice()
+    : DEFINED_COURTIERS.concat(FILLER_COURTIERS);
+  const names = E.shuffle(pool, E.mulberry32(seed ^ 0x9e3779b9)).slice(0, nPlayers);
+  const seats = names.map((name, i) => ({ seat: i, id: 'ai:' + i, name, isAI: true }));
   const g = E.create(seats, { rng: E.mulberry32(seed), difficulty, seed });
 
   let steps = 0;
@@ -94,9 +92,9 @@ function playGame(seed, nPlayers, difficulty, agg) {
       const actor = g.players.find(p => p.seat === seat);
       const rivals = g.players.filter(p => p.alive && p.seat !== seat);
       if (rivals.length) {
-        const top = Math.max(...rivals.map(x => threatOf(actor, x)));
+        const top = Math.max(...rivals.map(x => threatOf(g, actor, x)));
         const chosen = g.players.find(p => p.seat === decision.targetSeat);
-        const isTop = chosen && threatOf(actor, chosen) === top;
+        const isTop = chosen && threatOf(g, actor, chosen) === top;
         agg.targeted++;
         if (isTop) agg.hitTop++;
         // Bucketed by rivals alive: with only 1–2 rivals the choice is near-
