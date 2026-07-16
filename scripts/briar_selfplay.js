@@ -28,28 +28,9 @@ function threatOf(p, x) {
   return s;
 }
 
-// Which seat is the engine waiting on? (All seats are AI here.) Mirrors
-// game_rooms.pendingAiSeat's Briar branch.
-function pendingSeat(g) {
-  const P = g.pending;
-  switch (g.phase) {
-    case 'action':        return g.players[g.turn].seat;
-    case 'loseInfluence': return P.loserSeat;
-    case 'consult':       return P.actorSeat;
-    case 'challengeBlock': return P.actorSeat;
-    case 'challengeAction': {
-      const c = g.players.find(p => p.alive && p.seat !== P.actorSeat && !(P.passes || []).includes(p.seat));
-      return c ? c.seat : null;
-    }
-    case 'block': {
-      const bl = P.action === 'gather'
-        ? g.players.filter(p => p.alive && p.seat !== P.actorSeat && !(P.passes || []).includes(p.seat))
-        : g.players.filter(p => p.seat === P.targetSeat && p.alive);
-      return bl.length ? bl[0].seat : null;
-    }
-    default: return null;
-  }
-}
+// Which seat is the engine waiting on? Uses the engine's own single-source-of-
+// truth helper (all seats are AI here, so the first pending seat always acts).
+const pendingSeat = g => E.pendingSeat(g);
 
 function apply(g, s, msg) {
   switch (msg.kind) {
