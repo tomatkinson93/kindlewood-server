@@ -108,13 +108,10 @@ router.post('/:code/action', (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Host ticks the AI clock (server decides + applies) ──
-router.post('/:code/ai-action', (req, res) => {
-  const u = user(req); if (!u) return res.status(401).json({ error: 'Not signed in' });
-  const room = withRoom(req, res); if (!room) return;
-  const did = rooms.aiAction(room, u.id);
-  res.json({ ok: true, resolved: !!did });
-});
+// AI seats now advance on a server-side clock (lib/game_rooms.js _serverTick),
+// so the old host-driven POST /:code/ai-action endpoint has been removed. A
+// stale client still pinging it will simply 404 (harmless — the tick drives
+// every AI seat regardless).
 
 // ── Host force-ends the match (e.g. a player left and won't return) ──
 router.post('/:code/end', (req, res) => {
