@@ -121,6 +121,14 @@ router.post('/:code/end', (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// ── Host runs it back: finished match → fresh lobby with the same table ──
+router.post('/:code/rematch', (req, res) => {
+  const u = user(req); if (!u) return res.status(401).json({ error: 'Not signed in' });
+  const room = withRoom(req, res); if (!room) return;
+  try { rooms.rematch(room, u.id); res.json({ ok: true }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
 // ── Chat: public/local/all or a private whisper to one player ──
 router.post('/:code/chat', (req, res) => {
   const u = user(req); if (!u) return res.status(401).json({ error: 'Not signed in' });
@@ -173,7 +181,7 @@ router.get('/:code/stream', (req, res) => {
   // player their current redacted state right away.
   if (room.status === 'playing' && room.engine && room.state) {
     try { res.write(`data: ${JSON.stringify({ type: 'game_state', state: room.engine.view(room.state, u.id) })}\n\n`); } catch (e) {}
-    rooms.notePresence(room, u.id, true); // back online
+    rooms.markPresent(room, u.id); // back online — cancels grace, restores control if converted
   }
   const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch (e) {} }, 25000);
 
@@ -186,15 +194,16 @@ router.get('/:code/stream', (req, res) => {
       // In the lobby, leaving frees the seat immediately.
       if (!fresh.subscribers.has(u.id)) rooms.leave(fresh, u.id);
     } else if (fresh.status === 'playing') {
-      // Mid-match: don't remove them. After a grace window with no
-      // reconnection, mark them absent so the host can choose to end.
+      // Mid-match: don't remove them. After a short debounce (to ride out a
+      // refresh/blip) flag the seat absent; the server tick then converts it
+      // to AI once the 60s grace elapses (§3.3).
       if (!fresh.subscribers.has(u.id)) {
         setTimeout(() => {
           const r2 = rooms.get(fresh.code);
           if (r2 && r2.status === 'playing' && !r2.subscribers.has(u.id)) {
-            rooms.notePresence(r2, u.id, false);
+            rooms.markAbsent(r2, u.id);
           }
-        }, 8000); // 8s grace for a refresh/blip before flagging absent
+        }, 6000); // debounce a refresh/blip before starting the grace clock
       }
     }
   });
