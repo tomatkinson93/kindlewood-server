@@ -45,6 +45,13 @@ router.get('/list', (req, res) => {
   res.json({ rooms: rooms.listPublic(req.query.game) });
 });
 
+// ── Live activity summary (spec 19 §5.4) ──
+// Cheap, unauthenticated read used by the tavern select screen to show open
+// tables / players waiting / games in progress per game type.
+router.get('/summary', (req, res) => {
+  res.json({ summary: rooms.summary() });
+});
+
 // ── Create ──
 router.post('/create', (req, res) => {
   const u = user(req);
