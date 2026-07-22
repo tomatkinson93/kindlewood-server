@@ -52,6 +52,13 @@ router.get('/summary', (req, res) => {
   res.json({ summary: rooms.summary() });
 });
 
+// ── My active games ── used by the tavern screen to offer "rejoin your game".
+router.get('/mine', (req, res) => {
+  const u = user(req);
+  if (!u) return res.json({ rooms: [] });   // not signed in → nothing to resume
+  res.json({ rooms: rooms.roomsForUser(u.id) });
+});
+
 // ── Create ──
 router.post('/create', (req, res) => {
   const u = user(req);
@@ -181,6 +188,11 @@ router.get('/:code/stream', (req, res) => {
   const snap = rooms.publicView(room);
   snap.youAreHost = (room.hostId === u.id);
   snap.youId = u.id;
+  // On a reconnect to a live match, include the seating so the client can
+  // reopen the game table directly (cold resume) instead of the lobby view.
+  if (room.status === 'playing' && room.seats) {
+    snap.seats = room.seats.map(s => ({ seat: s.seat, id: s.id, name: s.name, isAI: !!s.isAI }));
+  }
   res.write(`data: ${JSON.stringify({ type: 'snapshot', room: snap })}\n\n`);
 
   rooms.subscribe(room, u.id, res);
