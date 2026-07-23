@@ -83,6 +83,14 @@ router.post('/:code/join', (req, res) => {
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+// ── Forfeit (explicit "Leave game" mid-match) ──
+router.post('/:code/forfeit', (req, res) => {
+  const u = user(req); if (!u) return res.status(401).json({ error: 'Not signed in' });
+  const room = withRoom(req, res); if (!room) return;
+  rooms.forfeit(room, u.id);
+  res.json({ ok: true });
+});
+
 // ── Leave ──
 router.post('/:code/leave', (req, res) => {
   const u = user(req); if (!u) return res.status(401).json({ error: 'Not signed in' });
