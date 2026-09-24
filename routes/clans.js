@@ -210,6 +210,7 @@ router.get('/me', requireAuth, async (req, res) => {
         count: tRes.rows.length,
         cap: palette.territoryCap(cRes.rows[0].level),
         next_cost: claimCost(tRes.rows.length),
+        radius: palette.claimRadius(cRes.rows[0].level),
         tiles: tRes.rows.map(t => ({ q: t.q, r: t.r })),
         hq: { q: cRes.rows[0].hq_q, r: cRes.rows[0].hq_r },
       },
@@ -607,6 +608,16 @@ router.post('/territory/claim', requireAuth, requireClanPermission('claim_territ
       const adjacent = anchors.some(t => t.q !== null &&
         (mapgen.hexDistanceWrapped(q, r, t.q, t.r) === 1 || (!owned.length && t.q === q && t.r === r)));
       if (!adjacent) throw new ClanError(400, "Claims must border your clan's land.");
+      // Reach: within claimRadius(level) of the HQ tile, so territory stays
+      // compact (no long lines) and grows outward with the clan.
+      const radius = palette.claimRadius(clan.level);
+      const dist = mapgen.hexDistanceWrapped(q, r, clan.hq_q, clan.hq_r);
+      if (dist > radius) {
+        const need = palette.levelForRadius(dist);
+        throw new ClanError(400, need
+          ? `At level ${clan.level} your clan can claim within ${radius} tile${radius === 1 ? '' : 's'} of its hall; this tile is ${dist} away (level ${need} reaches it).`
+          : `That tile is ${dist} tiles from your hall — beyond any clan's reach.`);
+      }
       const cost = claimCost(owned.length);
       if ((await spendPrestige(client, clan.id, cost)) === null) {
         throw new ClanError(400, `Claiming costs ${cost} prestige; your clan has ${Number(clan.prestige)}.`);
