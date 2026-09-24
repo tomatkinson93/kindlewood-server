@@ -126,7 +126,7 @@ function clanSummary(c, memberCount) {
 async function loadRoster(clanId) {
   const r = await query(
     `SELECT cm.user_id, u.username, u.species, cm.rank, cm.joined_at,
-            cm.prestige_contributed, s.name AS settlement_name, s.tier
+            cm.prestige_contributed, s.name AS settlement_name, s.tier, s.tile_q, s.tile_r
        FROM clan_members cm
        JOIN users u ON u.id = cm.user_id
        LEFT JOIN settlements s ON s.user_id = cm.user_id
