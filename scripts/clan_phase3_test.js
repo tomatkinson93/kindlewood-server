@@ -159,6 +159,21 @@ async function main() {
     check(across.status === 200, `claim across the wrap seam (q=0 → q=${W - 1}) → 200`);
   }
 
+  console.log('Reach (claim radius by level)');
+  const F = await player('f', await freeHome(), { hall: true });
+  const cf = await found(F); await fund(cf, 2, 5000);
+  const f1 = nb(...F.home, 0), f2 = nb(...f1, 0);            // 1 and 2 east of HQ
+  const r1 = await claim(F, f1);
+  check(r1.status === 200, 'level 2: tile 1 from the hall → 200');
+  const r2 = await claim(F, f2);
+  check(r2.status === 400 && /within 1 tile/.test(r2.data.error) && /level 3 reaches/.test(r2.data.error),
+    'level 2: adjacent to owned land but 2 from the hall → 400 with the level that reaches it');
+  await fund(cf, 3, 5000);
+  const r3 = await claim(F, f2);
+  check(r3.status === 200, 'level 3: same tile (radius 2) → 200');
+  const me3 = await api(F.token, 'GET', '/api/clans/me');
+  check(me3.data.territory.radius === 2, '/me reports the claim radius');
+
   console.log('Concurrency');
   const C = await player('c', await freeHome(), { hall: true });
   const cc = await found(C); await fund(cc, 2, 5000);
