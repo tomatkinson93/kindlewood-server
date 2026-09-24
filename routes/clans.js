@@ -24,6 +24,7 @@ const eventBus = require('../lib/event_bus');
 const palette = require('../lib/clan_palette');
 const mapgen = require('../mapgen');
 const { spendPrestige, grantPrestige, applyLevelUp } = require('../lib/clan_subscriber');
+const { systemLine } = require('../lib/clan_chat');
 const {
   RANK_ORDER, RANK_LABELS,
   checkClanPermission, permissionsFor,
@@ -270,11 +271,15 @@ router.post('/', requireAuth, async (req, res) => {
       await client.query(
         `INSERT INTO clan_territory (q, r, clan_id, claimed_by_user_id)
          VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`, [s.tile_q, s.tile_r, id, userId]);
+      // The clan's Chat hub channel exists from founding; forum and live
+      // chat unlock by level, with no insert needed then.
+      await client.query("INSERT INTO chat_channels (kind, clan_id, name) VALUES ('clan', $1, $2)", [id, name]);
       await logActivity(client, id, 'clan_founded', userId, { name });
       return id;
     });
 
     publishToSettlements([s.id], { type: 'clan_membership_changed', clan_id: clanId });
+    systemLine(clanId, `🏛️ ${req.user.username} founded ${name}.`);
     res.json({ ok: true, clan_id: clanId });
   } catch (e) {
     sendError(res, e, 'Founding failed.');
@@ -391,6 +396,7 @@ router.post('/invites/:id/accept', requireAuth, async (req, res) => {
 
     publishToSettlements([s.id], { type: 'clan_membership_changed', clan_id: clanId });
     publishToClan(clanId, { type: 'clan_member_joined', user_id: userId, username: req.user.username });
+    systemLine(clanId, `🌱 ${req.user.username} joined the clan.`);
     res.json({ ok: true, clan_id: clanId });
   } catch (e) {
     sendError(res, e, 'Could not join the clan.');
@@ -453,6 +459,7 @@ router.post('/leave', requireAuth, async (req, res) => {
     else {
       publishToSettlements([await settlementIdFor(userId)], { type: 'clan_membership_changed', clan_id: null });
       publishToClan(out.clan.id, { type: 'clan_member_left', user_id: userId });
+      systemLine(out.clan.id, `🚪 ${req.user.username} left the clan.`);
     }
     res.json({ ok: true, disbanded: out.disbanded });
   } catch (e) {
@@ -481,6 +488,7 @@ function memberAction(flag, activityType, mutate) {
       if (activityType === 'member_kicked') {
         publishToSettlements([await settlementIdFor(targetId)], { type: 'clan_membership_changed', clan_id: null });
         publishToClan(req.clan.clanId, { type: 'clan_member_kicked', user_id: targetId });
+        systemLine(req.clan.clanId, `✂️ ${out.target.username} was removed from the clan.`);
       } else {
         publishToClan(req.clan.clanId, { type: 'clan_rank_changed', user_id: targetId, rank: out.result.rank });
       }
@@ -530,7 +538,8 @@ router.post('/transfer', requireAuth, requireClanPermission('transfer_leadership
       await client.query("UPDATE clan_members SET rank = 'founder' WHERE user_id = $1", [targetId]);
       await client.query('UPDATE clans SET founder_user_id = $2 WHERE id = $1', [clan.id, targetId]);
       await logActivity(client, clan.id, 'leadership_transferred', req.user.userId, { username: target.username });
-    });
+      return target.username;
+    }).then(name => { systemLine(req.clan.clanId, `👑 ${name} now leads the clan.`); });
     publishToClan(req.clan.clanId, { type: 'clan_leadership_transferred', user_id: targetId });
     res.json({ ok: true });
   } catch (e) {
@@ -631,6 +640,7 @@ router.post('/territory/claim', requireAuth, requireClanPermission('claim_territ
     });
 
     publishToClan(req.clan.clanId, { type: 'clan_territory_claimed', q, r, user_id: req.user.userId });
+    systemLine(req.clan.clanId, `🏳️ ${req.user.username} claimed (${q}, ${r}) for the clan.`);
     res.json({ ok: true, q, r, ...out, next_cost: claimCost(out.tiles) });
   } catch (e) {
     sendError(res, e, 'Claim failed.');
@@ -668,7 +678,10 @@ router.post('/cheat/prestige', requireAuth, requireClanMember, async (req, res) 
       return { leveledTo, prestige: Number(c.prestige), prestige_lifetime: Number(c.prestige_lifetime), level: c.level };
     });
     publishToClan(clanId, { type: 'clan_prestige', user_id: req.user.userId, amount, source: 'cheat' });
-    if (out.leveledTo) publishToClan(clanId, { type: 'clan_level_up', level: out.leveledTo });
+    if (out.leveledTo) {
+      publishToClan(clanId, { type: 'clan_level_up', level: out.leveledTo });
+      systemLine(clanId, `🎉 The clan reached level ${out.leveledTo}!`);
+    }
     res.json({ ok: true, ...out });
   } catch (e) {
     sendError(res, e, 'Cheat failed.');
