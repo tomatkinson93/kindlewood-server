@@ -31,7 +31,7 @@ router.get('/world', requireAuth, async (req, res) => {
 
     // Get all player settlements for display
     const settlementsRes = await query(`
-      SELECT s.tile_q, s.tile_r, s.name, s.tier, u.species, u.username
+      SELECT s.tile_q, s.tile_r, s.name, s.tier, s.user_id, u.species, u.username
       FROM settlements s JOIN users u ON s.user_id = u.id
       WHERE s.tile_q IS NOT NULL AND s.tile_r IS NOT NULL
     `);
@@ -71,11 +71,21 @@ router.get('/world', requireAuth, async (req, res) => {
     `).catch(() => ({ rows: [] }));
     const clanTerrMap = {};
     clanTerrRes.rows.forEach(t => { clanTerrMap[`${t.q},${t.r}`] = t; });
-    const myClanRes = clanTerrRes.rows.length
-      ? await query('SELECT clan_id FROM clan_members WHERE user_id=$1', [req.user.userId]).catch(() => ({ rows: [] }))
-      : { rows: [] };
+    const myClanRes = await query('SELECT clan_id FROM clan_members WHERE user_id=$1', [req.user.userId])
+      .catch(() => ({ rows: [] }));
     const myClanId = myClanRes.rows[0] ? myClanRes.rows[0].clan_id : null;
     const clanPalette = require('../lib/clan_palette');
+
+    // Each player settlement's clan, for the map nameplate's clan tag.
+    const memberClanRes = await query(`
+      SELECT cm.user_id, c.id, c.name, c.banner
+        FROM clan_members cm JOIN clans c ON c.id = cm.clan_id
+    `).catch(() => ({ rows: [] }));
+    const clanByUser = {};
+    memberClanRes.rows.forEach(m => {
+      const b = clanPalette.resolveBanner(m.banner);
+      clanByUser[m.user_id] = { id: m.id, name: m.name, primary: b.primaryHex, secondary: b.secondaryHex, glyph: b.glyph };
+    });
 
     // Build set of all kingdom tiles for fast lookup
     const kingdomTileSet = new Set();
@@ -155,6 +165,9 @@ router.get('/world', requireAuth, async (req, res) => {
           npc_id: occupant.npc_id || null,
           settlement_type: occupant.settlement_type || 'player',
           isOwn: settlement && t.q === settlement.tile_q && t.r === settlement.tile_r,
+          clan: occupant.user_id && clanByUser[occupant.user_id]
+            ? { ...clanByUser[occupant.user_id], mine: clanByUser[occupant.user_id].id === myClanId }
+            : null,
         } : null,
       };
     });
