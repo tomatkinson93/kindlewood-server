@@ -2,7 +2,14 @@ const express = require('express');
 const { createHouseForSettlement, removeHouseForSettlement } = require('./housing');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
-const { BUILDINGS, calculateRates } = require('../buildings');
+const { BUILDINGS, TIER_ORDER, calculateRates } = require('../buildings');
+
+// True when a settlement at `tier` may build `def` (its optional minTier).
+function tierMetFor(def, tier) {
+  if (!def.minTier) return true;
+  return TIER_ORDER.indexOf(tier || 'camp') >= TIER_ORDER.indexOf(def.minTier);
+}
+const tierLabel = t => t.charAt(0).toUpperCase() + t.slice(1);
 
 const router = express.Router();
 
@@ -46,6 +53,7 @@ router.get('/', requireAuth, async (req, res) => {
 
       // Check requirements met
       const requiresMet = def.requires.every(req => builtMap[req]);
+      const tierMet = tierMetFor(def, settlement.tier);
 
       // Scale cost with level
       const levelMultiplier = currentLevel + 1;
@@ -64,6 +72,8 @@ router.get('/', requireAuth, async (req, res) => {
         maxLevel: def.maxLevel,
         canUpgrade,
         requiresMet,
+        tierMet,
+        minTier: def.minTier || null,
         cost,
         effect: def.effect(Math.max(1, currentLevel)),
         nextEffect: canUpgrade ? def.effect(currentLevel + 1) : null,
@@ -116,6 +126,9 @@ router.post('/build', requireAuth, async (req, res) => {
       if (houseCount >= tierCap)
         return res.status(400).json({ error: `Upgrade your settlement tier to build more ${def.label}s. Current limit: ${tierCap}.` });
     }
+
+    if (!tierMetFor(def, settlement.tier))
+      return res.status(400).json({ error: `Requires a ${tierLabel(def.minTier)} settlement.` });
 
     if (currentLevel >= def.maxLevel)
       return res.status(400).json({ error: 'Already at max level.' });

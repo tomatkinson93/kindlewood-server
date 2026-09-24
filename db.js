@@ -1,5 +1,12 @@
+const fs = require('fs');
+const path = require('path');
 const { Pool } = require('pg');
 const { generateMap } = require('./mapgen');
+
+// Settlements with world_version below this are unplaced at boot (see
+// initDB). Exported so routes can tell a placed-on-this-world settlement
+// from a stale one.
+const CURRENT_WORLD_VERSION = 2;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -87,7 +94,6 @@ async function initDB() {
 
   // ── World reset / hex migration ──────────────────────────────────────────
   // Must run BEFORE tile table creation and seeding.
-  const CURRENT_WORLD_VERSION = 2;
 
   // Ensure world_version column exists on settlements
   await query(`ALTER TABLE settlements ADD COLUMN IF NOT EXISTS world_version INTEGER DEFAULT 0`).catch(()=>{});
@@ -591,6 +597,12 @@ async function initDB() {
     )
   `);
 
+  // ── Clans (spec 016) ──────────────────────────────────────────────────────
+  // The DDL lives in migrations/<NNN>_<name>.sql so the same file can be
+  // applied by hand in production. Matched by suffix, so assigning the
+  // real migration number at deploy time doesn't break boot.
+  await applyMigrationFiles(['clans_core']);
+
   // Apply persisted dimensions to mapgen module so all consumers see live values.
   try {
     const r = await query('SELECT map_w, map_h FROM world_meta WHERE id=1');
@@ -606,4 +618,37 @@ async function initDB() {
   console.log('Database initialised');
 }
 
-module.exports = { query, initDB, pool };
+// Runs each named migration from migrations/ (file name ends in
+// `_<name>.sql`). The files are idempotent and wrap themselves in
+// BEGIN/COMMIT, so re-running them on every boot is safe.
+async function applyMigrationFiles(names) {
+  const dir = path.join(__dirname, 'migrations');
+  const files = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+  for (const name of names) {
+    const file = files.find(f => f.endsWith(`_${name}.sql`));
+    if (!file) throw new Error(`Migration file for "${name}" not found in migrations/`);
+    await query(fs.readFileSync(path.join(dir, file), 'utf8'));
+  }
+}
+
+// Runs fn(client) inside BEGIN/COMMIT on one pooled client; rolls back and
+// rethrows on any error. Never .catch() a statement inside fn — a failed
+// statement aborts the whole Postgres transaction, and swallowing it just
+// makes every later statement fail. Publish SSE events after this resolves,
+// not inside fn, so clients never fetch uncommitted state.
+async function withTransaction(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { query, initDB, pool, withTransaction, CURRENT_WORLD_VERSION };

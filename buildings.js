@@ -1,4 +1,12 @@
 // ── Building definitions ──
+//
+// Optional fields: requires (building ids that must exist), tierCaps
+// (per-tier count cap for housing), minTier (lowest settlement tier that may
+// build it — compared through TIER_ORDER).
+
+// Settlement tiers, lowest first. Shared by routes/game.js (tier upgrades)
+// and routes/buildings.js (minTier gating).
+const TIER_ORDER = ['camp', 'village', 'town', 'city'];
 
 const BUILDINGS = {
   forager_hut: {
@@ -113,6 +121,18 @@ const BUILDINGS = {
     effect: (level) => ({ food: level * 3 }),
     citizenSlots: (level) => level * 2,
     requires: [],
+  },
+  guild_hall: {
+    id: 'guild_hall',
+    label: 'Guild Hall',
+    desc: 'A hall of banners and long tables. Required to found a clan.',
+    icon: '🏛️',
+    cost: { timber: 400, stone: 400, wealth: 300 },
+    maxLevel: 1,                 // HQ visual tiers are Future (spec 016)
+    effect: () => ({}),
+    citizenSlots: () => 0,
+    requires: [],
+    minTier: 'town',             // enforced in routes/buildings.js
   },
 };
 
@@ -405,4 +425,4 @@ function applyBreakdownSeasonModifiers(breakdown, season) {
   return out;
 }
 
-module.exports = { BUILDINGS, ROLE_BUILDING_MAP, calculateRates, calculateRatesBreakdown, applyBreakdownSeasonModifiers };
+module.exports = { BUILDINGS, TIER_ORDER, ROLE_BUILDING_MAP, calculateRates, calculateRatesBreakdown, applyBreakdownSeasonModifiers };
