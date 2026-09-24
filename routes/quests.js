@@ -3,6 +3,7 @@ const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
 const combatResolver = require('../lib/combat_resolver');
 const eventBus = require('../lib/event_bus');
+const gameEvents = require('../lib/game_events');
 
 // ── Combat-trigger helpers ──────────────────────────────────────────────
 // A quest with combat_chance > 0 may fire a battle mid-flight. At accept
@@ -758,6 +759,7 @@ async function processCombatTriggers(settlementId) {
   // resolution out-of-band (rather than the HTTP handler returning post-
   // commit state in its response), the race becomes routinely observable.
   const pendingEvents = [];
+  const pendingGameEvents = [];   // game_events, emitted after COMMIT
   try {
     await client.query('BEGIN');
 
@@ -831,6 +833,7 @@ async function processCombatTriggers(settlementId) {
             quest_run_id: run.id,
             outcome: 'victory',
           });
+          pendingGameEvents.push(['battle_won', { settlementId, enemyCount: encounter.length }]);
         } else {
           const stateJson = JSON.stringify(
             combatResolver.serializeBattle(battleResult.battle)
@@ -903,6 +906,7 @@ async function processCombatTriggers(settlementId) {
     try { eventBus.publish(settlementId, ev); }
     catch (e) { console.error('[processCombatTriggers] publish failed', e); }
   }
+  for (const [type, payload] of pendingGameEvents) gameEvents.emit(type, payload);
 }
 
 // ── Internal: resolve quests whose timer has elapsed ──
@@ -928,7 +932,10 @@ async function resolveCompletedQuests(settlementId) {
   const client = await pool.connect();
   // See processCombatTriggers for the same pattern: buffer events, publish
   // after COMMIT so subscribers' re-fetches see post-commit state.
+  // SKIP LOCKED means each run resolves exactly once (worker or HTTP path),
+  // so emitting quest_completed from here can't double-award.
   const pendingEvents = [];
+  const pendingGameEvents = [];
   try {
     await client.query('BEGIN');
 
@@ -1024,6 +1031,10 @@ async function resolveCompletedQuests(settlementId) {
         quest_run_id: run.id,
         outcome,
       });
+      pendingGameEvents.push(['quest_completed', {
+        settlementId, questRunId: run.id,
+        durationS: Number(quest.duration_s) || 0, success: outcome === 'completed',
+      }]);
     }
 
     await client.query('COMMIT');
@@ -1039,6 +1050,7 @@ async function resolveCompletedQuests(settlementId) {
     try { eventBus.publish(settlementId, ev); }
     catch (e) { console.error('[resolveCompletedQuests] publish failed', e); }
   }
+  for (const [type, payload] of pendingGameEvents) gameEvents.emit(type, payload);
 }
 
 module.exports = router;

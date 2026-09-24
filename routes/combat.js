@@ -15,6 +15,7 @@ const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
 const combatResolver = require('../lib/combat_resolver');
 const eventBus = require('../lib/event_bus');
+const gameEvents = require('../lib/game_events');
 
 const router = express.Router();
 
@@ -688,6 +689,7 @@ router.post('/resolve', requireAuth, async (req, res) => {
 
     // Quest clock resumption — extend completes_at by the pause duration so
     // ignoring a battle for hours doesn't shorten the quest.
+    let victoryRecorded = false;   // this request moved the battle to resolved
     if (questRun) {
       const pausedAt = questRun.combat_clock_paused_at;
       let pauseMs = 0;
@@ -695,15 +697,18 @@ router.post('/resolve', requireAuth, async (req, res) => {
         pauseMs = Date.now() - new Date(pausedAt).getTime();
         if (pauseMs < 0) pauseMs = 0;
       }
-      await query(
+      // Conditional on the battle still being open, so of two concurrent
+      // resolves only one records the victory (and emits battle_won).
+      const upd = await query(
         `UPDATE settlement_quests
          SET combat_status='resolved', combat_outcome='victory',
              combat_resolved_at=NOW(), combat_log=$1,
              combat_clock_paused_at=NULL,
              completes_at = completes_at + ($2 || ' milliseconds')::interval
-         WHERE id=$3`,
+         WHERE id=$3 AND combat_status IN ('pending','in_progress','rolled')`,
         [JSON.stringify(serverLog), String(pauseMs), quest_run_id]
       );
+      victoryRecorded = upd.rowCount === 1;
     }
 
     // ── Victory aftermath: only fallen citizens roll for injury. Clean
@@ -733,6 +738,13 @@ router.post('/resolve', requireAuth, async (req, res) => {
         quest_run_id,
         outcome: 'victory',
       });
+      // Server-verified victories only; client-trusted test battles
+      // (no questRun) never earn clan prestige.
+      if (victoryRecorded) {
+        gameEvents.emit('battle_won', {
+          settlementId: sett.id, userId: req.user.userId, enemyCount: (resolvedEncounter || []).length,
+        });
+      }
 
       const { resolveCompletedQuests } = require('./quests');
       resolveCompletedQuests(sett.id).catch(e =>

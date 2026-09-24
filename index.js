@@ -94,6 +94,10 @@ initDB().then(() => {
   // the schema creation. Setting QUEST_WORKER_DISABLED=1 turns it off for
   // ops debugging or for a smoke-test deploy where we want the worker
   // off the path while we verify HTTP-only behaviour.
+  // Clan prestige listens to gameplay events (spec 016 §8). Registered
+  // before the worker starts so no early quest resolution is missed.
+  require('./lib/clan_subscriber').register();
+
   if (process.env.QUEST_WORKER_DISABLED !== '1') {
     questWorker.start();
   } else {

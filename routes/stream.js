@@ -87,6 +87,16 @@ router.get('/', async (req, res) => {
     return;
   }
 
+  // Clan channel (spec 016): clan events publish on `clan:<id>`. The set is
+  // fixed for this connection — membership changes publish
+  // clan_membership_changed on the settlement channel and the client
+  // reconnects. Missing table (pre-migration) or no clan → no clan channel.
+  let clanId = null;
+  try {
+    const c = await query('SELECT clan_id FROM clan_members WHERE user_id=$1', [user.userId]);
+    clanId = c.rows[0] ? c.rows[0].clan_id : null;
+  } catch (e) { clanId = null; }
+
   // ── SSE headers ──
   // X-Accel-Buffering: no is for nginx-fronted hosts (Render's edge does this)
   // so chunks flush immediately instead of being buffered.
@@ -123,13 +133,24 @@ router.get('/', async (req, res) => {
 
   // Initial event so the client can confirm the stream is alive. Also
   // useful as a "did our cookie work?" signal.
-  send({ type: 'connected', settlement_id: settlementId, ts: Date.now() });
+  send({ type: 'connected', settlement_id: settlementId, clan_id: clanId, ts: Date.now() });
 
   // Subscribe to the bus. The returned function lets us clean up cleanly.
   const unsubscribe = eventBus.subscribe(settlementId, (event) => {
     send(event);
     if (closed && unsubscribe) unsubscribe();
+    // The clan channel set is fixed per connection, so end the stream on a
+    // membership change: the client reconnects with the right channels, and
+    // a removed member stops receiving clan events even if their client
+    // never reconnects on its own.
+    if (event && event.type === 'clan_membership_changed') setImmediate(cleanup);
   });
+  const unsubscribeClan = clanId
+    ? eventBus.subscribe(`clan:${clanId}`, (event) => {
+        send(event);
+        if (closed && unsubscribeClan) unsubscribeClan();
+      })
+    : () => {};
 
   // Keepalive
   const keepaliveTimer = setInterval(sendKeepalive, KEEPALIVE_MS);
@@ -142,6 +163,7 @@ router.get('/', async (req, res) => {
     closed = true;
     clearInterval(keepaliveTimer);
     unsubscribe();
+    unsubscribeClan();
     try { res.end(); } catch (e) {}
   }
   req.on('close', cleanup);

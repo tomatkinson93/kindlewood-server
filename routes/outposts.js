@@ -18,6 +18,7 @@
 'use strict';
 
 const express = require('express');
+const gameEvents = require('../lib/game_events');
 const { pool, query } = require('../db');
 const requireAuth = require('../middleware/auth');
 const mapgen = require('../mapgen');
@@ -279,6 +280,7 @@ router.post('/build', requireAuth, async (req, res) => {
     }
 
     await client.query('COMMIT');
+    gameEvents.emit('outpost_established', { settlementId: settlement.id, userId: req.user.userId });
 
     const { resources, rates } = await freshResourcesAndRates(settlement.id, req.user.userId);
     res.json({
