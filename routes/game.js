@@ -3,9 +3,11 @@ const { runSimulation } = require('../simulation');
 const { applyConsumption, getFamineSummary, buildUpkeepBreakdownSource } = require('../famine');
 const { generateCitizen } = require('../citizens');
 const express = require('express');
-const { calculateRates, calculateRatesBreakdown, applyBreakdownSeasonModifiers } = require('../buildings');
+const { calculateRates, calculateRatesBreakdown, applyBreakdownSeasonModifiers, TIER_ORDER } = require('../buildings');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/admin');
+const eventBus = require('../lib/event_bus');
 
 const router = express.Router();
 
@@ -692,11 +694,14 @@ router.get('/world/info', async (req, res) => {
 //   Body: { w, h, seed? }
 //   Effects (transactional):
 //     1. Snapshot tiles, settlement placements, npc placements, fog → archive
-//     2. Wipe tiles, fog_of_war, expeditions, settlement placements
+//     2. Wipe tiles, fog_of_war, expeditions, settlement placements, and ALL
+//        clan data (spec 016 §6.6 — a new world is a fresh start; restore
+//        does not bring clans back)
 //     3. Generate new map at new dimensions
 //     4. Update world_meta
 //   Note: NPC seeding is NOT re-run automatically — call /seed-npcs after.
-router.post('/world/regenerate', async (req, res) => {
+//   Admin only (ADMIN_USER_IDS).
+router.post('/world/regenerate', requireAuth, requireAdmin, async (req, res) => {
   const { pool, query } = require('../db');
   const mapgen = require('../mapgen');
 
@@ -708,6 +713,12 @@ router.post('/world/regenerate', async (req, res) => {
   let seed = parseInt(req.body && req.body.seed, 10);
   if (!Number.isFinite(seed)) seed = Date.now();
 
+  // Tables added by later migrations. Checked with to_regclass rather than
+  // .catch(): a failed statement would abort the whole transaction.
+  const hasTable = async (client, t) =>
+    !!(await client.query('SELECT to_regclass($1) AS t', [`public.${t}`])).rows[0].t;
+  let wipedClanSettlementIds = [];
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -718,8 +729,10 @@ router.post('/world/regenerate', async (req, res) => {
     const curSetts = await client.query("SELECT id, tile_q, tile_r FROM settlements WHERE tile_q IS NOT NULL AND tile_r IS NOT NULL");
     const curNpcs  = await client.query('SELECT * FROM npc_settlements');
     const curFog   = await client.query('SELECT user_id, tile_q, tile_r FROM fog_of_war');
-    // Outposts (010) — snapshot before the wipe. .catch → [] pre-migration.
-    const curOutposts = await client.query('SELECT * FROM outposts').catch(() => ({ rows: [] }));
+    // Outposts (010) — snapshot before the wipe. Empty pre-migration.
+    const curOutposts = (await hasTable(client, 'outposts'))
+      ? await client.query('SELECT * FROM outposts')
+      : { rows: [] };
     const curMeta  = await client.query('SELECT map_w, map_h, current_seed FROM world_meta WHERE id=1');
     const curW = curMeta.rows[0]?.map_w || mapgen.MAP_W;
     const curH = curMeta.rows[0]?.map_h || mapgen.MAP_H;
@@ -752,10 +765,19 @@ router.post('/world/regenerate', async (req, res) => {
 
     // 2. Wipe live world state.
     await client.query('DELETE FROM fog_of_war');
-    await client.query('DELETE FROM expeditions').catch(()=>{});
+    if (await hasTable(client, 'expeditions')) await client.query('DELETE FROM expeditions');
     // Outposts (010) — must go with the tiles they sit on; claims live in
     // the tiles table and vanish with it.
-    await client.query('DELETE FROM outposts').catch(()=>{});
+    if (await hasTable(client, 'outposts')) await client.query('DELETE FROM outposts');
+    // Clans (016) — cascades members, invites, activity and every later
+    // clan table. Members are told after COMMIT.
+    if (await hasTable(client, 'clans')) {
+      const members = await client.query(
+        `SELECT s.id AS settlement_id FROM clan_members cm
+           JOIN settlements s ON s.user_id = cm.user_id`);
+      wipedClanSettlementIds = members.rows.map(r => r.settlement_id);
+      await client.query('DELETE FROM clans');
+    }
     await client.query('DELETE FROM tiles');
     await client.query('UPDATE settlements SET tile_q=NULL, tile_r=NULL, rerolls_used=0');
     // NPC settlements are kept in DB but their tile_q/tile_r values now point
@@ -783,12 +805,17 @@ router.post('/world/regenerate', async (req, res) => {
     );
 
     await client.query('COMMIT');
+    for (const sid of wipedClanSettlementIds) {
+      eventBus.publish(sid, { type: 'clan_disbanded', reason: 'world_regenerated' });
+      eventBus.publish(sid, { type: 'clan_membership_changed' });
+    }
     res.json({
       ok: true,
       mapW: w, mapH: h, seed,
       tiles_inserted: newTiles.length,
       archived: { mapW: curW, mapH: curH, tile_count: curTiles.rows.length, settlement_count: curSetts.rows.length },
-      message: 'Regenerated. NPC settlements were cleared — run "Seed NPC Settlements" to repopulate.',
+      clans_wiped: wipedClanSettlementIds.length > 0,
+      message: 'Regenerated. NPC settlements were cleared — run "Seed NPC Settlements" to repopulate. Clans were wiped.',
     });
   } catch (e) {
     await client.query('ROLLBACK').catch(()=>{});
@@ -802,7 +829,9 @@ router.post('/world/regenerate', async (req, res) => {
 // ── POST /api/game/world/restore — restore archived world (one snapshot) ──
 //   Restores: tiles, dimensions, settlement placements, NPC placements, fog.
 //   Discards: in-flight expeditions (cancelled — too messy to migrate).
-router.post('/world/restore', async (req, res) => {
+//   Clans are NOT restored — regenerate wiped them for good.
+//   Admin only (ADMIN_USER_IDS).
+router.post('/world/restore', requireAuth, requireAdmin, async (req, res) => {
   const { pool, query } = require('../db');
   const mapgen = require('../mapgen');
 
@@ -817,10 +846,13 @@ router.post('/world/restore', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Wipe current.
+    // Wipe current. to_regclass guards, not .catch(): a failed statement
+    // would abort the transaction.
+    const hasTable = async t =>
+      !!(await client.query('SELECT to_regclass($1) AS t', [`public.${t}`])).rows[0].t;
     await client.query('DELETE FROM fog_of_war');
-    await client.query('DELETE FROM expeditions').catch(()=>{});
-    await client.query('DELETE FROM outposts').catch(()=>{});
+    if (await hasTable('expeditions')) await client.query('DELETE FROM expeditions');
+    if (await hasTable('outposts')) await client.query('DELETE FROM outposts');
     await client.query('DELETE FROM tiles');
     await client.query('UPDATE settlements SET tile_q=NULL, tile_r=NULL');
     await client.query('DELETE FROM npc_settlements');
@@ -1072,7 +1104,6 @@ router.post('/cheat/resources', requireAuth, async (req, res) => {
 
 // ── Settlement Tier Upgrade ──
 
-const TIER_ORDER = ['camp', 'village', 'town', 'city'];
 const TIER_LABELS = { camp: 'Camp', village: 'Village', town: 'Town', city: 'City' };
 
 const TIER_REQUIREMENTS = {
