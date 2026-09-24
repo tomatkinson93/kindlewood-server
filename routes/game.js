@@ -8,6 +8,7 @@ const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/admin');
 const eventBus = require('../lib/event_bus');
+const gameEvents = require('../lib/game_events');
 
 const router = express.Router();
 
@@ -1230,8 +1231,9 @@ router.post('/upgrade-tier', requireAuth, async (req, res) => {
       return res.status(400).json({ error: errors[0], all: errors });
     }
 
-    // Deduct resources
-    await query(`
+    // Deduct resources. Conditional on the tier we checked, so two
+    // concurrent upgrades can't both charge (or both award clan prestige).
+    const upgraded = await query(`
       UPDATE settlements SET
         food   = food   - $1,
         timber = timber - $2,
@@ -1240,12 +1242,15 @@ router.post('/upgrade-tier', requireAuth, async (req, res) => {
         wealth = wealth - $5,
         tier   = $6,
         population_cap = $7
-      WHERE id = $8
+      WHERE id = $8 AND tier = $9
     `, [
       reqs.resources.food, reqs.resources.timber, reqs.resources.stone,
       reqs.resources.metal, reqs.resources.wealth,
-      nextTier, reqs.popBonus, s.id,
+      nextTier, reqs.popBonus, s.id, s.tier,
     ]);
+    if (!upgraded.rowCount) return res.status(409).json({ error: 'Your settlement was already upgraded.' });
+
+    gameEvents.emit('tier_upgraded', { settlementId: s.id, userId: req.user.userId, tier: nextTier });
 
     res.json({
       ok: true,

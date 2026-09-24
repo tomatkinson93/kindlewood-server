@@ -9,9 +9,10 @@
 //  Pattern B), then re-reads the actor's and target's member rows. The
 //  permission middleware in front is only a fast gate.
 //
-//  SSE (Phase 1): clan_membership_changed and clan_invite_received on the
-//  affected user's settlement channel; clan_disbanded on each former
-//  member's. Always published after COMMIT.
+//  SSE: clan_membership_changed and clan_invite_received on the affected
+//  user's settlement channel; clan_disbanded on each former member's; and
+//  roster/profile changes on the clan channel `clan:<id>` (notify-then-fetch).
+//  Always published after COMMIT.
 // ══════════════════════════════════════════════════════════════════════════
 
 'use strict';
@@ -24,7 +25,7 @@ const palette = require('../lib/clan_palette');
 const {
   RANK_ORDER, RANK_LABELS,
   checkClanPermission, permissionsFor,
-  requireClanPermission, outranks, promotedRank, demotedRank,
+  requireClanPermission, requireClanMember, outranks, promotedRank, demotedRank,
 } = require('../lib/clan_permissions');
 
 const router = express.Router();
@@ -103,6 +104,10 @@ async function settlementIdFor(userId, db) {
 
 function publishToSettlements(settlementIds, event) {
   for (const sid of settlementIds) if (sid) eventBus.publish(sid, event);
+}
+
+function publishToClan(clanId, event) {
+  eventBus.publish(`clan:${clanId}`, { clan_id: clanId, ...event });
 }
 
 function clanSummary(c, memberCount) {
@@ -279,6 +284,7 @@ router.patch('/profile', requireAuth, requireClanPermission('edit_profile'), asy
         [clan.id, changes.description ?? null, changes.banner ? JSON.stringify(changes.banner) : null]);
       await logActivity(client, clan.id, 'profile_updated', req.user.userId, { fields: Object.keys(changes) });
     });
+    publishToClan(req.clan.clanId, { type: 'clan_profile_updated' });
     res.json({ ok: true });
   } catch (e) {
     sendError(res, e, 'Profile update failed.');
@@ -366,6 +372,7 @@ router.post('/invites/:id/accept', requireAuth, async (req, res) => {
     });
 
     publishToSettlements([s.id], { type: 'clan_membership_changed', clan_id: clanId });
+    publishToClan(clanId, { type: 'clan_member_joined', user_id: userId, username: req.user.username });
     res.json({ ok: true, clan_id: clanId });
   } catch (e) {
     sendError(res, e, 'Could not join the clan.');
@@ -425,7 +432,10 @@ router.post('/leave', requireAuth, async (req, res) => {
     });
 
     if (out.disbanded) publishDisband(out.settlementIds, out.clan.id, out.clan.name);
-    else publishToSettlements([await settlementIdFor(userId)], { type: 'clan_membership_changed', clan_id: null });
+    else {
+      publishToSettlements([await settlementIdFor(userId)], { type: 'clan_membership_changed', clan_id: null });
+      publishToClan(out.clan.id, { type: 'clan_member_left', user_id: userId });
+    }
     res.json({ ok: true, disbanded: out.disbanded });
   } catch (e) {
     sendError(res, e, 'Could not leave the clan.');
@@ -452,6 +462,9 @@ function memberAction(flag, activityType, mutate) {
       });
       if (activityType === 'member_kicked') {
         publishToSettlements([await settlementIdFor(targetId)], { type: 'clan_membership_changed', clan_id: null });
+        publishToClan(req.clan.clanId, { type: 'clan_member_kicked', user_id: targetId });
+      } else {
+        publishToClan(req.clan.clanId, { type: 'clan_rank_changed', user_id: targetId, rank: out.result.rank });
       }
       res.json({ ok: true, ...out.result });
     } catch (e) {
@@ -500,6 +513,7 @@ router.post('/transfer', requireAuth, requireClanPermission('transfer_leadership
       await client.query('UPDATE clans SET founder_user_id = $2 WHERE id = $1', [clan.id, targetId]);
       await logActivity(client, clan.id, 'leadership_transferred', req.user.userId, { username: target.username });
     });
+    publishToClan(req.clan.clanId, { type: 'clan_leadership_transferred', user_id: targetId });
     res.json({ ok: true });
   } catch (e) {
     sendError(res, e, 'Transfer failed.');
@@ -518,6 +532,43 @@ router.post('/disband', requireAuth, requireClanPermission('disband'), async (re
     res.json({ ok: true });
   } catch (e) {
     sendError(res, e, 'Disband failed.');
+  }
+});
+
+// ── GET /api/clans/activity?before=<id> — the clan's feed, newest first ────
+router.get('/activity', requireAuth, requireClanMember, async (req, res) => {
+  const before = parseId(req.query.before);
+  try {
+    const r = await query(
+      `SELECT a.id, a.type, a.payload, a.created_at, u.username AS actor
+         FROM clan_activity a LEFT JOIN users u ON u.id = a.actor_user_id
+        WHERE a.clan_id = $1 AND ($2::int IS NULL OR a.id < $2)
+        ORDER BY a.id DESC LIMIT 30`,
+      [req.clan.clanId, before]);
+    res.json({ ok: true, activity: r.rows });
+  } catch (e) {
+    sendError(res, e, 'Failed to load activity.');
+  }
+});
+
+// ── GET /api/clans/leaderboard — top clans by lifetime prestige (public) ──
+router.get('/leaderboard', async (req, res) => {
+  try {
+    const r = await query(
+      `SELECT c.id, c.name, c.level, c.prestige_lifetime, c.banner,
+              (SELECT COUNT(*)::int FROM clan_members m WHERE m.clan_id = c.id) AS member_count
+         FROM clans c
+        ORDER BY c.prestige_lifetime DESC, c.created_at ASC
+        LIMIT 50`);
+    res.json({
+      ok: true,
+      leaderboard: r.rows.map(c => ({
+        id: c.id, name: c.name, level: c.level, prestige: Number(c.prestige_lifetime),
+        member_count: c.member_count, banner: palette.resolveBanner(c.banner),
+      })),
+    });
+  } catch (e) {
+    sendError(res, e, 'Could not load the clan leaderboard.');
   }
 });
 
