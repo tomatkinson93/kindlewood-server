@@ -93,7 +93,7 @@ function forumUpdated(clanId, threadId, what) {
 router.get('/channels', requireAuth, async (req, res) => {
   try {
     const r = await query(
-      `SELECT ch.id, ch.kind, ch.clan_id, c.name, c.level, c.banner, cm.rank,
+      `SELECT ch.id, ch.kind, ch.clan_id, c.name, c.level, c.banner, c.prestige_lifetime, cm.rank,
               (SELECT MAX(id) FROM chat_messages m WHERE m.channel_id = ch.id) AS last_message_id,
               (SELECT MAX(last_post_at) FROM forum_threads t WHERE t.channel_id = ch.id) AS last_post_at
          FROM clan_members cm
@@ -104,6 +104,7 @@ router.get('/channels', requireAuth, async (req, res) => {
     for (const c of r.rows) {
       channels.push({
         id: c.id, kind: c.kind, clan_id: c.clan_id, name: c.name, level: c.level,
+        prestige_lifetime: Number(c.prestige_lifetime), rank: c.rank,
         banner: palette.resolveBanner(c.banner),
         forum: { unlocked: c.level >= palette.FORUM_UNLOCK_LEVEL, unlock_level: palette.FORUM_UNLOCK_LEVEL },
         chat: { unlocked: c.level >= palette.CHAT_UNLOCK_LEVEL, unlock_level: palette.CHAT_UNLOCK_LEVEL },
