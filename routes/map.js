@@ -62,6 +62,21 @@ router.get('/world', requireAuth, async (req, res) => {
     `).catch(() => ({ rows: [] }));
     claimIdsRes.rows.forEach(s => { claimNameById[s.id] = s; });
 
+    // Clan territory (spec 016 §6.4). Sent only on revealed tiles; banner
+    // swatch ids resolve to hex here. .catch → empty pre-migration (this
+    // route isn't transactional, so that's safe).
+    const clanTerrRes = await query(`
+      SELECT ct.q, ct.r, c.id, c.name, c.banner
+        FROM clan_territory ct JOIN clans c ON c.id = ct.clan_id
+    `).catch(() => ({ rows: [] }));
+    const clanTerrMap = {};
+    clanTerrRes.rows.forEach(t => { clanTerrMap[`${t.q},${t.r}`] = t; });
+    const myClanRes = clanTerrRes.rows.length
+      ? await query('SELECT clan_id FROM clan_members WHERE user_id=$1', [req.user.userId]).catch(() => ({ rows: [] }))
+      : { rows: [] };
+    const myClanId = myClanRes.rows[0] ? myClanRes.rows[0].clan_id : null;
+    const clanPalette = require('../lib/clan_palette');
+
     // Build set of all kingdom tiles for fast lookup
     const kingdomTileSet = new Set();
     npcRes.rows.filter(n => n.is_kingdom).forEach(n => {
@@ -106,12 +121,19 @@ router.get('/world', requireAuth, async (req, res) => {
       const claimedBy = isRevealed ? (t.claimed_by ?? null) : null;
       const claimOwner = claimedBy != null ? claimNameById[claimedBy] : null;
       const claimMine = !!(settlement && claimedBy === settlement.id);
+      const ct = isRevealed ? clanTerrMap[key] : null;
+      const ctBanner = ct ? clanPalette.resolveBanner(ct.banner) : null;
 
       return {
         q: t.q, r: t.r,
         terrain: isRevealed ? t.terrain : 'fog',
         revealed: isRevealed,
         claimed_by_me: claimMine,
+        clan_territory: ct ? {
+          clan_id: ct.id, name: ct.name,
+          primary: ctBanner.primaryHex, secondary: ctBanner.secondaryHex, glyph: ctBanner.glyph,
+          mine: ct.id === myClanId,
+        } : null,
         claim_owner: (claimedBy != null && !claimMine) ? (claimOwner?.name || 'another settlement') : null,
         outpost: op ? {
           id: op.id,

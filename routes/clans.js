@@ -22,6 +22,8 @@ const { query, withTransaction, CURRENT_WORLD_VERSION } = require('../db');
 const requireAuth = require('../middleware/auth');
 const eventBus = require('../lib/event_bus');
 const palette = require('../lib/clan_palette');
+const mapgen = require('../mapgen');
+const { spendPrestige } = require('../lib/clan_subscriber');
 const {
   RANK_ORDER, RANK_LABELS,
   checkClanPermission, permissionsFor,
@@ -184,6 +186,8 @@ router.get('/me', requireAuth, async (req, res) => {
     }
 
     const cRes = await query('SELECT * FROM clans WHERE id = $1', [me.clan_id]);
+    const tRes = await query(
+      'SELECT q, r, claimed_at FROM clan_territory WHERE clan_id = $1 ORDER BY claimed_at', [me.clan_id]);
     const roster = await loadRoster(me.clan_id);
     const permissions = await permissionsFor(me.clan_id, me.rank);
 
@@ -202,6 +206,13 @@ router.get('/me', requireAuth, async (req, res) => {
     res.json({
       ok: true,
       clan: clanSummary(cRes.rows[0], roster.length),
+      territory: {
+        count: tRes.rows.length,
+        cap: palette.territoryCap(cRes.rows[0].level),
+        next_cost: claimCost(tRes.rows.length),
+        tiles: tRes.rows.map(t => ({ q: t.q, r: t.r })),
+        hq: { q: cRes.rows[0].hq_q, r: cRes.rows[0].hq_r },
+      },
       me: { user_id: userId, rank: me.rank, rank_label: RANK_LABELS[me.rank], permissions },
       roster,
       outgoing_invites: outgoing,
@@ -252,6 +263,12 @@ router.post('/', requireAuth, async (req, res) => {
       // Pending invites to the founder are moot now.
       await client.query(
         "UPDATE clan_invites SET status = 'revoked' WHERE invited_user_id = $1 AND status = 'pending'", [userId]);
+      // HQ seed: the founder's home tile. It can already belong to another
+      // clan (players may settle inside clan land) — then the clan starts
+      // with no tiles and its first claim anchors on the HQ tile instead.
+      await client.query(
+        `INSERT INTO clan_territory (q, r, clan_id, claimed_by_user_id)
+         VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`, [s.tile_q, s.tile_r, id, userId]);
       await logActivity(client, id, 'clan_founded', userId, { name });
       return id;
     });
@@ -532,6 +549,80 @@ router.post('/disband', requireAuth, requireClanPermission('disband'), async (re
     res.json({ ok: true });
   } catch (e) {
     sendError(res, e, 'Disband failed.');
+  }
+});
+
+// ── Territory (spec §6) ────────────────────────────────────────────────────
+
+const claimCost = tiles => 50 + 25 * tiles;
+const wrap = (v, n) => ((v % n) + n) % n;
+
+// Why (q,r) can't be claimed by this clan regardless of adjacency/funds, or
+// null. Blocks: a non-member's home settlement, NPC / kingdom settlements
+// and kingdom annex tiles. Outposts and outpost claims never block (§6.3).
+async function blockedReason(q, r, clanId) {
+  const home = await query(
+    `SELECT s.user_id, cm.clan_id FROM settlements s
+       LEFT JOIN clan_members cm ON cm.user_id = s.user_id
+      WHERE s.tile_q = $1 AND s.tile_r = $2`, [q, r]);
+  if (home.rows.some(h => h.clan_id !== clanId)) return "Another player's settlement stands there.";
+  const npc = await query(
+    `SELECT 1 FROM npc_settlements
+      WHERE (tile_q = $1 AND tile_r = $2)
+         OR (is_kingdom AND kingdom_tiles @> $3::jsonb)
+      LIMIT 1`, [q, r, JSON.stringify([{ q, r }])]);
+  if (npc.rows.length) return 'That land belongs to an NPC settlement.';
+  return null;
+}
+
+// ── POST /api/clans/territory/claim — { q, r } ────────────────────────────
+//  Pattern B: lock the clan, then check adjacency + capacity + funds as one
+//  unit. The (q,r) primary key is the backstop against other clans.
+router.post('/territory/claim', requireAuth, requireClanPermission('claim_territory'), async (req, res) => {
+  const W = mapgen.MAP_W, H = mapgen.MAP_H;
+  const qIn = Number((req.body || {}).q), rIn = Number((req.body || {}).r);
+  if (!Number.isInteger(qIn) || !Number.isInteger(rIn)) return res.status(400).json({ error: 'Choose a tile.' });
+  const q = wrap(qIn, W), r = wrap(rIn, H);
+  try {
+    const tile = await query('SELECT terrain FROM tiles WHERE q = $1 AND r = $2', [q, r]);
+    if (!tile.rows[0]) return res.status(404).json({ error: 'No such tile.' });
+    const seen = await query(
+      'SELECT 1 FROM fog_of_war WHERE user_id = $1 AND tile_q = $2 AND tile_r = $3', [req.user.userId, q, r]);
+    if (!seen.rows.length) return res.status(400).json({ error: "You haven't explored that tile yet." });
+    const blocked = await blockedReason(q, r, req.clan.clanId);
+    if (blocked) return res.status(400).json({ error: blocked });
+
+    const out = await withTransaction(async (client) => {
+      const clan = await lockClan(client, req.clan.clanId);
+      await requireActor(client, req.user.userId, clan.id, 'claim_territory');
+      const owned = (await client.query('SELECT q, r FROM clan_territory WHERE clan_id = $1', [clan.id])).rows;
+      if (owned.some(t => t.q === q && t.r === r)) throw new ClanError(409, 'Your clan already holds that tile.');
+      const cap = palette.territoryCap(clan.level);
+      if (owned.length >= cap) {
+        throw new ClanError(400, `Your clan holds all ${cap} tiles its level allows. Level up to claim more.`);
+      }
+      // No voluntary unclaim ⇒ adjacency keeps territory connected. A clan
+      // with no tiles (HQ seed was taken) anchors on its HQ tile.
+      const anchors = owned.length ? owned : [{ q: clan.hq_q, r: clan.hq_r }];
+      const adjacent = anchors.some(t => t.q !== null &&
+        (mapgen.hexDistanceWrapped(q, r, t.q, t.r) === 1 || (!owned.length && t.q === q && t.r === r)));
+      if (!adjacent) throw new ClanError(400, "Claims must border your clan's land.");
+      const cost = claimCost(owned.length);
+      if ((await spendPrestige(client, clan.id, cost)) === null) {
+        throw new ClanError(400, `Claiming costs ${cost} prestige; your clan has ${Number(clan.prestige)}.`);
+      }
+      const ins = await client.query(
+        `INSERT INTO clan_territory (q, r, clan_id, claimed_by_user_id)
+         VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`, [q, r, clan.id, req.user.userId]);
+      if (!ins.rowCount) throw new ClanError(409, 'Another clan holds that tile.');
+      await logActivity(client, clan.id, 'territory_claimed', req.user.userId, { q, r, cost });
+      return { cost, tiles: owned.length + 1, cap };
+    });
+
+    publishToClan(req.clan.clanId, { type: 'clan_territory_claimed', q, r, user_id: req.user.userId });
+    res.json({ ok: true, q, r, ...out, next_cost: claimCost(out.tiles) });
+  } catch (e) {
+    sendError(res, e, 'Claim failed.');
   }
 });
 
