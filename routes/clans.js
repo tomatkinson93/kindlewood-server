@@ -23,7 +23,7 @@ const requireAuth = require('../middleware/auth');
 const eventBus = require('../lib/event_bus');
 const palette = require('../lib/clan_palette');
 const mapgen = require('../mapgen');
-const { spendPrestige } = require('../lib/clan_subscriber');
+const { spendPrestige, grantPrestige, applyLevelUp } = require('../lib/clan_subscriber');
 const {
   RANK_ORDER, RANK_LABELS,
   checkClanPermission, permissionsFor,
@@ -623,6 +623,44 @@ router.post('/territory/claim', requireAuth, requireClanPermission('claim_territ
     res.json({ ok: true, q, r, ...out, next_cost: claimCost(out.tiles) });
   } catch (e) {
     sendError(res, e, 'Claim failed.');
+  }
+});
+
+// ── POST /api/clans/cheat/prestige — { amount } (Dev Tools) ──────────────
+//  Same gate as the other Dev Tools cheats (/api/game/cheat/*): any signed-
+//  in player, own clan only. Adding moves spendable + lifetime and can level
+//  the clan up, skipping the daily cap. Removing only lowers the spendable
+//  balance (floored at 0) — lifetime and level never go down.
+router.post('/cheat/prestige', requireAuth, requireClanMember, async (req, res) => {
+  const amount = parseInt((req.body || {}).amount, 10);
+  if (!Number.isFinite(amount) || amount === 0 || Math.abs(amount) > 1000000) {
+    return res.status(400).json({ error: 'Amount must be a non-zero number.' });
+  }
+  const clanId = req.clan.clanId;
+  try {
+    const out = await withTransaction(async (client) => {
+      await lockClan(client, clanId);
+      let leveledTo = null;
+      if (amount > 0) {
+        const g = await grantPrestige(client, clanId, amount);
+        leveledTo = await applyLevelUp(client, clanId, g.prestige_lifetime);
+      } else {
+        await client.query('UPDATE clans SET prestige = GREATEST(0, prestige + $2) WHERE id = $1', [clanId, amount]);
+      }
+      await logActivity(client, clanId, 'prestige_adjusted', req.user.userId, { amount, cheat: true });
+      if (leveledTo) {
+        await client.query(
+          "INSERT INTO clan_activity (clan_id, type, actor_user_id, payload) VALUES ($1,'level_up',NULL,$2)",
+          [clanId, JSON.stringify({ level: leveledTo })]);
+      }
+      const c = (await client.query('SELECT prestige, prestige_lifetime, level FROM clans WHERE id = $1', [clanId])).rows[0];
+      return { leveledTo, prestige: Number(c.prestige), prestige_lifetime: Number(c.prestige_lifetime), level: c.level };
+    });
+    publishToClan(clanId, { type: 'clan_prestige', user_id: req.user.userId, amount, source: 'cheat' });
+    if (out.leveledTo) publishToClan(clanId, { type: 'clan_level_up', level: out.leveledTo });
+    res.json({ ok: true, ...out });
+  } catch (e) {
+    sendError(res, e, 'Cheat failed.');
   }
 });
 
