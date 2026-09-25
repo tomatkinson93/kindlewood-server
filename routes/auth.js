@@ -3,6 +3,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
+const clanPalette = require('../lib/clan_palette');
+const { RANK_LABELS } = require('../lib/clan_permissions');
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
@@ -118,9 +120,13 @@ router.get('/profile/:username', async (req, res) => {
   try {
     const result = await query(
       `SELECT u.username, u.species, u.bio, u.created_at,
-              s.name as settlement_name, s.tier, s.tile_q, s.tile_r, s.population
+              s.name as settlement_name, s.tier, s.tile_q, s.tile_r, s.population,
+              c.id AS clan_id, c.name AS clan_name, c.banner AS clan_banner, c.level AS clan_level,
+              cm.rank AS clan_rank, cm.title AS clan_title
        FROM users u
        LEFT JOIN settlements s ON s.user_id = u.id
+       LEFT JOIN clan_members cm ON cm.user_id = u.id
+       LEFT JOIN clans c ON c.id = cm.clan_id
        WHERE u.username = $1`,
       [req.params.username]
     );
@@ -138,6 +144,13 @@ router.get('/profile/:username', async (req, res) => {
         tile_q: user.tile_q,
         tile_r: user.tile_r,
         population: user.population,
+      } : null,
+      // Clan membership for the profile's clan line (spec 016 Phase 5).
+      clan: user.clan_id ? {
+        id: user.clan_id, name: user.clan_name, level: user.clan_level,
+        banner: clanPalette.resolveBanner(user.clan_banner),
+        rank: user.clan_rank, rank_label: RANK_LABELS[user.clan_rank] || user.clan_rank,
+        title: user.clan_level >= clanPalette.TITLE_UNLOCK_LEVEL ? (user.clan_title || '') : '',
       } : null,
     });
   } catch (err) {

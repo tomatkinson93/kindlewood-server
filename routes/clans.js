@@ -2,7 +2,8 @@
 //  CLANS — membership core (spec 016, Phase 1)
 //
 //  Mounted at /api/clans. Founding, invites, leave/kick, promote/demote,
-//  leadership transfer, disband, profile edit.
+//  member titles, leadership transfer, disband, profile edit, and the
+//  public clan profile (GET /api/clans/:id) any player can open.
 //
 //  Concurrency: every membership mutation runs in withTransaction and first
 //  locks the clan row (SELECT … FOR UPDATE — the per-clan mutex, spec §3
@@ -127,20 +128,26 @@ function clanSummary(c, memberCount) {
     member_count: memberCount,
     member_cap: palette.memberCap(c.level),
     founder_user_id: c.founder_user_id,
+    recruiting: !!c.recruiting,
     created_at: c.created_at,
   };
 }
 
+// Roster rows, founder first. online = the member has a live stream open
+// right now; last_seen_at = when one last opened or closed.
 async function loadRoster(clanId) {
   const r = await query(
-    `SELECT cm.user_id, u.username, u.species, cm.rank, cm.joined_at,
-            cm.prestige_contributed, s.name AS settlement_name, s.tier, s.tile_q, s.tile_r
+    `SELECT cm.user_id, u.username, u.species, cm.rank, cm.title, cm.joined_at, u.last_seen_at,
+            cm.prestige_contributed, s.id AS settlement_id, s.name AS settlement_name, s.tier, s.tile_q, s.tile_r
        FROM clan_members cm
        JOIN users u ON u.id = cm.user_id
        LEFT JOIN settlements s ON s.user_id = cm.user_id
       WHERE cm.clan_id = $1`, [clanId]);
   return r.rows
-    .map(m => ({ ...m, prestige_contributed: Number(m.prestige_contributed), rank_label: RANK_LABELS[m.rank] }))
+    .map(({ settlement_id, ...m }) => ({
+      ...m, prestige_contributed: Number(m.prestige_contributed), rank_label: RANK_LABELS[m.rank],
+      online: !!settlement_id && eventBus.hasSubscribers(settlement_id),
+    }))
     .sort((a, b) => (RANK_ORDER[b.rank] - RANK_ORDER[a.rank]) || (new Date(a.joined_at) - new Date(b.joined_at)));
 }
 
@@ -295,6 +302,7 @@ router.patch('/profile', requireAuth, requireClanPermission('edit_profile'), asy
       await requireActor(client, req.user.userId, clan.id, 'edit_profile');
       const changes = {};
       if (body.description !== undefined) changes.description = cleanDescription(body.description);
+      if (body.recruiting !== undefined) changes.recruiting = !!body.recruiting;
       if (body.banner !== undefined) {
         const b = palette.validateBanner(body.banner, clan.level);
         if (!b.ok) throw new ClanError(400, b.error);
@@ -302,9 +310,11 @@ router.patch('/profile', requireAuth, requireClanPermission('edit_profile'), asy
       }
       if (!Object.keys(changes).length) throw new ClanError(400, 'Nothing to change.');
       await client.query(
-        `UPDATE clans SET description = COALESCE($2, description), banner = COALESCE($3::jsonb, banner)
+        `UPDATE clans SET description = COALESCE($2, description), banner = COALESCE($3::jsonb, banner),
+                          recruiting = COALESCE($4, recruiting)
           WHERE id = $1`,
-        [clan.id, changes.description ?? null, changes.banner ? JSON.stringify(changes.banner) : null]);
+        [clan.id, changes.description ?? null, changes.banner ? JSON.stringify(changes.banner) : null,
+         changes.recruiting ?? null]);
       await logActivity(client, clan.id, 'profile_updated', req.user.userId, { fields: Object.keys(changes) });
     });
     publishToClan(req.clan.clanId, { type: 'clan_profile_updated' });
@@ -521,6 +531,40 @@ router.post('/members/:userId/demote', requireAuth, requireClanPermission('manag
     return { from: target.rank, rank };
   }));
 
+// ── PATCH /api/clans/members/:userId/title — { title } (cosmetic, level 5+)
+//  manage_ranks holders title themselves and anyone they outrank; '' clears.
+const TITLE_RE = /^[A-Za-z0-9 '\-]*$/;
+router.patch('/members/:userId/title', requireAuth, requireClanPermission('manage_ranks'), async (req, res) => {
+  const targetId = parseId(req.params.userId);
+  if (!targetId) return res.status(400).json({ error: 'Bad member id.' });
+  const title = String((req.body || {}).title ?? '').trim().replace(/\s+/g, ' ');
+  if (title.length > palette.TITLE_MAX || !TITLE_RE.test(title)) {
+    return res.status(400).json({ error: `Titles are up to ${palette.TITLE_MAX} letters, numbers, spaces, ' or -.` });
+  }
+  try {
+    const out = await withTransaction(async (client) => {
+      const clan = await lockClan(client, req.clan.clanId);
+      if (clan.level < palette.TITLE_UNLOCK_LEVEL) {
+        throw new ClanError(403, `Member titles unlock at clan level ${palette.TITLE_UNLOCK_LEVEL}.`,
+          { locked: true, unlock_level: palette.TITLE_UNLOCK_LEVEL });
+      }
+      const actor = await requireActor(client, req.user.userId, clan.id, 'manage_ranks');
+      const target = await memberRow(client, targetId);
+      if (!target || target.clan_id !== clan.id) throw new ClanError(404, 'Not a member of your clan.');
+      if (targetId !== req.user.userId && !outranks(actor.rank, target.rank)) {
+        throw new ClanError(403, 'You can only title yourself and lower ranks.');
+      }
+      await client.query('UPDATE clan_members SET title = $2 WHERE user_id = $1', [targetId, title]);
+      await logActivity(client, clan.id, 'title_changed', req.user.userId, { username: target.username, title });
+      return { username: target.username };
+    });
+    publishToClan(req.clan.clanId, { type: 'clan_member_updated', user_id: targetId });
+    res.json({ ok: true, username: out.username, title });
+  } catch (e) {
+    sendError(res, e, 'Could not set the title.');
+  }
+});
+
 // ── POST /api/clans/transfer — { userId } → new founder ───────────────────
 //  Demote self first, then promote: that order keeps the one-founder index
 //  satisfied. The new founder needs no Guild Hall and no tier.
@@ -722,6 +766,54 @@ router.get('/leaderboard', async (req, res) => {
     });
   } catch (e) {
     sendError(res, e, 'Could not load the clan leaderboard.');
+  }
+});
+
+// ── GET /api/clans/:id — public clan profile (any signed-in player) ──────
+//  Banner, level, standing, territory, roster and milestones. Nothing
+//  private: no spendable prestige, invites, permissions or full activity.
+const MILESTONE_TYPES = ['clan_founded', 'level_up', 'leadership_transferred'];
+router.get('/:id', requireAuth, async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(404).json({ error: 'Clan not found.' });
+  try {
+    const c = (await query(
+      `SELECT c.*, f.username AS founder_name,
+              (SELECT COUNT(*)::int FROM clan_territory t WHERE t.clan_id = c.id) AS territory_count,
+              (SELECT COUNT(*)::int + 1 FROM clans o
+                WHERE o.prestige_lifetime > c.prestige_lifetime
+                   OR (o.prestige_lifetime = c.prestige_lifetime AND o.created_at < c.created_at)) AS standing,
+              (SELECT COUNT(*)::int FROM clans) AS clan_count,
+              (SELECT s.name FROM settlements s WHERE s.tile_q = c.hq_q AND s.tile_r = c.hq_r LIMIT 1) AS hq_name
+         FROM clans c LEFT JOIN users f ON f.id = c.founder_user_id
+        WHERE c.id = $1`, [id])).rows[0];
+    if (!c) return res.status(404).json({ error: 'Clan not found.' });
+    const roster = (await loadRoster(id)).map(m => ({
+      user_id: m.user_id, username: m.username, species: m.species, rank: m.rank, rank_label: m.rank_label,
+      title: m.title, joined_at: m.joined_at, prestige_contributed: m.prestige_contributed,
+      settlement_name: m.settlement_name, tier: m.tier, tile_q: m.tile_q, tile_r: m.tile_r, online: m.online,
+    }));
+    const milestones = (await query(
+      `SELECT a.type, a.payload, a.created_at, u.username AS actor
+         FROM clan_activity a LEFT JOIN users u ON u.id = a.actor_user_id
+        WHERE a.clan_id = $1 AND a.type = ANY($2::text[])
+        ORDER BY a.id DESC LIMIT 12`, [id, MILESTONE_TYPES])).rows;
+    const mine = (await query('SELECT 1 FROM clan_members WHERE user_id = $1 AND clan_id = $2',
+      [req.user.userId, id])).rows.length > 0;
+    const summary = clanSummary(c, roster.length);
+    delete summary.prestige;   // the spendable balance is the clan's business
+    res.json({
+      ok: true,
+      clan: {
+        ...summary, founder: c.founder_name, standing: c.standing, clan_count: c.clan_count,
+        territory: { count: c.territory_count, hq: c.hq_q != null ? { q: c.hq_q, r: c.hq_r, name: c.hq_name } : null },
+      },
+      roster, milestones,
+      honors: { live: palette.CLAN_HONORS_LIVE, items: [] },
+      viewer: { member: mine },
+    });
+  } catch (e) {
+    sendError(res, e, 'Could not load that clan.');
   }
 });
 
