@@ -7,6 +7,7 @@ const express    = require('express');
 const { query }  = require('../db');
 const requireAuth = require('../middleware/auth');
 const { seedQuestDefinitions } = require('../quest_seed');
+const clanQuests = require('../lib/clan_quests');
 
 const router = express.Router();
 
@@ -26,7 +27,7 @@ router.post('/', requireAuth, async (req, res) => {
       skill_key, base_success, duration_s, reward_gold, rewards,
       reward_label, requires, flavour_success, flavour_fail, high_bonus, sort_order,
       quest_source, given_by_npc_id, min_trust, drops,
-      combat_chance, combat_encounter
+      combat_chance, combat_encounter, clan_min_level, clan_prestige
     } = req.body;
 
     if (!id || !title) return res.status(400).json({ error: 'id and title required.' });
@@ -41,8 +42,8 @@ router.post('/', requireAuth, async (req, res) => {
           base_success, duration_s, reward_gold, rewards, reward_label, requires,
           flavour_success, flavour_fail, high_bonus, sort_order,
           quest_source, given_by_npc_id, min_trust, drops,
-          combat_chance, combat_encounter)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+          combat_chance, combat_encounter, clan_min_level, clan_prestige)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
       [
         id, title, description||'', flavour||'', icon||'📜', category||'general',
         quest_type||'solo', skill_key||null,
@@ -59,9 +60,12 @@ router.post('/', requireAuth, async (req, res) => {
         parseInt(min_trust)||0,
         JSON.stringify(drops||[]),
         Math.max(0, Math.min(100, parseInt(combat_chance)||0)),
-        JSON.stringify(Array.isArray(combat_encounter) ? combat_encounter : [])
+        JSON.stringify(Array.isArray(combat_encounter) ? combat_encounter : []),
+        Math.max(1, parseInt(clan_min_level) || 1),
+        Math.max(0, parseInt(clan_prestige) || 0),
       ]
     );
+    clanQuests.invalidateDefs();
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -74,7 +78,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
       'base_success','duration_s','reward_gold','rewards','reward_label','requires',
       'flavour_success','flavour_fail','high_bonus','sort_order','archived',
       'quest_source','given_by_npc_id','min_trust','drops',
-      'combat_chance','combat_encounter'
+      'combat_chance','combat_encounter','clan_min_level','clan_prestige'
     ];
     const updates = [], vals = [];
     let i = 1;
@@ -82,12 +86,18 @@ router.patch('/:id', requireAuth, async (req, res) => {
       if (req.body[f] === undefined) continue;
       let v = req.body[f];
       if (['rewards','requires','high_bonus','drops','combat_encounter'].includes(f)) v = JSON.stringify(v);
-      if (['base_success','sort_order','duration_s','reward_gold','min_trust','given_by_npc_id','combat_chance'].includes(f)) v = f === 'base_success' ? parseFloat(v) : parseInt(v);
+      if (['base_success','sort_order','duration_s','reward_gold','min_trust','given_by_npc_id','combat_chance','clan_min_level','clan_prestige'].includes(f)) {
+        v = f === 'base_success' ? parseFloat(v) : parseInt(v);
+        // The form sends given_by_npc_id: null for non-settlement quests —
+        // parseInt(null) is NaN, which Postgres rejects; keep it NULL.
+        if (!Number.isFinite(v)) v = f === 'given_by_npc_id' ? null : 0;
+      }
       updates.push(`${f}=$${i++}`); vals.push(v);
     }
     if (!updates.length) return res.status(400).json({ error: 'Nothing to update.' });
     vals.push(req.params.id);
     await query(`UPDATE quest_definitions SET ${updates.join(',')} WHERE id=$${i}`, vals);
+    clanQuests.invalidateDefs();
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -96,6 +106,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
     await query('DELETE FROM quest_definitions WHERE id=$1', [req.params.id]);
+    clanQuests.invalidateDefs();
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -103,7 +114,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
 // ── POST /api/quest-admin/seed — seed hardcoded quests into DB ──
 router.post('/seed', requireAuth, async (req, res) => {
   try {
-    const count = await seedQuestDefinitions();
+    const count = await seedQuestDefinitions() + await clanQuests.seedDefinitions();
     res.json({ ok: true, seeded: count });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
