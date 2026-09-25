@@ -13,8 +13,14 @@
 //             below that → 403 { locked: true, unlock_level }. Rank flags
 //             (post_forum, pin_forum, moderate) come from the rank table.
 //    global → every signed-in player reads and posts; threads on 'staff'
-//             boards (Announcements) are admin-only, replies are open;
-//             admins (ADMIN_USER_IDS) pin and moderate.
+//             boards (Announcements) are staff-only, replies are open;
+//             staff (admins + moderators, lib/moderation.js) pin and
+//             moderate. Muted players read but cannot post.
+//
+//  Reports: any player may report someone else's message or post in a
+//  channel they can read. Staff work the queue (GET /reports) and resolve
+//  a report by dismissing it, removing the content, or removing it and
+//  muting the author — every action lands in mod_actions.
 //
 //  SSE (lib/clan_chat.js eventTarget): clan events on clan:<id>, global
 //  events on "global". Chat lines inline; forum changes notify-then-fetch.
@@ -28,7 +34,8 @@ const requireAuth = require('../middleware/auth');
 const eventBus = require('../lib/event_bus');
 const palette = require('../lib/clan_palette');
 const { checkClanPermission } = require('../lib/clan_permissions');
-const { isAdminUser } = require('../middleware/admin');
+const { isAdminUser, requireAdmin } = require('../middleware/admin');
+const mod = require('../lib/moderation');
 const { postMessage, publish, AUTHOR_CLAN_SQL, AUTHOR_CLAN_COLS, withAuthorClan } = require('../lib/clan_chat');
 
 const router = express.Router();
@@ -66,6 +73,16 @@ function cleanText(raw, [min, max], label, { multiline = false } = {}) {
 // perms: { post_thread, post_reply, pin, moderate } for this viewer.
 const hasArea = (ch, area) => ch.features === 'both' || ch.features === area;
 
+const globalPerms = (ch, staff) =>
+  ({ post_thread: ch.post_policy !== 'staff' || staff, post_reply: true, pin: staff, moderate: staff });
+
+// Realm channels only: a muted player cannot write.
+async function assertNotMuted(channel, user) {
+  if (channel.kind !== 'global') return;
+  const m = await mod.activeMute(user.userId);
+  if (m) throw new ChatError(403, mod.muteMessage(m), { muted: true, muted_until: m.until });
+}
+
 async function clanFlag(userId, flag) {
   const r = await checkClanPermission(userId, flag);
   return !!(r && r.allowed);
@@ -78,11 +95,8 @@ async function resolveChannel(channelId, user, area) {
     throw new ChatError(404, area === 'chat' ? 'That board has no live chat.' : 'That channel has no forum.');
   }
   if (ch.kind === 'global') {
-    const admin = isAdminUser(user);
-    return {
-      channel: ch, clan: null,
-      perms: { post_thread: ch.post_policy !== 'staff' || admin, post_reply: true, pin: admin, moderate: admin },
-    };
+    const staff = !!(await mod.staffRole(user));
+    return { channel: ch, clan: null, perms: globalPerms(ch, staff) };
   }
   const m = (await query(
     `SELECT cm.rank, c.id AS clan_id, c.level, c.name
@@ -114,6 +128,12 @@ async function threadWithAccess(threadId, user) {
   if (!th) throw new ChatError(404, 'Thread not found.');
   const acc = await resolveChannel(th.channel_id, user, 'forum');
   return { thread: th, ...acc };
+}
+
+// Staff acting on someone else's realm content goes in the audit log.
+async function auditStaffAct(channel, user, authorUserId, action, detail) {
+  if (channel.kind !== 'global' || authorUserId === user.userId) return;
+  await mod.logModAction({ query }, user.userId, action, authorUserId, { channel_id: channel.id, ...detail });
 }
 
 function forumUpdated(ch, threadId, what) {
@@ -150,17 +170,24 @@ router.get('/channels', requireAuth, async (req, res) => {
         permissions: { post_forum: perms.post_thread, post_reply: perms.post_reply, pin_forum: perms.pin, moderate: perms.moderate },
       });
     }
-    const admin = isAdminUser(req.user);
+    const staff = await mod.staffRole(req.user);
+    const muted = await mod.activeMute(req.user.userId);
+    const openReports = staff
+      ? (await query("SELECT COUNT(*)::int AS n FROM chat_reports WHERE status = 'open'")).rows[0].n : 0;
     for (const c of globalRows) {
+      const perms = globalPerms(c, !!staff);
       channels.push({
         id: c.id, kind: 'global', slug: c.slug, name: c.name, description: c.description, icon: c.icon,
         features: c.features, post_policy: c.post_policy,
         forum: { unlocked: hasArea(c, 'forum') }, chat: { unlocked: hasArea(c, 'chat') },
         last_message_id: c.last_message_id, last_post_at: c.last_post_at, thread_count: c.thread_count,
-        permissions: { post_forum: c.post_policy !== 'staff' || admin, post_reply: true, pin_forum: admin, moderate: admin },
+        permissions: { post_forum: perms.post_thread, post_reply: true, pin_forum: perms.pin, moderate: perms.moderate },
       });
     }
-    res.json({ ok: true, channels, admin });
+    res.json({
+      ok: true, channels, admin: isAdminUser(req.user), staff,
+      muted: muted ? { until: muted.until } : null, open_reports: openReports,
+    });
   } catch (e) {
     sendError(res, e, 'Failed to load channels.');
   }
@@ -178,7 +205,7 @@ router.get('/channels/:id/threads', requireAuth, async (req, res) => {
     if (before && isNaN(before)) return res.status(400).json({ error: 'Bad cursor.' });
     const cols = `t.id, t.title, t.pinned, t.reply_count, t.last_post_at, t.created_at,
                   t.author_user_id, u.username AS author, ${AUTHOR_CLAN_COLS}`;
-    const from = `forum_threads t LEFT JOIN users u ON u.id = t.author_user_id ${AUTHOR_CLAN_SQL.replace('%ALIAS%', 't')}`;
+    const from = `forum_threads t LEFT JOIN users u ON u.id = t.author_user_id ${AUTHOR_CLAN_SQL.replace(/%ALIAS%/g, 't')}`;
     const pinned = before ? { rows: [] } : await query(
       `SELECT ${cols} FROM ${from} WHERE t.channel_id = $1 AND t.pinned ORDER BY t.last_post_at DESC`, [id]);
     const rest = await query(
@@ -198,6 +225,7 @@ router.post('/channels/:id/threads', requireAuth, async (req, res) => {
   try {
     const { channel, perms } = await resolveChannel(id, req.user, 'forum');
     if (!perms.post_thread) throw new ChatError(403, noPostReason(channel));
+    await assertNotMuted(channel, req.user);
     const title = cleanText(req.body && req.body.title, LIMITS.title, 'Title');
     const body = cleanText(req.body && req.body.body, LIMITS.post, 'Post', { multiline: true });
     const threadId = await withTransaction(async (client) => {
@@ -224,7 +252,7 @@ router.get('/threads/:id/posts', requireAuth, async (req, res) => {
     const { thread } = await threadWithAccess(id, req.user);
     const r = await query(
       `SELECT p.id, p.body, p.created_at, p.edited_at, p.author_user_id, u.username AS author, ${AUTHOR_CLAN_COLS}
-         FROM forum_posts p LEFT JOIN users u ON u.id = p.author_user_id ${AUTHOR_CLAN_SQL.replace('%ALIAS%', 'p')}
+         FROM forum_posts p LEFT JOIN users u ON u.id = p.author_user_id ${AUTHOR_CLAN_SQL.replace(/%ALIAS%/g, 'p')}
         WHERE p.thread_id = $1 AND p.id > $2 ORDER BY p.id LIMIT $3`, [id, after, POSTS_PAGE]);
     const first = (await query('SELECT MIN(id) AS id FROM forum_posts WHERE thread_id = $1', [id])).rows[0].id;
     const au = thread.author_user_id
@@ -248,6 +276,7 @@ router.post('/threads/:id/posts', requireAuth, async (req, res) => {
   try {
     const { channel, perms } = await threadWithAccess(id, req.user);
     if (!perms.post_reply) throw new ChatError(403, noPostReason(channel));
+    await assertNotMuted(channel, req.user);
     const body = cleanText(req.body && req.body.body, LIMITS.post, 'Reply', { multiline: true });
     const postId = await withTransaction(async (client) => {
       const p = await client.query(
@@ -280,6 +309,7 @@ router.patch('/posts/:id', requireAuth, async (req, res) => {
   if (!id) return res.status(400).json({ error: 'Bad post.' });
   try {
     const { channel, thread } = await editablePost(id, req.user);
+    await assertNotMuted(channel, req.user);
     const body = cleanText(req.body && req.body.body, LIMITS.post, 'Post', { multiline: true });
     await query('UPDATE forum_posts SET body = $2, edited_at = NOW() WHERE id = $1', [id, body]);
     forumUpdated(channel, thread.id, 'edited');
@@ -295,19 +325,26 @@ router.delete('/posts/:id', requireAuth, async (req, res) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: 'Bad post.' });
   try {
-    const { channel, thread } = await editablePost(id, req.user);
+    const { channel, thread, post } = await editablePost(id, req.user);
     const first = (await query('SELECT MIN(id) AS id FROM forum_posts WHERE thread_id = $1', [thread.id])).rows[0].id;
     if (first === id) throw new ChatError(400, 'That is the opening post — delete the thread instead.');
-    await withTransaction(async (client) => {
-      await client.query('DELETE FROM forum_posts WHERE id = $1', [id]);
-      await client.query('UPDATE forum_threads SET reply_count = GREATEST(0, reply_count - 1) WHERE id = $1', [thread.id]);
-    });
+    await deletePost(id, thread.id);
+    await auditStaffAct(channel, req.user, post.author_user_id, 'remove_post', { post_id: id, thread_id: thread.id, body: post.body });
     forumUpdated(channel, thread.id, 'post_deleted');
     res.json({ ok: true });
   } catch (e) {
     sendError(res, e, 'Could not delete the post.');
   }
 });
+
+async function deletePost(postId, threadId) {
+  await withTransaction(async (client) => {
+    const d = await client.query('DELETE FROM forum_posts WHERE id = $1', [postId]);
+    if (d.rowCount) {
+      await client.query('UPDATE forum_threads SET reply_count = GREATEST(0, reply_count - 1) WHERE id = $1', [threadId]);
+    }
+  });
+}
 
 // POST /threads/:id/pin { pinned }
 router.post('/threads/:id/pin', requireAuth, async (req, res) => {
@@ -318,6 +355,9 @@ router.post('/threads/:id/pin', requireAuth, async (req, res) => {
     if (!perms.pin) throw new ChatError(403, 'You cannot pin threads here.');
     const pinned = !!(req.body && req.body.pinned);
     await query('UPDATE forum_threads SET pinned = $2 WHERE id = $1', [id, pinned]);
+    if (channel.kind === 'global') {
+      await mod.logModAction({ query }, req.user.userId, pinned ? 'pin_thread' : 'unpin_thread', null, { thread_id: id });
+    }
     forumUpdated(channel, id, pinned ? 'pinned' : 'unpinned');
     res.json({ ok: true, pinned });
   } catch (e) {
@@ -338,6 +378,7 @@ router.delete('/threads/:id', requireAuth, async (req, res) => {
         : 'Only the author or a moderator can delete this thread.');
     }
     await query('DELETE FROM forum_threads WHERE id = $1', [id]);
+    await auditStaffAct(channel, req.user, thread.author_user_id, 'remove_thread', { thread_id: id, title: thread.title });
     forumUpdated(channel, id, 'thread_deleted');
     res.json({ ok: true });
   } catch (e) {
@@ -356,7 +397,7 @@ router.get('/channels/:id/messages', requireAuth, async (req, res) => {
   try {
     await resolveChannel(id, req.user, 'chat');
     const cols = `m.id, m.channel_id, m.author_user_id, u.username AS author, m.body, m.created_at, ${AUTHOR_CLAN_COLS}`;
-    const from = `chat_messages m LEFT JOIN users u ON u.id = m.author_user_id ${AUTHOR_CLAN_SQL.replace('%ALIAS%', 'm')}`;
+    const from = `chat_messages m LEFT JOIN users u ON u.id = m.author_user_id ${AUTHOR_CLAN_SQL.replace(/%ALIAS%/g, 'm')}`;
     let rows;
     if (after !== null) {
       rows = (await query(
@@ -399,6 +440,7 @@ router.post('/channels/:id/messages', requireAuth, async (req, res) => {
   if (!id) return res.status(400).json({ error: 'Bad channel.' });
   try {
     const { channel } = await resolveChannel(id, req.user, 'chat');
+    await assertNotMuted(channel, req.user);
     const body = cleanText(req.body && req.body.body, LIMITS.chat, 'Message');
     if (rateLimited(req.user.userId)) {
       return res.status(429).json({ error: 'Easy there — a moment before your next message.' });
@@ -420,10 +462,305 @@ router.delete('/messages/:id', requireAuth, async (req, res) => {
     const { channel, perms } = await resolveChannel(m.channel_id, req.user, 'chat');
     if (!perms.moderate) throw new ChatError(403, 'Only moderators can remove messages.');
     await query('DELETE FROM chat_messages WHERE id = $1', [id]);
+    await auditStaffAct(channel, req.user, m.author_user_id, 'remove_message', { message_id: id, body: m.body });
     publish(channel, 'deleted', { message_id: id });
     res.json({ ok: true });
   } catch (e) {
     sendError(res, e, 'Could not remove the message.');
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+//  Moderation: reports, mutes, staff
+// ══════════════════════════════════════════════════════════════════════════
+
+const REPORT_REASONS = ['spam', 'abuse', 'inappropriate', 'other'];
+const REPORTS_PER_HOUR = 20;
+
+async function requireStaff(req, res, next) {
+  try {
+    req.staff = await mod.staffRole(req.user);
+    if (!req.staff) return res.status(403).json({ error: 'Moderators only.' });
+    next();
+  } catch (e) { sendError(res, e, 'Could not check your role.'); }
+}
+
+async function openReportCount() {
+  return (await query("SELECT COUNT(*)::int AS n FROM chat_reports WHERE status = 'open'")).rows[0].n;
+}
+async function notifyStaff(extra) {
+  eventBus.publish('staff', { type: 'mod_reports', open_reports: await openReportCount(), ...(extra || {}) });
+}
+
+// The reported thing, wherever it lives: { channel_id, thread_id, author_user_id, body, is_opening }.
+async function loadTarget(type, id) {
+  if (type === 'message') {
+    const m = (await query('SELECT * FROM chat_messages WHERE id = $1', [id])).rows[0];
+    return m && { channel_id: m.channel_id, thread_id: null, author_user_id: m.author_user_id, body: m.body };
+  }
+  const p = (await query(
+    `SELECT p.*, t.channel_id, t.title, (SELECT MIN(id) FROM forum_posts WHERE thread_id = p.thread_id) AS first_id
+       FROM forum_posts p JOIN forum_threads t ON t.id = p.thread_id WHERE p.id = $1`, [id])).rows[0];
+  return p && { channel_id: p.channel_id, thread_id: p.thread_id, author_user_id: p.author_user_id,
+                body: p.first_id === p.id ? `${p.title}\n\n${p.body}` : p.body, is_opening: p.first_id === p.id };
+}
+
+// POST /reports { target_type: 'message'|'post', target_id, reason, note? }
+router.post('/reports', requireAuth, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const type = b.target_type === 'post' ? 'post' : b.target_type === 'message' ? 'message' : null;
+    const targetId = parseId(b.target_id);
+    if (!type || !targetId) throw new ChatError(400, 'Bad report target.');
+    if (!REPORT_REASONS.includes(b.reason)) throw new ChatError(400, 'Pick a reason for the report.');
+    const note = b.note ? cleanText(b.note, [0, 300], 'Note') : '';
+    const t = await loadTarget(type, targetId);
+    if (!t) throw new ChatError(404, 'That has already been removed.');
+    await resolveChannel(t.channel_id, req.user, type === 'message' ? 'chat' : 'forum');
+    if (!t.author_user_id) throw new ChatError(400, 'System lines cannot be reported.');
+    if (t.author_user_id === req.user.userId) throw new ChatError(400, 'You cannot report your own words.');
+    const recent = (await query(
+      `SELECT COUNT(*)::int AS n FROM chat_reports WHERE reporter_user_id = $1 AND created_at > NOW() - INTERVAL '1 hour'`,
+      [req.user.userId])).rows[0].n;
+    if (recent >= REPORTS_PER_HOUR) throw new ChatError(429, 'You have sent a lot of reports — the team will get to them.');
+    const r = await query(
+      `INSERT INTO chat_reports (reporter_user_id, target_type, target_id, channel_id, thread_id, reported_user_id,
+                                 snapshot_body, reason, note)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (reporter_user_id, target_type, target_id) WHERE status = 'open' DO NOTHING
+       RETURNING id`,
+      [req.user.userId, type, targetId, t.channel_id, t.thread_id, t.author_user_id, t.body, b.reason, note]);
+    if (r.rows[0]) await notifyStaff();
+    res.json({ ok: true, already: !r.rows[0] });
+  } catch (e) {
+    sendError(res, e, 'Could not send the report.');
+  }
+});
+
+// GET /reports?status=open|resolved — open reports grouped by target (most
+// reported first, then oldest); resolved = the last 50 individual reports.
+router.get('/reports', requireAuth, requireStaff, async (req, res) => {
+  try {
+    const resolved = req.query.status === 'resolved';
+    const rows = (await query(
+      `SELECT r.*, ru.username AS reporter, tu.username AS reported_user, tu.site_role AS reported_site_role,
+              su.username AS resolver, ch.kind AS channel_kind, ch.name AS channel_name, cl.name AS clan_name,
+              ft.title AS thread_title,
+              CASE WHEN r.target_type = 'message' THEN EXISTS (SELECT 1 FROM chat_messages m WHERE m.id = r.target_id)
+                   ELSE EXISTS (SELECT 1 FROM forum_posts p WHERE p.id = r.target_id) END AS still_there,
+              (SELECT until FROM user_mutes um WHERE um.user_id = r.reported_user_id
+                  AND (um.until IS NULL OR um.until > NOW())) AS muted_until,
+              EXISTS (SELECT 1 FROM user_mutes um WHERE um.user_id = r.reported_user_id
+                  AND (um.until IS NULL OR um.until > NOW())) AS is_muted
+         FROM chat_reports r
+         LEFT JOIN users ru ON ru.id = r.reporter_user_id
+         LEFT JOIN users tu ON tu.id = r.reported_user_id
+         LEFT JOIN users su ON su.id = r.resolved_by
+         LEFT JOIN chat_channels ch ON ch.id = r.channel_id
+         LEFT JOIN clans cl ON cl.id = ch.clan_id
+         LEFT JOIN forum_threads ft ON ft.id = r.thread_id
+        WHERE ${resolved ? "r.status <> 'open'" : "r.status = 'open'"}
+        ORDER BY ${resolved ? 'r.resolved_at DESC' : 'r.created_at'} LIMIT ${resolved ? 50 : 500}`)).rows;
+    const view = r => ({
+      target_type: r.target_type, target_id: r.target_id, channel_id: r.channel_id, thread_id: r.thread_id,
+      channel: { kind: r.channel_kind, name: r.channel_kind === 'clan' ? r.clan_name : r.channel_name },
+      thread_title: r.thread_title,
+      reported_user: r.reported_user_id ? {
+        id: r.reported_user_id, username: r.reported_user,
+        staff: mod.staffFor(r.reported_user_id, r.reported_site_role),
+        muted: r.is_muted, muted_until: r.muted_until,
+      } : null,
+      body: r.snapshot_body, still_there: r.still_there,
+    });
+    if (resolved) {
+      return res.json({ ok: true, reports: rows.map(r => ({
+        id: r.id, ...view(r), reason: r.reason, note: r.note, reporter: r.reporter, status: r.status,
+        resolution: r.resolution, resolver: r.resolver, created_at: r.created_at, resolved_at: r.resolved_at,
+      })) });
+    }
+    const groups = new Map();
+    for (const r of rows) {
+      const k = `${r.target_type}:${r.target_id}`;
+      if (!groups.has(k)) groups.set(k, { id: r.id, ...view(r), first_reported_at: r.created_at, reports: [] });
+      groups.get(k).reports.push({ id: r.id, reporter: r.reporter, reason: r.reason, note: r.note, created_at: r.created_at });
+    }
+    const list = [...groups.values()].sort((a, b) =>
+      b.reports.length - a.reports.length || new Date(a.first_reported_at) - new Date(b.first_reported_at));
+    res.json({ ok: true, reports: list, open_reports: rows.length });
+  } catch (e) {
+    sendError(res, e, 'Failed to load reports.');
+  }
+});
+
+// Removes a reported message/post (the opening post takes its thread).
+// Returns true when something was removed.
+async function removeTarget(type, id) {
+  if (type === 'message') {
+    const m = (await query('DELETE FROM chat_messages WHERE id = $1 RETURNING *', [id])).rows[0];
+    if (!m) return false;
+    const ch = (await query('SELECT * FROM chat_channels WHERE id = $1', [m.channel_id])).rows[0];
+    if (ch) publish(ch, 'deleted', { message_id: id });
+    return true;
+  }
+  const t = await loadTarget('post', id);
+  if (!t) return false;
+  if (t.is_opening) await query('DELETE FROM forum_threads WHERE id = $1', [t.thread_id]);
+  else await deletePost(id, t.thread_id);
+  const ch = (await query('SELECT * FROM chat_channels WHERE id = $1', [t.channel_id])).rows[0];
+  if (ch) forumUpdated(ch, t.thread_id, t.is_opening ? 'thread_deleted' : 'post_deleted');
+  return true;
+}
+
+// Only admins mute staff; nobody mutes an admin.
+function canMute(actorStaff, targetStaff) {
+  if (targetStaff === 'admin') return false;
+  return !targetStaff || actorStaff === 'admin';
+}
+
+// POST /reports/:id/resolve { action: 'dismiss'|'remove'|'remove_and_mute', mute_hours? }
+// Resolves every open report on the same target at once.
+router.post('/reports/:id/resolve', requireAuth, requireStaff, async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Bad report.' });
+  const action = req.body && req.body.action;
+  if (!['dismiss', 'remove', 'remove_and_mute'].includes(action)) return res.status(400).json({ error: 'Bad action.' });
+  const hours = req.body.mute_hours == null ? null : Number(req.body.mute_hours);
+  if (hours !== null && !(hours >= 0 && hours <= mod.MUTE_MAX_HOURS)) return res.status(400).json({ error: 'Bad mute length.' });
+  try {
+    const rep = (await query('SELECT * FROM chat_reports WHERE id = $1', [id])).rows[0];
+    if (!rep) throw new ChatError(404, 'Report not found.');
+    let targetStaff = null;
+    if (action === 'remove_and_mute') {
+      if (!rep.reported_user_id) throw new ChatError(400, 'That author no longer exists.');
+      const u = (await query('SELECT site_role FROM users WHERE id = $1', [rep.reported_user_id])).rows[0];
+      targetStaff = mod.staffFor(rep.reported_user_id, u && u.site_role);
+      if (!canMute(req.staff, targetStaff)) throw new ChatError(403, 'You cannot mute that member of staff.');
+    }
+    const status = action === 'dismiss' ? 'dismissed' : 'actioned';
+    const resolution = action === 'dismiss' ? 'dismissed'
+      : action === 'remove' ? 'removed' : `removed + muted ${hours ? hours + 'h' : 'indefinitely'}`;
+    const claimed = await withTransaction(async (client) => {
+      const r = await client.query(
+        `UPDATE chat_reports SET status = $3, resolved_by = $4, resolution = $5, resolved_at = NOW()
+          WHERE target_type = $1 AND target_id = $2 AND status = 'open' RETURNING id`,
+        [rep.target_type, rep.target_id, status, req.user.userId, resolution]);
+      if (!r.rowCount) return 0;
+      let mute = null;
+      if (action === 'remove_and_mute') mute = await mod.mute(client, rep.reported_user_id, req.user.userId, hours, `report: ${rep.reason}`);
+      await mod.logModAction(client, req.user.userId, `report_${action}`, rep.reported_user_id, {
+        report_ids: r.rows.map(x => x.id), target_type: rep.target_type, target_id: rep.target_id,
+        body: rep.snapshot_body, mute_until: mute ? mute.until : undefined,
+      });
+      return r.rowCount;
+    });
+    if (!claimed) throw new ChatError(409, 'Another moderator already handled this report.');
+    const removed = action === 'dismiss' ? false : await removeTarget(rep.target_type, rep.target_id);
+    await notifyStaff({ resolved: { target_type: rep.target_type, target_id: rep.target_id } });
+    res.json({ ok: true, resolved: claimed, removed });
+  } catch (e) {
+    sendError(res, e, 'Could not resolve the report.');
+  }
+});
+
+async function userByRef(b) {
+  const r = b.user_id
+    ? await query('SELECT id, username, site_role FROM users WHERE id = $1', [parseId(b.user_id)])
+    : await query('SELECT id, username, site_role FROM users WHERE LOWER(username) = LOWER($1)', [String(b.username || '').trim()]);
+  if (!r.rows[0]) throw new ChatError(404, 'No player by that name.');
+  return r.rows[0];
+}
+
+// GET /mutes — active mutes
+router.get('/mutes', requireAuth, requireStaff, async (req, res) => {
+  try {
+    const r = await query(
+      `SELECT m.user_id, u.username, m.reason, m.until, m.created_at, b.username AS muted_by
+         FROM user_mutes m JOIN users u ON u.id = m.user_id LEFT JOIN users b ON b.id = m.muted_by
+        WHERE m.until IS NULL OR m.until > NOW() ORDER BY m.created_at DESC`);
+    res.json({ ok: true, mutes: r.rows });
+  } catch (e) {
+    sendError(res, e, 'Failed to load mutes.');
+  }
+});
+
+// POST /mutes { username | user_id, hours (0/null = indefinite), reason }
+router.post('/mutes', requireAuth, requireStaff, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const u = await userByRef(b);
+    if (u.id === req.user.userId) throw new ChatError(400, 'You cannot mute yourself.');
+    if (!canMute(req.staff, mod.staffFor(u.id, u.site_role))) throw new ChatError(403, 'You cannot mute that member of staff.');
+    const hours = b.hours == null ? null : Number(b.hours);
+    if (hours !== null && !(hours >= 0 && hours <= mod.MUTE_MAX_HOURS)) throw new ChatError(400, 'Bad mute length.');
+    const reason = b.reason ? cleanText(b.reason, [0, 200], 'Reason') : '';
+    const m = await withTransaction(async (client) => {
+      const out = await mod.mute(client, u.id, req.user.userId, hours, reason);
+      await mod.logModAction(client, req.user.userId, 'mute', u.id, { hours: out.hours, until: out.until, reason });
+      return out;
+    });
+    res.json({ ok: true, user_id: u.id, username: u.username, until: m.until });
+  } catch (e) {
+    sendError(res, e, 'Could not mute that player.');
+  }
+});
+
+// DELETE /mutes/:userId — lift a mute
+router.delete('/mutes/:userId', requireAuth, requireStaff, async (req, res) => {
+  const uid = parseId(req.params.userId);
+  if (!uid) return res.status(400).json({ error: 'Bad player.' });
+  try {
+    const d = await query('DELETE FROM user_mutes WHERE user_id = $1', [uid]);
+    if (!d.rowCount) throw new ChatError(404, 'That player is not muted.');
+    await mod.logModAction({ query }, req.user.userId, 'unmute', uid, {});
+    res.json({ ok: true });
+  } catch (e) {
+    sendError(res, e, 'Could not lift the mute.');
+  }
+});
+
+// GET /mod-log — the last 50 moderator actions
+router.get('/mod-log', requireAuth, requireStaff, async (req, res) => {
+  try {
+    const r = await query(
+      `SELECT a.id, a.action, a.detail, a.created_at, au.username AS actor, tu.username AS target
+         FROM mod_actions a LEFT JOIN users au ON au.id = a.actor_user_id LEFT JOIN users tu ON tu.id = a.target_user_id
+        ORDER BY a.id DESC LIMIT 50`);
+    res.json({ ok: true, actions: r.rows });
+  } catch (e) {
+    sendError(res, e, 'Failed to load the log.');
+  }
+});
+
+// GET /staff — admins (from ADMIN_USER_IDS) and moderators. Admins only.
+router.get('/staff', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const ids = (process.env.ADMIN_USER_IDS || '').split(',').map(x => parseInt(x.trim(), 10)).filter(Number.isFinite);
+    const r = await query(
+      `SELECT id, username, site_role FROM users WHERE site_role = 'moderator' OR id = ANY($1::int[]) ORDER BY username`, [ids]);
+    res.json({ ok: true, staff: r.rows.map(u => ({ id: u.id, username: u.username, role: mod.staffFor(u.id, u.site_role) })) });
+  } catch (e) {
+    sendError(res, e, 'Failed to load staff.');
+  }
+});
+
+// POST /staff { username | user_id, role: 'moderator'|'player' } — admins only
+router.post('/staff', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!['moderator', 'player'].includes(b.role)) throw new ChatError(400, 'Bad role.');
+    const u = await userByRef(b);
+    if (isAdminUser({ userId: u.id })) throw new ChatError(400, 'Admins are set by the server configuration.');
+    if (u.site_role === b.role) return res.json({ ok: true, unchanged: true, username: u.username, role: b.role });
+    await withTransaction(async (client) => {
+      await client.query('UPDATE users SET site_role = $2 WHERE id = $1', [u.id, b.role]);
+      await mod.logModAction(client, req.user.userId, b.role === 'moderator' ? 'grant_moderator' : 'revoke_moderator', u.id, {});
+    });
+    // Their stream reconnects to pick up (or drop) the staff channel.
+    const s = (await query('SELECT id FROM settlements WHERE user_id = $1', [u.id])).rows[0];
+    if (s) eventBus.publish(s.id, { type: 'site_role_changed', role: b.role });
+    res.json({ ok: true, username: u.username, role: b.role });
+  } catch (e) {
+    sendError(res, e, 'Could not change the role.');
   }
 });
 

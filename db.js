@@ -601,7 +601,7 @@ async function initDB() {
   // The DDL lives in migrations/<NNN>_<name>.sql so the same file can be
   // applied by hand in production. Matched by suffix, so assigning the
   // real migration number at deploy time doesn't break boot.
-  await applyMigrationFiles(['clans_core', 'clan_territory', 'chat_hub', 'community_channels']);
+  await applyMigrationFiles(['clans_core', 'clan_territory', 'chat_hub', 'community_channels', 'moderation']);
 
   // Apply persisted dimensions to mapgen module so all consumers see live values.
   try {

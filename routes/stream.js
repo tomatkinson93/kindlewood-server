@@ -39,6 +39,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const { query } = require('../db');
 const eventBus = require('../lib/event_bus');
+const { staffRole } = require('../lib/moderation');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
 const KEEPALIVE_MS = 25 * 1000;   // < typical proxy idle timeout of 30s/60s
@@ -97,6 +98,13 @@ router.get('/', async (req, res) => {
     clanId = c.rows[0] ? c.rows[0].clan_id : null;
   } catch (e) { clanId = null; }
 
+  // Site staff (admins + moderators) also get the report queue's "staff"
+  // channel. Fixed per connection like the clan channel: a role change
+  // publishes site_role_changed and the stream ends so the client
+  // reconnects with the right set.
+  let staff = null;
+  try { staff = await staffRole(user); } catch (e) { staff = null; }
+
   // ── SSE headers ──
   // X-Accel-Buffering: no is for nginx-fronted hosts (Render's edge does this)
   // so chunks flush immediately instead of being buffered.
@@ -133,7 +141,7 @@ router.get('/', async (req, res) => {
 
   // Initial event so the client can confirm the stream is alive. Also
   // useful as a "did our cookie work?" signal.
-  send({ type: 'connected', settlement_id: settlementId, clan_id: clanId, ts: Date.now() });
+  send({ type: 'connected', settlement_id: settlementId, clan_id: clanId, staff, ts: Date.now() });
 
   // Subscribe to the bus. The returned function lets us clean up cleanly.
   const unsubscribe = eventBus.subscribe(settlementId, (event) => {
@@ -143,7 +151,7 @@ router.get('/', async (req, res) => {
     // membership change: the client reconnects with the right channels, and
     // a removed member stops receiving clan events even if their client
     // never reconnects on its own.
-    if (event && event.type === 'clan_membership_changed') setImmediate(cleanup);
+    if (event && (event.type === 'clan_membership_changed' || event.type === 'site_role_changed')) setImmediate(cleanup);
   });
   const unsubscribeClan = clanId
     ? eventBus.subscribe(`clan:${clanId}`, (event) => {
@@ -159,6 +167,13 @@ router.get('/', async (req, res) => {
     if (closed && unsubscribeGlobal) unsubscribeGlobal();
   });
 
+  const unsubscribeStaff = staff
+    ? eventBus.subscribe('staff', (event) => {
+        send(event);
+        if (closed && unsubscribeStaff) unsubscribeStaff();
+      })
+    : () => {};
+
   // Keepalive
   const keepaliveTimer = setInterval(sendKeepalive, KEEPALIVE_MS);
 
@@ -172,6 +187,7 @@ router.get('/', async (req, res) => {
     unsubscribe();
     unsubscribeClan();
     unsubscribeGlobal();
+    unsubscribeStaff();
     try { res.end(); } catch (e) {}
   }
   req.on('close', cleanup);
