@@ -60,9 +60,9 @@ router.get('/', requireAuth, async (req, res) => {
       const clanQuestRes = await query(
         `SELECT s.citizen_id, r.quest_key, r.status, r.completes_at FROM clan_quest_slots s
            JOIN clan_quest_runs r ON r.id = s.run_id WHERE s.settlement_id = $1 AND s.active`, [settlement.id]);
-      const CQ = require('../lib/clan_quests');
+      const defs = clanQuestRes.rows.length ? await require('../lib/clan_quests').loadDefs() : [];
       clanQuestRes.rows.forEach(q => {
-        const def = CQ.byKey(q.quest_key);
+        const def = defs.find(d => d.key === q.quest_key);
         questByCitizen[q.citizen_id] = {
           quest_id: 'clan:' + q.quest_key, completes_at: q.completes_at, clan: true,
           title: def ? def.title : q.quest_key, forming: q.status === 'forming',

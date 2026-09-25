@@ -44,4 +44,17 @@ CREATE TABLE IF NOT EXISTS clan_quest_slots (
 CREATE UNIQUE INDEX IF NOT EXISTS clan_quest_slots_member_uniq ON clan_quest_slots (run_id, user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS clan_quest_slots_citizen_live ON clan_quest_slots (citizen_id) WHERE active;
 CREATE INDEX IF NOT EXISTS clan_quest_slots_user_idx ON clan_quest_slots (user_id, active);
+-- Clan quest definitions live in quest_definitions (quest_source = 'clan'),
+-- edited in the Dev Tools quest admin.
+ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS clan_min_level INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS clan_prestige  INTEGER NOT NULL DEFAULT 0;
+
+-- Encounters (auto-resolved; see lib/clan_quests.js).
+ALTER TABLE clan_quest_runs ADD COLUMN IF NOT EXISTS combat_status     TEXT NOT NULL DEFAULT 'none';  -- none | rolled | resolved
+ALTER TABLE clan_quest_runs ADD COLUMN IF NOT EXISTS combat_trigger_at TIMESTAMPTZ;
+ALTER TABLE clan_quest_runs ADD COLUMN IF NOT EXISTS combat_seed       BIGINT;
+ALTER TABLE clan_quest_runs ADD COLUMN IF NOT EXISTS combat_encounter  JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE clan_quest_runs ADD COLUMN IF NOT EXISTS combat_outcome    TEXT;                          -- victory | defeat
+ALTER TABLE clan_quest_runs ADD COLUMN IF NOT EXISTS combat_log        JSONB;
+CREATE INDEX IF NOT EXISTS clan_quest_runs_combat_idx ON clan_quest_runs (status, combat_status, combat_trigger_at);
 COMMIT;

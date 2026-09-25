@@ -423,6 +423,7 @@ router.post('/accept', requireAuth, async (req, res) => {
       }
     }
     if (!quest) return res.status(400).json({ error: 'Unknown quest.' });
+    if (quest.quest_source === 'clan') return res.status(400).json({ error: 'Clan quests start from the Clan panel.' });
     if (quest.quest_type === 'party') return res.status(400).json({ error: 'Use /accept-party for party quests.' });
 
     const settlementRes = await query(
@@ -535,6 +536,7 @@ router.post('/accept-party', requireAuth, async (req, res) => {
       const dbQ = await query('SELECT * FROM quest_definitions WHERE id=$1 AND archived=FALSE', [quest_id]);
       if (dbQ.rows.length) quest = dbQ.rows[0]; else return res.status(400).json({ error: 'Unknown party quest.' });
     }
+    if (quest.quest_source === 'clan') return res.status(400).json({ error: 'Clan quests start from the Clan panel.' });
 
     if (citizen_ids.length !== quest.requires.length)
       return res.status(400).json({ error: `This quest requires exactly ${quest.requires.length} citizens.` });

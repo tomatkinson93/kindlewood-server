@@ -74,7 +74,9 @@ const citizensOf = async p => (await q(
   `SELECT c.id, c.name FROM citizens c JOIN settlements s ON s.id = c.settlement_id
     WHERE s.user_id = $1 AND COALESCE(c.life_stage, 'adult') <> 'child' ORDER BY c.id`, [p.id])).rows;
 const board = async p => (await api(p.token, 'GET', '/api/clan-quests')).data;
-const finish = runId => q("UPDATE clan_quest_runs SET completes_at = NOW() - INTERVAL '1 second' WHERE id = $1", [runId]);
+// Fast-forward a run: any pending encounter first, then the finish line.
+const finish = runId => q(`UPDATE clan_quest_runs SET completes_at = NOW() - INTERVAL '1 second',
+  combat_trigger_at = CASE WHEN combat_status = 'rolled' THEN NOW() - INTERVAL '2 seconds' ELSE combat_trigger_at END WHERE id = $1`, [runId]);
 
 async function main() {
   console.log(`Clan quest tests against ${BASE} (run ${RUN})`);
@@ -97,8 +99,8 @@ async function main() {
   let b = await board(F);
   const solo = b.board.find(x => x.key === 'cq_hall_provisions'), party = b.board.find(x => x.key === 'cp_bandit_ford');
   check(solo && solo.state === 'available', 'level-1 solo quest available');
-  check(party && party.state === 'locked' && party.unlock_level === 2, 'party quests locked below level 2');
-  check(b.board.find(x => x.key === 'cp_great_hunt').unlock_level === 4, 'harder parties unlock later');
+  check(!party && b.locked.some(x => x.key === 'cp_bandit_ford' && x.unlock_level === 2), 'party quests locked below level 2 (shown as teasers)');
+  check(b.locked.every((x, i, a) => !i || a[i - 1].unlock_level <= x.unlock_level), 'teasers are ordered by unlock level');
 
   console.log('Solo');
   check((await api(F.token, 'POST', '/api/clan-quests/solo', { quest_key: 'cq_hall_provisions', citizen_id: mc1.id })).status === 400, "can't send someone else's citizen");
@@ -174,7 +176,7 @@ async function main() {
   if (pr2.status === 'completed') {
     await tick(500);
     const lifeAfter = Number((await q('SELECT prestige_lifetime FROM clans WHERE id = $1', [clanId])).rows[0].prestige_lifetime);
-    check(lifeAfter - lifeBefore === 80, 'each of the 2 participants earns 40 prestige (outside the daily cap)');
+    check(lifeAfter - lifeBefore >= 80, 'each of the 2 participants earns 40 prestige (outside the daily cap; plus battle prestige if they fought)');
     check(pr2.slots.every(s => s.rewards && s.rewards.wealth === 45), 'every participant gets the rewards');
     check((await api(M.token, 'POST', '/api/clan-quests/party', { quest_key: 'cp_bandit_ford', role_index: 0, citizen_id: mc1.id })).status === 409, 'one completion per party quest per day');
   } else { check(true, '(roll failed)'); check(true, '(skipped)'); check(true, '(skipped)'); }
@@ -197,10 +199,77 @@ async function main() {
   check(!(await q('SELECT 1 FROM clan_quest_slots WHERE citizen_id = $1 AND active', [mc1.id])).rows.length, 'called-off party releases citizens');
 
   console.log('Dev Tools');
-  const s5 = await api(M.token, 'POST', '/api/clan-quests/solo', { quest_key: 'cq_border_patrol', citizen_id: mc2.id });
+  b = await board(M);
+  const soloKey = b.board.find(x => x.kind === 'solo' && x.state === 'available').key;
+  const s5 = await api(M.token, 'POST', '/api/clan-quests/solo', { quest_key: soloKey, citizen_id: mc2.id });
   const ch = await api(M.token, 'POST', '/api/clan-quests/cheat/finish');
   check(s5.status === 200 && ch.status === 200 && ch.data.finished >= 1, 'cheat finishes your running quests');
   check(['completed', 'failed'].includes((await q('SELECT status FROM clan_quest_runs WHERE id = $1', [s5.data.run_id])).rows[0].status), 'and resolves them');
+
+  console.log('Board rotation');
+  const CQ = require('../lib/clan_quests');
+  const b1 = await CQ.boardFor(clanId, 4, '2026-01-01'), b1b = await CQ.boardFor(clanId, 4, '2026-01-01');
+  check(b1.solo.length <= CQ.BOARD_SOLO && b1.party.length <= CQ.BOARD_PARTY, `board holds at most ${CQ.BOARD_SOLO} solo + ${CQ.BOARD_PARTY} party`);
+  check(JSON.stringify(b1.solo.map(d => d.key)) === JSON.stringify(b1b.solo.map(d => d.key)), 'same clan + day → same board');
+  const days = [];
+  for (let d = 1; d <= 12; d++) days.push((await CQ.boardFor(clanId, 4, `2026-02-${String(d).padStart(2, '0')}`)).solo.map(x => x.key).sort().join());
+  check(new Set(days).size > 1, 'the board changes from day to day');
+  check(b1.rotates_at === '2026-01-02T00:00:00.000Z', 'rotates at the next UTC midnight');
+  check((await CQ.boardFor(clanId, 1)).party.length === 0 && (await CQ.boardFor(clanId, 1)).locked.length > 0, 'locked quests are held back as teasers');
+  const mb = await board(M), fb2 = await board(F);
+  check(JSON.stringify(mb.board.map(x => x.key)) === JSON.stringify(fb2.board.map(x => x.key)), 'every member sees the same board');
+  check(mb.rotates_at && Array.isArray(mb.locked), 'board response carries rotates_at and locked teasers');
+
+  console.log('Admin-defined clan quests');
+  const qid = `cqa_${RUN}`;
+  const mk = await api(F.token, 'POST', '/api/quest-admin', {
+    id: qid, title: `Ambush Drill ${RUN}`, description: 'Test', icon: '🥁', quest_type: 'solo', quest_source: 'clan',
+    skill_key: 'combat', base_success: 0.9, duration_s: 60, rewards: { stone: 7 }, clan_min_level: 1, clan_prestige: 9,
+    combat_chance: 100, combat_encounter: ['marsh_rat'],
+  });
+  check(mk.status === 200, 'admin creates a clan quest');
+  const defs = await CQ.loadDefs(true);
+  const nd = defs.find(d => d.key === qid);
+  check(nd && nd.kind === 'solo' && nd.prestige === 9 && nd.rewards.stone === 7 && nd.combat_chance === 100, 'it loads as a clan quest definition');
+  check((await api(F.token, 'POST', '/api/quests/accept', { quest_id: qid, citizen_id: fc2.id })).status === 400, "clan quests can't be taken as personal quests");
+  // Put it on today's board: archive the other solo clan quests for the test.
+  const others = (await q("SELECT id FROM quest_definitions WHERE quest_source = 'clan' AND quest_type = 'solo' AND NOT archived AND id <> $1", [qid])).rows.map(r => r.id);
+  for (const id of others) await api(F.token, 'PATCH', `/api/quest-admin/${id}`, { archived: true });
+  try {
+    b = await board(F);
+    check(b.board.some(x => x.key === qid), 'admin quest appears on the board');
+    const notOn = await api(F.token, 'POST', '/api/clan-quests/solo', { quest_key: others[0], citizen_id: fc2.id });
+    check(notOn.status === 409, "archived / off-board quests can't be started");
+
+    console.log('Combat');
+    const cr = await api(F.token, 'POST', '/api/clan-quests/solo', { quest_key: qid, citizen_id: fc2.id });
+    check(cr.status === 200, 'solo run with a 100% encounter starts');
+    const row = (await q('SELECT combat_status, combat_trigger_at, completes_at FROM clan_quest_runs WHERE id = $1', [cr.data.run_id])).rows[0];
+    check(row.combat_status === 'rolled' && row.combat_trigger_at < row.completes_at, 'encounter rolled mid-quest');
+    b = await board(F);
+    check(b.runs.find(r => r.id === cr.data.run_id).combat === null, 'the encounter stays hidden until it happens');
+    const sF2 = listen(F);
+    await tick(400);
+    await q("UPDATE clan_quest_runs SET combat_trigger_at = NOW() - INTERVAL '1 second' WHERE id = $1", [cr.data.run_id]);
+    b = await board(F);
+    const after2 = (await q('SELECT status, combat_status, combat_outcome, combat_log FROM clan_quest_runs WHERE id = $1', [cr.data.run_id])).rows[0];
+    check(after2.combat_status === 'resolved' && ['victory', 'defeat'].includes(after2.combat_outcome) && Array.isArray(after2.combat_log), 'the battle auto-resolves with a log');
+    const view = [...b.runs, ...b.recent].find(r => r.id === cr.data.run_id);
+    check(view && view.combat && view.combat.foes, 'run shows the battle and the foes');
+    if (after2.combat_outcome === 'defeat') check(after2.status === 'failed', 'defeat ends the run');
+    else check(after2.status === 'active', 'victory: the quest carries on');
+    const inj = (await q("SELECT COUNT(*)::int AS n FROM citizen_events WHERE citizen_id = $1", [fc2.id]).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n;
+    check(inj === 0, 'clan battles never injure citizens');
+    await tick(300);
+    check(sF2.events.some(e => (e.type === 'clan_quest_battle' || e.type === 'clan_quest_resolved') && e.run_id === cr.data.run_id), 'participant told about the battle');
+    sF2.close();
+    await finish(cr.data.run_id);
+    await board(F);
+    check(['completed', 'failed'].includes((await q('SELECT status FROM clan_quest_runs WHERE id = $1', [cr.data.run_id])).rows[0].status), 'run resolves after the battle');
+  } finally {
+    for (const id of others) await api(F.token, 'PATCH', `/api/quest-admin/${id}`, { archived: false });
+    await api(F.token, 'DELETE', `/api/quest-admin/${qid}`);
+  }
 
   console.log(`\n${passed} passed, ${failed} failed`);
   await pool.end();

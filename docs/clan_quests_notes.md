@@ -43,9 +43,36 @@ Code: `lib/clan_quests.js` (definitions + rules), `routes/clan_quests.js`
   live runs.
 - Dev Tools: `POST /api/clan-quests/cheat/finish` ends your running quests.
 
+## Authoring (Dev Tools → Quests)
+
+Clan quests are rows in `quest_definitions` with `quest_source = 'clan'`.
+The quest admin's **Source → Clan** shows the clan fields: minimum clan
+level (`clan_min_level`), prestige per participant (`clan_prestige`) and
+resource rewards (`rewards`). Party roles are `requires`; combat uses the
+existing `combat_chance` / `combat_encounter`. The built-ins
+(`SEED_POOL` in `lib/clan_quests.js`) are seeded on first boot only, and
+again (missing ones) by the admin's **Seed built-ins**. Archiving takes a
+quest out of rotation; runs of it already underway still finish.
+
+## Board rotation
+
+Each clan's board shows `BOARD_SOLO` (3) solo and `BOARD_PARTY` (2) party
+quests a day, drawn from what its level has unlocked with an RNG seeded by
+clan id + UTC date: every member sees the same board, clans differ, and it
+changes at UTC midnight. Only today's board can be started or posted.
+Quests above the clan's level are returned as `locked` teasers.
+
+## Combat
+
+When a run sets out it may roll an encounter (`combat_chance` %) that
+triggers 10–90% of the way through. Clan battles **auto-resolve** — a
+party spans several players, so nobody plays it by hand. Victory: the
+quest carries on (and participants earn the usual battle prestige).
+Defeat: the run fails on the spot. In keeping with "failing costs nothing",
+clan battles never roll injuries. Encounters stay hidden until they
+happen; afterwards the run shows the foes, outcome and battle log.
+
 ## Later
 
-- Author clan quests in the quest admin (`quest_definitions` with
-  `quest_source = 'clan'`) instead of the code pool.
-- Combat encounters on clan parties.
-- Rotating board / weekly clan-wide goals.
+- Weekly clan-wide goals.
+- Optional manual battles for solo clan runs.

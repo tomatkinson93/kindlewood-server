@@ -2,7 +2,11 @@
 //  CLAN QUESTS — the clan's quest board (lib/clan_quests.js has the rules)
 //
 //  Mounted at /api/clan-quests. Every route needs clan membership.
-//    GET  /                      board + forming/active parties + recent runs
+//    GET  /                      today's rotating board + forming/active
+//                                parties + recent runs
+//
+//  Only quests on today's board (CQ.boardFor) can be started or posted;
+//  runs already underway finish whatever the board says.
 //    POST /solo                  { quest_key, citizen_id } — start a solo run
 //    POST /party                 { quest_key, role_index, citizen_id } — post
 //                                a party, taking one role yourself (Member+)
@@ -58,7 +62,7 @@ function defView(d) {
   return {
     key: d.key, kind: d.kind, min_level: d.min_level, icon: d.icon, title: d.title, description: d.description,
     duration_s: d.duration_s, base_success: d.base_success, rewards: d.rewards, prestige: d.prestige,
-    skill_key: d.skill_key || null, roles: d.roles || null,
+    skill_key: d.skill_key || null, roles: d.roles || null, combat_chance: d.combat_chance,
   };
 }
 
@@ -74,14 +78,24 @@ async function loadRuns(clanId, statuses, limit) {
             u.username, c.name AS citizen_name, c.skills
        FROM clan_quest_slots s JOIN users u ON u.id = s.user_id JOIN citizens c ON c.id = s.citizen_id
       WHERE s.run_id = ANY($1::int[]) ORDER BY s.role_index`, [runs.map(r => r.id)])).rows;
+  const defs = await CQ.loadDefs();
+  const foes = {};
+  for (const r of runs) {
+    const enc = Array.isArray(r.combat_encounter) ? r.combat_encounter : [];
+    if (r.combat_status === 'resolved' && enc.length) foes[r.id] = (await CQ.enemyNames(enc)).join(', ');
+  }
   return runs.map(r => {
-    const def = CQ.byKey(r.quest_key);
+    const def = defs.find(d => d.key === r.quest_key) || null;
     return {
       id: r.id, quest_key: r.quest_key, kind: r.kind, status: r.status,
       created_by: r.created_by, created_by_name: r.created_by_name,
       created_at: r.created_at, expires_at: r.expires_at, started_at: r.started_at,
       completes_at: r.completes_at, resolved_at: r.resolved_at,
       success_chance: r.success_chance,
+      // Encounters stay hidden until they happen.
+      combat: r.combat_status === 'resolved'
+        ? { outcome: r.combat_outcome, foes: foes[r.id] || '', log: r.combat_log || [] }
+        : null,
       quest: def ? defView(def) : { key: r.quest_key, title: r.quest_key, icon: '📜', kind: r.kind },
       slots: slots.filter(s => s.run_id === r.id).map(s => ({
         role_index: s.role_index, user_id: s.user_id, username: s.username,
@@ -111,8 +125,9 @@ router.get('/', requireAuth, requireClanMember, async (req, res) => {
         WHERE clan_id = $1 AND kind = 'party' AND status = 'completed' AND day = $2`, [clanId, today])).rows.map(r => r.quest_key);
     const live = await loadRuns(clanId, ['forming', 'active'], 50);
     const recent = await loadRuns(clanId, ['completed', 'failed', 'expired'], 12);
-    const board = CQ.CLAN_QUEST_POOL.map(d => {
-      const gate = d.kind === 'party' ? Math.max(d.min_level, CQ.PARTY_UNLOCK_LEVEL) : Math.max(d.min_level, CQ.SOLO_UNLOCK_LEVEL);
+    const today_board = await CQ.boardFor(clanId, level, today);
+    const board = [...today_board.solo, ...today_board.party].map(d => {
+      const gate = CQ.gateFor(d);
       const liveRun = live.find(r => r.quest_key === d.key && (d.kind === 'party' || r.slots.some(s => s.user_id === userId)));
       let state = 'available';
       if (level < gate) state = 'locked';
@@ -126,6 +141,10 @@ router.get('/', requireAuth, requireClanMember, async (req, res) => {
     res.json({
       ok: true, level, me: { user_id: userId, rank: req.clan.rank, moderate: !!(perms && perms.allowed) },
       board, runs: live, recent, forming_hours: CQ.FORMING_HOURS,
+      rotates_at: today_board.rotates_at,
+      // Teasers: the next few quests the clan's level hasn't reached.
+      locked: today_board.locked.slice(0, 4).map(d => ({ key: d.key, kind: d.kind, icon: d.icon, title: d.title, unlock_level: CQ.gateFor(d) })),
+      board_size: { solo: CQ.BOARD_SOLO, party: CQ.BOARD_PARTY },
       party_unlock_level: CQ.PARTY_UNLOCK_LEVEL, server_now: new Date().toISOString(),
     });
   } catch (e) {
@@ -151,7 +170,7 @@ async function lockClan(client, clanId) {
 
 // ── POST /api/clan-quests/solo ───────────────────────────────────────────
 router.post('/solo', requireAuth, requireClanMember, async (req, res) => {
-  const def = CQ.byKey(String((req.body || {}).quest_key || ''));
+  const def = await CQ.byKey(String((req.body || {}).quest_key || ''));
   const citizenId = parseId((req.body || {}).citizen_id);
   if (!def || def.kind !== 'solo') return res.status(400).json({ error: 'Unknown clan quest.' });
   if (!citizenId) return res.status(400).json({ error: 'Choose a citizen.' });
@@ -159,8 +178,11 @@ router.post('/solo', requireAuth, requireClanMember, async (req, res) => {
   try {
     const run = await withTransaction(async (client) => {
       const clan = await lockClan(client, req.clan.clanId);
-      if (clan.level < Math.max(def.min_level, CQ.SOLO_UNLOCK_LEVEL)) {
-        throw new QuestError(403, `Unlocks at clan level ${def.min_level}.`, { locked: true });
+      if (clan.level < CQ.gateFor(def)) {
+        throw new QuestError(403, `Unlocks at clan level ${CQ.gateFor(def)}.`, { locked: true });
+      }
+      if (def.archived || !(await CQ.onBoard(clan.id, clan.level, def.key))) {
+        throw new QuestError(409, "That quest isn't on today's board.");
       }
       const done = await client.query(
         `SELECT 1 FROM clan_quest_runs r JOIN clan_quest_slots s ON s.run_id = r.id
@@ -169,13 +191,15 @@ router.post('/solo', requireAuth, requireClanMember, async (req, res) => {
       if (done.rows.length) throw new QuestError(409, 'You have already done this one today — it returns tomorrow.');
       const { settlementId, citizen } = await claimCitizen(client, userId, citizenId);
       const r = (await client.query(
-        `INSERT INTO clan_quest_runs (clan_id, quest_key, kind, status, created_by, started_at, completes_at)
-         VALUES ($1,$2,'solo','active',$3,NOW(), NOW() + make_interval(secs => $4)) RETURNING *`,
-        [clan.id, def.key, userId, def.duration_s])).rows[0];
+        `INSERT INTO clan_quest_runs (clan_id, quest_key, kind, status, created_by)
+         VALUES ($1,$2,'solo','forming',$3) RETURNING *`,
+        [clan.id, def.key, userId])).rows[0];
       await client.query(
         'INSERT INTO clan_quest_slots (run_id, role_index, user_id, settlement_id, citizen_id) VALUES ($1,0,$2,$3,$4)',
         [r.id, userId, settlementId, citizen.id]);
-      return { ...r, citizen_name: citizen.name };
+      await CQ.setOut(client, r.id, def);
+      const ends = (await client.query('SELECT completes_at FROM clan_quest_runs WHERE id = $1', [r.id])).rows[0];
+      return { ...r, completes_at: ends.completes_at, citizen_name: citizen.name };
     });
     CQ.publishClan(req.clan.clanId, { run_id: run.id, what: 'started' });
     res.json({ ok: true, run_id: run.id, completes_at: run.completes_at, citizen_name: run.citizen_name });
@@ -195,19 +219,14 @@ async function fillRole(client, run, def, roleIndex, userId, citizenId) {
     'INSERT INTO clan_quest_slots (run_id, role_index, user_id, settlement_id, citizen_id) VALUES ($1,$2,$3,$4,$5)',
     [run.id, roleIndex, userId, settlementId, citizen.id]);
   const started = slots.length + 1 >= def.roles.length;
-  if (started) {
-    await client.query(
-      `UPDATE clan_quest_runs SET status = 'active', started_at = NOW(),
-              completes_at = NOW() + make_interval(secs => $2), expires_at = NULL WHERE id = $1`,
-      [run.id, def.duration_s]);
-  }
+  if (started) await CQ.setOut(client, run.id, def);
   return { started, citizen };
 }
 
 // ── POST /api/clan-quests/party — post a party and take a role ───────────
 router.post('/party', requireAuth, requireClanMember, async (req, res) => {
   const b = req.body || {};
-  const def = CQ.byKey(String(b.quest_key || ''));
+  const def = await CQ.byKey(String(b.quest_key || ''));
   const citizenId = parseId(b.citizen_id), roleIndex = Number.isInteger(b.role_index) ? b.role_index : parseInt(b.role_index, 10);
   if (!def || def.kind !== 'party') return res.status(400).json({ error: 'Unknown party quest.' });
   if (!citizenId) return res.status(400).json({ error: 'Choose a citizen.' });
@@ -216,8 +235,11 @@ router.post('/party', requireAuth, requireClanMember, async (req, res) => {
   try {
     const out = await withTransaction(async (client) => {
       const clan = await lockClan(client, req.clan.clanId);
-      const gate = Math.max(def.min_level, CQ.PARTY_UNLOCK_LEVEL);
+      const gate = CQ.gateFor(def);
       if (clan.level < gate) throw new QuestError(403, `Unlocks at clan level ${gate}.`, { locked: true });
+      if (def.archived || !(await CQ.onBoard(clan.id, clan.level, def.key))) {
+        throw new QuestError(409, "That quest isn't on today's board.");
+      }
       const live = await client.query(
         "SELECT id FROM clan_quest_runs WHERE clan_id = $1 AND quest_key = $2 AND kind = 'party' AND status IN ('forming','active')",
         [clan.id, def.key]);
@@ -261,7 +283,7 @@ router.post('/runs/:id/join', requireAuth, requireClanMember, async (req, res) =
     const out = await withTransaction(async (client) => {
       const run = await lockRun(client, runId, req.clan.clanId);
       if (run.status !== 'forming') throw new QuestError(409, 'That party has already set out.');
-      const def = CQ.byKey(run.quest_key);
+      const def = await CQ.byKey(run.quest_key);
       if (!def) throw new QuestError(404, 'Quest not found.');
       return { run, def, ...(await fillRole(client, run, def, roleIndex, req.user.userId, citizenId)) };
     });
@@ -324,7 +346,8 @@ router.post('/runs/:id/cancel', requireAuth, requireClanMember, async (req, res)
 router.post('/cheat/finish', requireAuth, requireClanMember, async (req, res) => {
   try {
     const r = await query(
-      `UPDATE clan_quest_runs r SET completes_at = NOW()
+      `UPDATE clan_quest_runs r SET completes_at = NOW(),
+              combat_trigger_at = CASE WHEN r.combat_status = 'rolled' THEN NOW() - INTERVAL '1 second' ELSE r.combat_trigger_at END
         WHERE r.clan_id = $1 AND r.status = 'active'
           AND EXISTS (SELECT 1 FROM clan_quest_slots s WHERE s.run_id = r.id AND s.user_id = $2) RETURNING id`,
       [req.clan.clanId, req.user.userId]);

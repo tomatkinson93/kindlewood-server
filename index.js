@@ -99,6 +99,11 @@ initDB().then(() => {
   // Clan prestige listens to gameplay events (spec 016 §8). Registered
   // before the worker starts so no early quest resolution is missed.
   require('./lib/clan_subscriber').register();
+  // Built-in clan quests into quest_definitions (quest_source = 'clan') the
+  // first time; after that they're edited in the Dev Tools quest admin.
+  require('./lib/clan_quests').seedDefinitions({ onlyIfEmpty: true })
+    .then(n => { if (n) console.log(`[clan_quests] seeded ${n} clan quest definitions`); })
+    .catch(e => console.error('[clan_quests] seed failed', e.message));
 
   if (process.env.QUEST_WORKER_DISABLED !== '1') {
     questWorker.start();
