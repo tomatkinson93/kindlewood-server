@@ -83,6 +83,9 @@ router.post('/send', requireAuth, async (req, res) => {
         [citizen_id]
       );
       if (onExpedition.rows.length) return res.status(400).json({ error: `${citizen.name} is already scouting.` });
+      if ((await require('../lib/clan_quests').busyCitizenIds([citizen.id])).length) {
+        return res.status(400).json({ error: `${citizen.name} is on a clan quest.` });
+      }
       citizenName = citizen.name;
       const scoutSkill = (citizen.skills?.scouting || 1);
       citizenSkillBonus = 1 + (scoutSkill - 1) * 0.04; // each skill point = 4% faster

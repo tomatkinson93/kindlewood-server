@@ -454,6 +454,8 @@ router.post('/accept', requireAuth, async (req, res) => {
     );
     if (partyBusy.rows.length)
       return res.status(400).json({ error: `${citizen.name} is already in a party.` });
+    if ((await require('../lib/clan_quests').busyCitizenIds([citizen.id])).length)
+      return res.status(400).json({ error: `${citizen.name} is on a clan quest.` });
 
     // Check citizen isn't on a scouting expedition
     const scoutRes = await query(
@@ -570,6 +572,13 @@ router.post('/accept-party', requireAuth, async (req, res) => {
         const busy = citizenRes.rows.find(c => c.id === overlap);
         return res.status(400).json({ error: `${busy?.name || 'A citizen'} is already on a party expedition.` });
       }
+    }
+
+    // Check none are on a clan quest
+    const clanBusy = await require('../lib/clan_quests').busyCitizenIds(citizen_ids);
+    if (clanBusy.length) {
+      const busy = citizenRes.rows.find(c => c.id === clanBusy[0]);
+      return res.status(400).json({ error: `${busy?.name || 'A citizen'} is on a clan quest.` });
     }
 
     // Check none are scouting

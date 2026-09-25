@@ -1,47 +1,51 @@
-# Clan quests — design notes (not built yet)
+# Clan quests — how they work (built)
 
-Requested during spec 016 work; to be specced and built after the clan
-phases. Captured here so the requirements aren't lost.
+Code: `lib/clan_quests.js` (definitions + rules), `routes/clan_quests.js`
+(`/api/clan-quests`), `migrations/0NN_clan_quests.sql`,
+`scripts/clan_quests_test.js`. UI: the Clan panel's **Quests** tab.
 
-## What was asked for
+## Kinds
 
-- **Solo clan quests.** Any member can accept one and complete it alone
-  with their own citizen, like a normal quest.
-- **Party clan quests.** A quest with several roles. Clan members each
-  assign one of their citizens to a role until every role is filled; then
-  it starts. **One citizen per member per quest**, so a single member
-  can't fill every slot.
-- **Rewards go to everyone who took part:** clan prestige plus each
-  participant's own rewards.
-- **Failing costs nothing.** No penalty to the clan or the participants.
+- **Solo** — any member (recruits included) sends one of their citizens.
+  Starts at once. Each member can run each solo quest once per UTC day.
+- **Party** — several roles. Member rank and up post a party and take a
+  role; anyone in the clan fills the rest with **one citizen per member
+  per party**. It sets out when the last role is filled. One forming or
+  active party per quest per clan; one completion per quest per clan per
+  UTC day.
 
-## How it could hang off what exists
+## Decisions on the open questions
 
-- **Definitions:** reuse `quest_definitions` / the quest pools with a
-  `clan: true` flag (or a `clan_quest_definitions` table). The existing
-  `requires: [{ skill_key }]` shape of party quests already describes roles.
-- **Runs:** a `clan_quest_runs` table keyed by `clan_id`, status
-  `forming → active → completed|failed`, plus `clan_quest_slots
-  (run_id, role_index, user_id, citizen_id)` with
-  `UNIQUE (run_id, user_id)` for the one-citizen-per-member rule and
-  `UNIQUE (run_id, role_index)` so two members can't take the same role.
-  Joining a slot = Pattern A/B from spec 016 §3 (lock the run row).
-- **Citizen availability:** assigned citizens must be marked busy the same
-  way `settlement_quests` marks them, so they can't also be on a personal
-  quest.
-- **Resolution:** the quest worker already resolves `settlement_quests`
-  with `FOR UPDATE SKIP LOCKED`; clan runs resolve the same way, then emit
-  a `clan_quest_completed` game event after COMMIT.
-- **Prestige:** the clan subscriber credits it through `awardPrestige`
-  (`source: 'clan_quest'`). Open question: count it toward each member's
-  daily cap, or treat party completions as milestones outside the cap.
-- **UI:** a "Quests" section in the Clan panel (forming parties with open
-  roles, a "Join with…" citizen picker, active runs with timers). SSE on
-  `clan:<id>` for slot filled / run started / run resolved.
+| Question | Decision |
+|---|---|
+| Who can post? | Solo: anyone. Party: Member+ (recruits can join). |
+| Forming expiry | 24 h (`FORMING_HOURS`); lapses with nothing lost. |
+| Level gates | Solo quests from level 1 (some at 2–3); parties from level 2 (harder ones at 3 and 4). |
+| Rewards | Every participant gets the quest's full resource rewards. |
+| Prestige | Per participant: solo counts toward the daily cap; party is a milestone outside it. |
+| Failure | No penalty — citizens come home, nothing is lost. |
+| Calling off | The poster, or anyone with `moderate` (officer+), while forming. |
+| Leaving the clan | Frees your spot in forming parties; parties underway finish with you. |
 
-## Open questions
+## Mechanics
 
-- Who can post or start a clan quest: any member, or `officer`+?
-- Does a forming party expire if roles aren't filled in time?
-- Are clan quests unlocked by clan level (e.g. solo at L1, party at L3)?
-- Reward split: fixed per participant, or scaled by role/skill?
+- Success: `min(95%, base + (skill − 1) × 4%)`; party uses the average of
+  each role's own skill.
+- Citizens in a live run (`clan_quest_slots.active`) are busy everywhere:
+  personal quests, parties, expeditions and envoys refuse them, and
+  `/api/citizens` reports `active_quest.clan = true`.
+- Resolution runs in the quest worker tick (and on `GET /api/clan-quests`
+  as a safety net) with `FOR UPDATE SKIP LOCKED`. Events after COMMIT:
+  `clan_quest_updated` (clan channel), `clan_quest_resolved` (each
+  participant's settlement), a clan chat system line, clan activity rows.
+- Concurrency: writes lock the clan row; unique indexes stop two members
+  taking one role, one member taking two roles, or a citizen being in two
+  live runs.
+- Dev Tools: `POST /api/clan-quests/cheat/finish` ends your running quests.
+
+## Later
+
+- Author clan quests in the quest admin (`quest_definitions` with
+  `quest_source = 'clan'`) instead of the code pool.
+- Combat encounters on clan parties.
+- Rotating board / weekly clan-wide goals.
