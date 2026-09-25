@@ -151,6 +151,13 @@ router.get('/', async (req, res) => {
         if (closed && unsubscribeClan) unsubscribeClan();
       })
     : () => {};
+  // Realm-wide channel (Chat hub community boards + Realm Chat). Every
+  // connection subscribes; events are small and notify-then-fetch except
+  // chat lines, which carry the message inline.
+  const unsubscribeGlobal = eventBus.subscribe('global', (event) => {
+    send(event);
+    if (closed && unsubscribeGlobal) unsubscribeGlobal();
+  });
 
   // Keepalive
   const keepaliveTimer = setInterval(sendKeepalive, KEEPALIVE_MS);
@@ -164,6 +171,7 @@ router.get('/', async (req, res) => {
     clearInterval(keepaliveTimer);
     unsubscribe();
     unsubscribeClan();
+    unsubscribeGlobal();
     try { res.end(); } catch (e) {}
   }
   req.on('close', cleanup);

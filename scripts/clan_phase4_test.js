@@ -75,8 +75,9 @@ async function main() {
 
   console.log('Channel & gates');
   const chs = await api(M.token, 'GET', '/api/chat/channels');
-  const ch = chs.data.channels[0];
-  check(chs.status === 200 && chs.data.channels.length === 1 && ch.clan_id === clanId, 'founding created the clan channel');
+  const clanChs = chs.data.channels.filter(c => c.kind === 'clan');
+  const ch = clanChs[0];
+  check(chs.status === 200 && clanChs.length === 1 && ch.clan_id === clanId, 'founding created the clan channel');
   check(ch.forum.unlocked === false && ch.chat.unlocked === false, 'level 1: forum and chat locked');
   const f1 = await api(M.token, 'GET', `/api/chat/channels/${ch.id}/threads`);
   check(f1.status === 403 && f1.data.locked === true && f1.data.unlock_level === 2, 'level 1: forum → 403 locked, unlock_level 2');
@@ -92,7 +93,7 @@ async function main() {
     'backlog already holds system lines from founding onward');
   check((await api(X.token, 'GET', `/api/chat/channels/${ch.id}/threads`)).status === 403, 'non-member → 403 on the forum');
   check((await api(X.token, 'POST', `/api/chat/channels/${ch.id}/messages`, { body: 'hi' })).status === 403, 'non-member → 403 on chat');
-  check((await api(X.token, 'GET', '/api/chat/channels')).data.channels.length === 0, 'non-member sees no channels');
+  check((await api(X.token, 'GET', '/api/chat/channels')).data.channels.every(c => c.kind === 'global'), 'non-member sees no clan channel (only realm channels)');
 
   console.log('Forum');
   const badT = await api(M.token, 'POST', `/api/chat/channels/${ch.id}/threads`, { title: 'hi', body: 'x' });
