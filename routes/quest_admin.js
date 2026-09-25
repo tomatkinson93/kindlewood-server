@@ -86,7 +86,12 @@ router.patch('/:id', requireAuth, async (req, res) => {
       if (req.body[f] === undefined) continue;
       let v = req.body[f];
       if (['rewards','requires','high_bonus','drops','combat_encounter'].includes(f)) v = JSON.stringify(v);
-      if (['base_success','sort_order','duration_s','reward_gold','min_trust','given_by_npc_id','combat_chance','clan_min_level','clan_prestige'].includes(f)) v = f === 'base_success' ? parseFloat(v) : parseInt(v);
+      if (['base_success','sort_order','duration_s','reward_gold','min_trust','given_by_npc_id','combat_chance','clan_min_level','clan_prestige'].includes(f)) {
+        v = f === 'base_success' ? parseFloat(v) : parseInt(v);
+        // The form sends given_by_npc_id: null for non-settlement quests —
+        // parseInt(null) is NaN, which Postgres rejects; keep it NULL.
+        if (!Number.isFinite(v)) v = f === 'given_by_npc_id' ? null : 0;
+      }
       updates.push(`${f}=$${i++}`); vals.push(v);
     }
     if (!updates.length) return res.status(400).json({ error: 'Nothing to update.' });
