@@ -546,6 +546,7 @@ router.get('/reports', requireAuth, requireStaff, async (req, res) => {
       `SELECT r.*, ru.username AS reporter, tu.username AS reported_user, tu.site_role AS reported_site_role,
               su.username AS resolver, ch.kind AS channel_kind, ch.name AS channel_name, cl.name AS clan_name,
               ft.title AS thread_title,
+              (r.target_type = 'post' AND r.target_id = (SELECT MIN(id) FROM forum_posts fp WHERE fp.thread_id = r.thread_id)) AS is_opening,
               CASE WHEN r.target_type = 'message' THEN EXISTS (SELECT 1 FROM chat_messages m WHERE m.id = r.target_id)
                    ELSE EXISTS (SELECT 1 FROM forum_posts p WHERE p.id = r.target_id) END AS still_there,
               (SELECT until FROM user_mutes um WHERE um.user_id = r.reported_user_id
@@ -564,7 +565,7 @@ router.get('/reports', requireAuth, requireStaff, async (req, res) => {
     const view = r => ({
       target_type: r.target_type, target_id: r.target_id, channel_id: r.channel_id, thread_id: r.thread_id,
       channel: { kind: r.channel_kind, name: r.channel_kind === 'clan' ? r.clan_name : r.channel_name },
-      thread_title: r.thread_title,
+      thread_title: r.thread_title, is_opening: !!r.is_opening,
       reported_user: r.reported_user_id ? {
         id: r.reported_user_id, username: r.reported_user,
         staff: mod.staffFor(r.reported_user_id, r.reported_site_role),
