@@ -55,6 +55,20 @@ router.get('/', requireAuth, async (req, res) => {
     soloQuestRes.rows.forEach(q => {
       if (q.citizen_id) questByCitizen[q.citizen_id] = { quest_id: q.quest_id, completes_at: q.completes_at };
     });
+    // Clan quests (forming parties included — the citizen waits at the hall).
+    try {
+      const clanQuestRes = await query(
+        `SELECT s.citizen_id, r.quest_key, r.status, r.completes_at FROM clan_quest_slots s
+           JOIN clan_quest_runs r ON r.id = s.run_id WHERE s.settlement_id = $1 AND s.active`, [settlement.id]);
+      const CQ = require('../lib/clan_quests');
+      clanQuestRes.rows.forEach(q => {
+        const def = CQ.byKey(q.quest_key);
+        questByCitizen[q.citizen_id] = {
+          quest_id: 'clan:' + q.quest_key, completes_at: q.completes_at, clan: true,
+          title: def ? def.title : q.quest_key, forming: q.status === 'forming',
+        };
+      });
+    } catch (e) { /* pre-migration */ }
 
     // Build lookup maps for happiness context
     const season = getCurrentSeason();

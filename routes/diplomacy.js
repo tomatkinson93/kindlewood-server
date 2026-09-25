@@ -152,6 +152,9 @@ async function loadAvailableCitizen(citizenId, settlementId) {
     [citizenId, JSON.stringify([citizenId])]
   );
   if (onQuest.rows.length) return { ok: false, error: cit.name + ' is already on a quest.' };
+  if ((await require('../lib/clan_quests').busyCitizenIds([citizenId])).length) {
+    return { ok: false, error: cit.name + ' is on a clan quest.' };
+  }
 
   const onDiplo = await query(
     "SELECT id FROM diplomacy_relations WHERE citizen_id=$1 AND (status='contact_sent' OR pending_action IS NOT NULL)",

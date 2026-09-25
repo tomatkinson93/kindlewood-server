@@ -493,6 +493,7 @@ router.post('/leave', requireAuth, async (req, res) => {
         return { disbanded: true, clan, settlementIds: await disbandLocked(client, clan.id) };
       }
       await client.query('DELETE FROM clan_members WHERE user_id = $1', [userId]);
+      await releaseFormingSlots(client, clan.id, userId);
       await logActivity(client, clan.id, 'member_left', userId, { username: me.username });
       return { disbanded: false, clan };
     });
@@ -508,6 +509,20 @@ router.post('/leave', requireAuth, async (req, res) => {
     sendError(res, e, 'Could not leave the clan.');
   }
 });
+
+// A member leaving takes their citizens out of the clan's forming parties
+// (a party already underway finishes with them). Empty parties are called
+// off.
+async function releaseFormingSlots(client, clanId, userId) {
+  const r = await client.query(
+    `DELETE FROM clan_quest_slots s USING clan_quest_runs r
+      WHERE s.run_id = r.id AND r.clan_id = $1 AND r.status = 'forming' AND s.user_id = $2 RETURNING r.id`, [clanId, userId]);
+  for (const { id } of r.rows) {
+    await client.query(
+      `UPDATE clan_quest_runs SET status = 'cancelled', resolved_at = NOW()
+        WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM clan_quest_slots WHERE run_id = $1)`, [id]);
+  }
+}
 
 // Shared shape for kick / promote / demote: lock the clan, re-check the
 // actor's flag and the lower-rank rule, then apply `mutate`.
@@ -544,6 +559,7 @@ function memberAction(flag, activityType, mutate) {
 router.post('/members/:userId/kick', requireAuth, requireClanPermission('kick'),
   memberAction('kick', 'member_kicked', async (client, actor, target) => {
     await client.query('DELETE FROM clan_members WHERE user_id = $1', [target.user_id]);
+    await releaseFormingSlots(client, actor.clanId || target.clan_id, target.user_id);
     return {};
   }));
 
