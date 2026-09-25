@@ -4,18 +4,19 @@
 // run is deterministic and CI-able. Reports win rate by seat, targeting
 // distribution against the perceived #1 threat, game length, stalls, and hard
 // per-game invariants (15 role cards always accounted for, acorns never
-// negative, exactly one winner). A failing invariant prints the seed so the
+// negative, exactly one winner). Card counts derive from the game's own roster
+// (15 cards at ≤4 players, 18 once the Heron joins at 5–6). A failing invariant prints the seed so the
 // exact game can be replayed.
 //
-// Usage:  node scripts/briar_selfplay.js [games] [players] [difficulty] [baseSeed]
+// Usage:  node scripts/briar_selfplay.js [games] [players] [difficulty] [baseSeed] [seasons]
 //   node scripts/briar_selfplay.js 2000 4 smart 1
+//   node scripts/briar_selfplay.js 500 5 smart 1 seasons
 
 const E = require('../lib/briar_engine');
 
 // The four defined personalities; neutral fillers only when a table needs >4.
 const DEFINED_COURTIERS = ['Old Bracken', 'Sly Whisper', 'Marigold', 'Thorn'];
 const FILLER_COURTIERS = ['Bramblefoot', 'Quill'];
-const ROLES = ['elder', 'adder', 'magpie', 'owl', 'hedgewitch'];
 const TURN_CAP = 4000;   // engine steps before we call a game stalled
 
 // The engine exports its own threat scoring, so "did the AI target its own
@@ -34,14 +35,15 @@ function apply(g, s, msg) {
     case 'challengeBlock': E.challengeBlock(g, s, !!msg.challenge); break;
     case 'loseInfluence':  E.resolveLoss(g, s, msg.cardIndex | 0); break;
     case 'consult':        E.resolveConsult(g, s, msg.keepIndices || []); break;
+    case 'titheRespond':   E.titheRespond(g, s, !!msg.pay); break;
   }
 }
 
 // Returns { role: count } across deck + every card in play. Must always be
-// exactly {each role: 3}. Catches card duplication/loss (e.g. the §2.1 bug).
+// exactly {each roster role: 3}. Catches card duplication/loss (e.g. the §2.1 bug).
 function roleCensus(g) {
   const c = {};
-  for (const r of ROLES) c[r] = 0;
+  for (const r of g.roster) c[r] = 0;
   for (const r of g.deck) c[r] = (c[r] || 0) + 1;
   for (const p of g.players) for (const card of p.cards) c[card.role] = (c[card.role] || 0) + 1;
   // Mid-consult, the freshly DRAWN cards sit in pending.consultPool (pulled
@@ -57,18 +59,19 @@ function roleCensus(g) {
 
 function checkInvariants(g, seed, problems) {
   const census = roleCensus(g);
-  for (const r of ROLES) {
+  for (const r of g.roster) {
     if (census[r] !== 3) { problems.push(`seed ${seed}: role ${r} count=${census[r]} (expected 3)`); return false; }
   }
   const total = Object.values(census).reduce((a, b) => a + b, 0);
-  if (total !== 15) { problems.push(`seed ${seed}: total cards=${total} (expected 15)`); return false; }
+  const expected = g.roster.length * 3;
+  if (total !== expected) { problems.push(`seed ${seed}: total cards=${total} (expected ${expected})`); return false; }
   for (const p of g.players) {
     if (p.acorns < 0) { problems.push(`seed ${seed}: ${p.name} acorns=${p.acorns} (<0)`); return false; }
   }
   return true;
 }
 
-function playGame(seed, nPlayers, difficulty, agg) {
+function playGame(seed, nPlayers, difficulty, agg, seasons) {
   // Assign courtiers to seats in a per-game shuffled order, so personality
   // win-rate isn't confounded with turn-order/seat position (real matches
   // shuffle seating too). Uses a seed-derived RNG independent of the game's.
@@ -77,7 +80,7 @@ function playGame(seed, nPlayers, difficulty, agg) {
     : DEFINED_COURTIERS.concat(FILLER_COURTIERS);
   const names = E.shuffle(pool, E.mulberry32(seed ^ 0x9e3779b9)).slice(0, nPlayers);
   const seats = names.map((name, i) => ({ seat: i, id: 'ai:' + i, name, isAI: true }));
-  const g = E.create(seats, { rng: E.mulberry32(seed), difficulty, seed });
+  const g = E.create(seats, { rng: E.mulberry32(seed), difficulty, seed, seasons });
 
   let steps = 0;
   while (g.phase !== 'gameover' && steps < TURN_CAP) {
@@ -103,6 +106,7 @@ function playGame(seed, nPlayers, difficulty, agg) {
       }
     }
 
+    if (decision.kind === 'action') agg.actions[decision.action] = (agg.actions[decision.action] || 0) + 1;
     apply(g, seat, decision);
     if (!checkInvariants(g, seed, agg.problems)) return;
     steps++;
@@ -132,17 +136,18 @@ function main() {
   const nPlayers = parseInt(process.argv[3], 10) || 4;
   const difficulty = process.argv[4] || 'smart';
   const baseSeed = parseInt(process.argv[5], 10) || 1;
+  const seasons = process.argv[6] === 'seasons';
 
   const agg = {
     completed: 0, stalls: 0, targeted: 0, hitTop: 0, targetedFull: 0, hitTopFull: 0,
-    winsBySeat: {}, winsByName: {}, rounds: [], problems: [],
+    winsBySeat: {}, winsByName: {}, rounds: [], problems: [], actions: {},
   };
 
   const t0 = Date.now();
-  for (let k = 0; k < games; k++) playGame(baseSeed + k, nPlayers, difficulty, agg);
+  for (let k = 0; k < games; k++) playGame(baseSeed + k, nPlayers, difficulty, agg, seasons);
   const dt = ((Date.now() - t0) / 1000).toFixed(1);
 
-  console.log(`\nBriar self-play — ${games} games, ${nPlayers} players, difficulty=${difficulty}, baseSeed=${baseSeed} (${dt}s)`);
+  console.log(`\nBriar self-play — ${games} games, ${nPlayers} players, difficulty=${difficulty}, baseSeed=${baseSeed}${seasons ? ', seasons on' : ''} (${dt}s)`);
   console.log(`completed=${agg.completed}  stalls=${agg.stalls}  invariant-issues=${agg.problems.length}`);
 
   console.log('\nWin rate by seat position:');
@@ -156,6 +161,11 @@ function main() {
   console.log(`  overall:            ${pct(agg.hitTop, agg.targeted)}  (n=${agg.targeted})`);
   console.log(`  full-table (3+ rivals): ${pct(agg.hitTopFull, agg.targetedFull)}  (n=${agg.targetedFull})`);
   console.log(`  §1.1 acceptance reads the full-table bucket: ~65–80% smart, flatter on simple.`);
+
+  const totalActions = Object.values(agg.actions).reduce((a, b) => a + b, 0);
+  console.log('\nAction mix:');
+  for (const a of Object.keys(agg.actions).sort((x, y) => agg.actions[y] - agg.actions[x]))
+    console.log(`  ${a.padEnd(8)} ${pct(agg.actions[a], totalActions)}`);
 
   console.log(`\nGame length (rounds): median=${median(agg.rounds)}  mean=${(agg.rounds.reduce((a, b) => a + b, 0) / (agg.rounds.length || 1)).toFixed(1)}  min=${Math.min(...agg.rounds)}  max=${Math.max(...agg.rounds)}`);
   console.log(`Guard: median below ~6 rounds suggests challenge-suicide regression.`);
