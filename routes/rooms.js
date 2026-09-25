@@ -70,6 +70,7 @@ router.post('/create', (req, res) => {
       visibility: req.body.visibility,
       maxPlayers: req.body.maxPlayers,
       difficulty: req.body.difficulty,
+      seasons: req.body.seasons,
     });
     res.json({ room: rooms.publicView(room) });
   } catch (e) { res.status(400).json({ error: e.message }); }
