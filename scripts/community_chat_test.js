@@ -127,7 +127,8 @@ async function main() {
 
   console.log('Isolation');
   await q('UPDATE clans SET level = 4 WHERE id = $1', [clan.data.clan_id]);
-  const hall = clanList.data.channels[0];
+  const hall = clanList.data.channels.find(c => c.kind === 'clan');
+  if (!hall) throw new Error('setup: the clan member has no clan hall');
   await api(C.token, 'POST', `/api/chat/channels/${hall.id}/messages`, { body: 'clan secret' });
   await tick(300);
   check(!sb.events.some(e => e.message && e.message.body === 'clan secret'), 'clan hall lines never reach the realm channel');
