@@ -1,5 +1,5 @@
 // scripts/clan_phase5_test.js — checks for spec 016 Phase 5 (public clan
-// profile, presence, recruiting flag, member titles, clan on player
+// profile, presence, recruitment (open / request / invite), member titles, clan on player
 // profiles). Drives a running server over HTTP (same DATABASE_URL).
 // Throwaway DB only.
 //
@@ -67,6 +67,11 @@ function listen(p) {
 async function main() {
   console.log(`Clan Phase 5 tests against ${BASE} (run ${RUN})`);
   const F = await player('founder', { hall: true });
+  // Found on a tile nobody holds, so the HQ seed lands (reused test DBs).
+  await q(`UPDATE settlements SET (tile_q, tile_r) = (SELECT t.q, t.r FROM tiles t
+      WHERE NOT EXISTS (SELECT 1 FROM settlements x WHERE x.tile_q = t.q AND x.tile_r = t.r)
+        AND NOT EXISTS (SELECT 1 FROM clan_territory ct WHERE ct.q = t.q AND ct.r = t.r)
+      ORDER BY random() LIMIT 1) WHERE user_id = $1`, [F.id]);
   const founded = await api(F.token, 'POST', '/api/clans', { name: `Glade ${RUN}`, description: 'We tend the old glade.',
     banner: { emblem: 'leaf', primary: 'moss', secondary: 'wheat' } });
   const clanId = founded.data.clan_id;
@@ -102,10 +107,55 @@ async function main() {
   const me = (await api(F.token, 'GET', '/api/clans/me')).data.roster.find(m => m.user_id === M.id);
   check(me.online === false && me.last_seen_at, 'last seen recorded when the stream closes');
 
-  console.log('Recruiting');
-  check((await api(M.token, 'PATCH', '/api/clans/profile', { recruiting: true })).status === 403, 'members cannot edit the profile');
-  check((await api(F.token, 'PATCH', '/api/clans/profile', { recruiting: true })).status === 200, 'founder flags the clan as recruiting');
-  check((await api(X.token, 'GET', `/api/clans/${clanId}`)).data.clan.recruiting === true, 'recruiting shows on the public profile');
+  console.log('Recruitment');
+  const Y = await player('joiner'), Z = await player('asker');
+  check(pub.data.clan.join_policy === 'invite', 'clans start invitation-only');
+  check((await api(Y.token, 'POST', `/api/clans/${clanId}/join`)).status === 403, 'invite-only: no joining or asking');
+  check((await api(O.token, 'PATCH', '/api/clans/recruitment', { join_policy: 'open' })).status === 403, 'officers cannot change recruitment');
+  check((await api(F.token, 'PATCH', '/api/clans/recruitment', { join_policy: 'sometimes' })).status === 400, 'policy validated');
+  check((await api(F.token, 'PATCH', '/api/clans/recruitment', { join_policy: 'request' })).status === 200, 'founder opens requests');
+  const sO = listen(O);
+  await tick(400);
+  const rq = await api(Z.token, 'POST', `/api/clans/${clanId}/join`, { message: 'I bring timber!' });
+  check(rq.status === 200 && rq.data.requested === true && !rq.data.joined, 'a player asks to join');
+  check((await api(Z.token, 'POST', `/api/clans/${clanId}/join`)).status === 409, 'no duplicate requests');
+  await tick(300);
+  check(sO.events.some(e => e.type === 'clan_join_requested'), 'officers are notified live');
+  sO.close();
+  const zView = (await api(Z.token, 'GET', `/api/clans/${clanId}`)).data;
+  check(zView.clan.join_policy === 'request' && zView.viewer.request_pending === true, 'profile shows the pending request');
+  check((await api(Z.token, 'GET', '/api/clans/me')).data.requests.some(r => r.clan_id === clanId), 'the asker sees it in their panel');
+  const oMe = (await api(O.token, 'GET', '/api/clans/me')).data;
+  const jr = oMe.join_requests.find(r => r.user_id === Z.id);
+  check(jr && jr.message === 'I bring timber!', 'officers see the request and message');
+  check(!(await api(M.token, 'GET', '/api/clans/me')).data.join_requests.length, 'members (no invite right) do not');
+  check((await api(M.token, 'POST', `/api/clans/requests/${jr.id}/accept`)).status === 403, 'members cannot answer');
+  const acc = await api(O.token, 'POST', `/api/clans/requests/${jr.id}/accept`);
+  check(acc.status === 200 && (await q('SELECT rank FROM clan_members WHERE user_id = $1', [Z.id])).rows[0]?.rank === 'recruit', 'officer approves → recruit');
+  check((await api(O.token, 'POST', `/api/clans/requests/${jr.id}/decline`)).status === 404, 'a handled request cannot be answered again');
+  // decline path + withdraw
+  const rq2 = await api(Y.token, 'POST', `/api/clans/${clanId}/join`, {});
+  check(rq2.status === 200, 'second request');
+  check((await api(Y.token, 'DELETE', `/api/clans/${clanId}/join`)).status === 200, 'the asker withdraws');
+  await api(Y.token, 'POST', `/api/clans/${clanId}/join`, {});
+  const sY = listen(Y);
+  await tick(400);
+  const jr2 = (await api(F.token, 'GET', '/api/clans/me')).data.join_requests.find(r => r.user_id === Y.id);
+  check((await api(F.token, 'POST', `/api/clans/requests/${jr2.id}/decline`)).status === 200, 'founder declines');
+  await tick(300);
+  check(sY.events.some(e => e.type === 'clan_request_declined'), 'the asker hears it was declined');
+  sY.close();
+  // open
+  await api(Y.token, 'POST', `/api/clans/${clanId}/join`, {});
+  await api(F.token, 'PATCH', '/api/clans/recruitment', { join_policy: 'open' });
+  check((await q("SELECT status FROM clan_join_requests WHERE user_id = $1 ORDER BY id DESC LIMIT 1", [Y.id])).rows[0].status === 'declined',
+    'leaving request mode declines what is pending');
+  const op = await api(Y.token, 'POST', `/api/clans/${clanId}/join`);
+  check(op.status === 200 && op.data.joined === true, 'open clan: anyone joins at once');
+  check((await api(Y.token, 'POST', `/api/clans/${clanId}/join`)).status === 409, 'already in a clan');
+  await api(F.token, 'PATCH', '/api/clans/recruitment', { join_policy: 'invite' });
+  check((await api(X.token, 'GET', `/api/clans/${clanId}`)).data.clan.join_policy === 'invite', 'back to invite only');
+  check((await api(F.token, 'GET', '/api/clans/activity')).data.activity.some(a => a.type === 'join_policy_changed'), 'policy changes logged');
 
   console.log('Member titles');
   const early = await api(F.token, 'PATCH', `/api/clans/members/${M.id}/title`, { title: 'Quartermaster' });

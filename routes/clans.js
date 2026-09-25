@@ -128,7 +128,7 @@ function clanSummary(c, memberCount) {
     member_count: memberCount,
     member_cap: palette.memberCap(c.level),
     founder_user_id: c.founder_user_id,
-    recruiting: !!c.recruiting,
+    join_policy: c.join_policy || 'invite',
     created_at: c.created_at,
   };
 }
@@ -183,6 +183,12 @@ router.get('/me', requireAuth, async (req, res) => {
           banner: palette.resolveBanner(i.banner), member_count: i.member_count,
           member_cap: palette.memberCap(i.level), invited_by: i.invited_by_name, created_at: i.created_at,
         })),
+        requests: (await query(
+          `SELECT r.id, r.created_at, c.id AS clan_id, c.name AS clan_name, c.level, c.banner
+             FROM clan_join_requests r JOIN clans c ON c.id = r.clan_id
+            WHERE r.user_id = $1 AND r.status = 'pending' ORDER BY r.created_at DESC`, [userId])).rows
+          .map(r => ({ id: r.id, clan_id: r.clan_id, clan_name: r.clan_name, level: r.level,
+                       banner: palette.resolveBanner(r.banner), created_at: r.created_at })),
         founding: {
           has_guild_hall: hallRes.rows.length > 0,
           placed: !!(s && s.tile_q !== null && s.world_version >= CURRENT_WORLD_VERSION),
@@ -210,6 +216,14 @@ router.get('/me', requireAuth, async (req, res) => {
           ORDER BY i.created_at DESC`, [me.clan_id]);
       outgoing = o.rows;
     }
+    let joinRequests = [];
+    if (permissions.includes('invite')) {
+      joinRequests = (await query(
+        `SELECT r.id, r.user_id, r.message, r.created_at, u.username, u.species, s.name AS settlement_name, s.tier
+           FROM clan_join_requests r JOIN users u ON u.id = r.user_id
+           LEFT JOIN settlements s ON s.user_id = r.user_id
+          WHERE r.clan_id = $1 AND r.status = 'pending' ORDER BY r.created_at`, [me.clan_id])).rows;
+    }
 
     res.json({
       ok: true,
@@ -225,6 +239,7 @@ router.get('/me', requireAuth, async (req, res) => {
       me: { user_id: userId, rank: me.rank, rank_label: RANK_LABELS[me.rank], permissions },
       roster,
       outgoing_invites: outgoing,
+      join_requests: joinRequests,
       invites: [],
     });
   } catch (e) {
@@ -302,7 +317,6 @@ router.patch('/profile', requireAuth, requireClanPermission('edit_profile'), asy
       await requireActor(client, req.user.userId, clan.id, 'edit_profile');
       const changes = {};
       if (body.description !== undefined) changes.description = cleanDescription(body.description);
-      if (body.recruiting !== undefined) changes.recruiting = !!body.recruiting;
       if (body.banner !== undefined) {
         const b = palette.validateBanner(body.banner, clan.level);
         if (!b.ok) throw new ClanError(400, b.error);
@@ -310,11 +324,9 @@ router.patch('/profile', requireAuth, requireClanPermission('edit_profile'), asy
       }
       if (!Object.keys(changes).length) throw new ClanError(400, 'Nothing to change.');
       await client.query(
-        `UPDATE clans SET description = COALESCE($2, description), banner = COALESCE($3::jsonb, banner),
-                          recruiting = COALESCE($4, recruiting)
+        `UPDATE clans SET description = COALESCE($2, description), banner = COALESCE($3::jsonb, banner)
           WHERE id = $1`,
-        [clan.id, changes.description ?? null, changes.banner ? JSON.stringify(changes.banner) : null,
-         changes.recruiting ?? null]);
+        [clan.id, changes.description ?? null, changes.banner ? JSON.stringify(changes.banner) : null]);
       await logActivity(client, clan.id, 'profile_updated', req.user.userId, { fields: Object.keys(changes) });
     });
     publishToClan(req.clan.clanId, { type: 'clan_profile_updated' });
@@ -370,6 +382,35 @@ router.delete('/invites/:id', requireAuth, requireClanPermission('invite'), asyn
   }
 });
 
+// Adds userId to a locked clan as a recruit (invite accepted, request
+// approved, or an open clan joined). Clears their other pending invites and
+// join requests. Caller holds the clan lock.
+async function joinLocked(client, clan, userId, username) {
+  if (await memberRow(client, userId)) throw new ClanError(409, 'Already in a clan.');
+  const count = (await client.query('SELECT COUNT(*)::int AS n FROM clan_members WHERE clan_id = $1', [clan.id])).rows[0].n;
+  if (count >= palette.memberCap(clan.level)) throw new ClanError(400, 'That clan is full.');
+  await client.query("INSERT INTO clan_members (user_id, clan_id, rank) VALUES ($1,$2,'recruit')", [userId, clan.id]);
+  await client.query(
+    "UPDATE clan_invites SET status = 'declined' WHERE invited_user_id = $1 AND status = 'pending'", [userId]);
+  await client.query(
+    "UPDATE clan_join_requests SET status = 'cancelled', decided_at = NOW() WHERE user_id = $1 AND status = 'pending'", [userId]);
+  await logActivity(client, clan.id, 'member_joined', userId, { username });
+}
+
+// Settlement must be placed in the current world to join anything.
+async function joinableSettlement(userId) {
+  const s = (await query('SELECT id, tile_q, world_version FROM settlements WHERE user_id = $1', [userId])).rows[0];
+  if (!s) throw new ClanError(404, 'No settlement.');
+  if (s.tile_q === null || s.world_version < CURRENT_WORLD_VERSION) throw new ClanError(400, 'Place your settlement on the map first.');
+  return s;
+}
+
+function announceJoin(settlementId, clanId, userId, username) {
+  publishToSettlements([settlementId], { type: 'clan_membership_changed', clan_id: clanId });
+  publishToClan(clanId, { type: 'clan_member_joined', user_id: userId, username });
+  systemLine(clanId, `🌱 ${username} joined the clan.`);
+}
+
 // ── POST /api/clans/invites/:id/accept ────────────────────────────────────
 router.post('/invites/:id/accept', requireAuth, async (req, res) => {
   const id = parseId(req.params.id);
@@ -392,21 +433,12 @@ router.post('/invites/:id/accept', requireAuth, async (req, res) => {
         "SELECT id FROM clan_invites WHERE id = $1 AND invited_user_id = $2 AND status = 'pending' FOR UPDATE",
         [id, userId]);
       if (!inv.rows[0]) throw new ClanError(404, 'Invite not found.');
-      if (await memberRow(client, userId)) throw new ClanError(409, 'Already in a clan.');
-      const count = (await client.query('SELECT COUNT(*)::int AS n FROM clan_members WHERE clan_id = $1', [clan.id])).rows[0].n;
-      if (count >= palette.memberCap(clan.level)) throw new ClanError(400, 'That clan is full.');
-
-      await client.query("INSERT INTO clan_members (user_id, clan_id, rank) VALUES ($1,$2,'recruit')", [userId, clan.id]);
       await client.query("UPDATE clan_invites SET status = 'accepted' WHERE id = $1", [id]);
-      await client.query(
-        "UPDATE clan_invites SET status = 'declined' WHERE invited_user_id = $1 AND status = 'pending'", [userId]);
-      await logActivity(client, clan.id, 'member_joined', userId, { username: req.user.username });
+      await joinLocked(client, clan, userId, req.user.username);
       return clan.id;
     });
 
-    publishToSettlements([s.id], { type: 'clan_membership_changed', clan_id: clanId });
-    publishToClan(clanId, { type: 'clan_member_joined', user_id: userId, username: req.user.username });
-    systemLine(clanId, `🌱 ${req.user.username} joined the clan.`);
+    announceJoin(s.id, clanId, userId, req.user.username);
     res.json({ ok: true, clan_id: clanId });
   } catch (e) {
     sendError(res, e, 'Could not join the clan.');
@@ -562,6 +594,134 @@ router.patch('/members/:userId/title', requireAuth, requireClanPermission('manag
     res.json({ ok: true, username: out.username, title });
   } catch (e) {
     sendError(res, e, 'Could not set the title.');
+  }
+});
+
+// ══ Recruitment: join policy, open joins, join requests ══════════════════
+
+const JOIN_POLICIES = ['invite', 'request', 'open'];
+const REQUEST_MESSAGE_MAX = 200;
+const MAX_PENDING_REQUESTS = 5;
+
+// ── PATCH /api/clans/recruitment — { join_policy } ────────────────────────
+//  Switching away from 'request' declines what's still pending.
+router.patch('/recruitment', requireAuth, requireClanPermission('manage_recruitment'), async (req, res) => {
+  const policy = (req.body || {}).join_policy;
+  if (!JOIN_POLICIES.includes(policy)) return res.status(400).json({ error: 'Choose invite, request or open.' });
+  try {
+    const dropped = await withTransaction(async (client) => {
+      const clan = await lockClan(client, req.clan.clanId);
+      await requireActor(client, req.user.userId, clan.id, 'manage_recruitment');
+      await client.query('UPDATE clans SET join_policy = $2 WHERE id = $1', [clan.id, policy]);
+      let d = [];
+      if (policy !== 'request') {
+        d = (await client.query(
+          `UPDATE clan_join_requests SET status = 'declined', decided_by = $2, decided_at = NOW()
+            WHERE clan_id = $1 AND status = 'pending' RETURNING user_id`, [clan.id, req.user.userId])).rows;
+      }
+      if (clan.join_policy !== policy) {
+        await logActivity(client, clan.id, 'join_policy_changed', req.user.userId, { from: clan.join_policy, policy });
+      }
+      return { d, clan };
+    });
+    for (const r of dropped.d) {
+      publishToSettlements([await settlementIdFor(r.user_id)],
+        { type: 'clan_request_declined', clan_id: dropped.clan.id, name: dropped.clan.name });
+    }
+    publishToClan(req.clan.clanId, { type: 'clan_profile_updated' });
+    res.json({ ok: true, join_policy: policy });
+  } catch (e) {
+    sendError(res, e, 'Could not change recruitment.');
+  }
+});
+
+// ── POST /api/clans/:id/join — { message? } ───────────────────────────────
+//  open → joins now; request → files a join request; invite → 403.
+router.post('/:id/join', requireAuth, async (req, res) => {
+  const clanId = parseId(req.params.id);
+  if (!clanId) return res.status(404).json({ error: 'Clan not found.' });
+  const userId = req.user.userId, username = req.user.username;
+  const message = String((req.body || {}).message || '').replace(/[\u0000-\u001F\u007F]/g, ' ').trim().slice(0, REQUEST_MESSAGE_MAX);
+  try {
+    const s = await joinableSettlement(userId);
+    const out = await withTransaction(async (client) => {
+      const clan = await lockClan(client, clanId);
+      if (await memberRow(client, userId)) throw new ClanError(409, 'Leave your current clan first.');
+      if (clan.join_policy === 'open') {
+        await joinLocked(client, clan, userId, username);
+        return { joined: true, clan };
+      }
+      if (clan.join_policy !== 'request') throw new ClanError(403, `${clan.name} is invitation only.`);
+      const count = (await client.query('SELECT COUNT(*)::int AS n FROM clan_members WHERE clan_id = $1', [clan.id])).rows[0].n;
+      if (count >= palette.memberCap(clan.level)) throw new ClanError(400, 'That clan is full.');
+      const mine = (await client.query(
+        "SELECT clan_id FROM clan_join_requests WHERE user_id = $1 AND status = 'pending'", [userId])).rows;
+      if (mine.some(r => r.clan_id === clan.id)) throw new ClanError(409, 'You have already asked to join.');
+      if (mine.length >= MAX_PENDING_REQUESTS) {
+        throw new ClanError(400, `You can have ${MAX_PENDING_REQUESTS} open requests at once — cancel one first.`);
+      }
+      const r = await client.query(
+        'INSERT INTO clan_join_requests (clan_id, user_id, message) VALUES ($1,$2,$3) RETURNING id', [clan.id, userId, message]);
+      return { joined: false, clan, requestId: r.rows[0].id };
+    });
+    if (out.joined) {
+      announceJoin(s.id, clanId, userId, username);
+      return res.json({ ok: true, joined: true, clan_id: clanId });
+    }
+    publishToClan(clanId, { type: 'clan_join_requested', username });
+    res.json({ ok: true, joined: false, requested: true, request_id: out.requestId });
+  } catch (e) {
+    if (e && e.code === '23505' && e.constraint === 'clan_join_requests_pending_uniq') {
+      return res.status(409).json({ error: 'You have already asked to join.' });
+    }
+    sendError(res, e, 'Could not join that clan.');
+  }
+});
+
+// ── DELETE /api/clans/:id/join — withdraw your pending request ────────────
+router.delete('/:id/join', requireAuth, async (req, res) => {
+  const clanId = parseId(req.params.id);
+  if (!clanId) return res.status(404).json({ error: 'Clan not found.' });
+  try {
+    const r = await query(
+      `UPDATE clan_join_requests SET status = 'cancelled', decided_at = NOW()
+        WHERE clan_id = $1 AND user_id = $2 AND status = 'pending'`, [clanId, req.user.userId]);
+    if (!r.rowCount) return res.status(404).json({ error: 'No pending request.' });
+    publishToClan(clanId, { type: 'clan_join_requested' });
+    res.json({ ok: true });
+  } catch (e) {
+    sendError(res, e, 'Could not withdraw the request.');
+  }
+});
+
+// ── POST /api/clans/requests/:id/accept | decline — 'invite' holders ──────
+router.post('/requests/:id/:decision(accept|decline)', requireAuth, requireClanPermission('invite'), async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Bad request id.' });
+  const accept = req.params.decision === 'accept';
+  try {
+    const out = await withTransaction(async (client) => {
+      const clan = await lockClan(client, req.clan.clanId);
+      await requireActor(client, req.user.userId, clan.id, 'invite');
+      const jr = (await client.query(
+        `SELECT r.*, u.username FROM clan_join_requests r JOIN users u ON u.id = r.user_id
+          WHERE r.id = $1 AND r.clan_id = $2 AND r.status = 'pending' FOR UPDATE OF r`, [id, clan.id])).rows[0];
+      if (!jr) throw new ClanError(404, 'That request was already handled.');
+      await client.query(
+        'UPDATE clan_join_requests SET status = $2, decided_by = $3, decided_at = NOW() WHERE id = $1',
+        [id, accept ? 'accepted' : 'declined', req.user.userId]);
+      if (accept) await joinLocked(client, clan, jr.user_id, jr.username);
+      return { jr, clan };
+    });
+    const sid = await settlementIdFor(out.jr.user_id);
+    if (accept) announceJoin(sid, out.clan.id, out.jr.user_id, out.jr.username);
+    else {
+      publishToSettlements([sid], { type: 'clan_request_declined', clan_id: out.clan.id, name: out.clan.name });
+      publishToClan(out.clan.id, { type: 'clan_join_requested' });
+    }
+    res.json({ ok: true, username: out.jr.username });
+  } catch (e) {
+    sendError(res, e, 'Could not answer the request.');
   }
 });
 
@@ -798,8 +958,11 @@ router.get('/:id', requireAuth, async (req, res) => {
          FROM clan_activity a LEFT JOIN users u ON u.id = a.actor_user_id
         WHERE a.clan_id = $1 AND a.type = ANY($2::text[])
         ORDER BY a.id DESC LIMIT 12`, [id, MILESTONE_TYPES])).rows;
-    const mine = (await query('SELECT 1 FROM clan_members WHERE user_id = $1 AND clan_id = $2',
-      [req.user.userId, id])).rows.length > 0;
+    const myClan = (await query('SELECT clan_id FROM clan_members WHERE user_id = $1', [req.user.userId])).rows[0];
+    const mine = !!myClan && myClan.clan_id === id;
+    const pending = (await query(
+      "SELECT 1 FROM clan_join_requests WHERE clan_id = $1 AND user_id = $2 AND status = 'pending'",
+      [id, req.user.userId])).rows.length > 0;
     const summary = clanSummary(c, roster.length);
     delete summary.prestige;   // the spendable balance is the clan's business
     res.json({
@@ -810,7 +973,7 @@ router.get('/:id', requireAuth, async (req, res) => {
       },
       roster, milestones,
       honors: { live: palette.CLAN_HONORS_LIVE, items: [] },
-      viewer: { member: mine },
+      viewer: { member: mine, in_clan: !!myClan, request_pending: pending },
     });
   } catch (e) {
     sendError(res, e, 'Could not load that clan.');
