@@ -174,6 +174,11 @@ router.get('/', async (req, res) => {
       })
     : () => {};
 
+  // Presence for clan rosters: stamp last_seen_at now and when the stream
+  // closes. Best-effort.
+  const touchSeen = () => query('UPDATE users SET last_seen_at = NOW() WHERE id = $1', [user.userId]).catch(() => {});
+  touchSeen();
+
   // Keepalive
   const keepaliveTimer = setInterval(sendKeepalive, KEEPALIVE_MS);
 
@@ -188,6 +193,7 @@ router.get('/', async (req, res) => {
     unsubscribeClan();
     unsubscribeGlobal();
     unsubscribeStaff();
+    touchSeen();
     try { res.end(); } catch (e) {}
   }
   req.on('close', cleanup);
