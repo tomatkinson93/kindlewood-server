@@ -8,9 +8,9 @@
 // (15 cards at ≤4 players, 18 once the Heron joins at 5–6). A failing invariant prints the seed so the
 // exact game can be replayed.
 //
-// Usage:  node scripts/briar_selfplay.js [games] [players] [difficulty] [baseSeed] [seasons]
+// Usage:  node scripts/briar_selfplay.js [games] [players] [difficulty] [baseSeed] [noseasons]
 //   node scripts/briar_selfplay.js 2000 4 smart 1
-//   node scripts/briar_selfplay.js 500 5 smart 1 seasons
+//   node scripts/briar_selfplay.js 500 6 smart 1 noseasons   (Court Seasons are on by default)
 
 const E = require('../lib/briar_engine');
 
@@ -23,9 +23,14 @@ const TURN_CAP = 4000;   // engine steps before we call a game stalled
 // perceived #1 threat?" is measured against exactly what the AI optimises.
 const threatOf = (g, p, x) => E.threatOf(g, p, x);
 
-// Which seat is the engine waiting on? Uses the engine's own single-source-of-
-// truth helper (all seats are AI here, so the first pending seat always acts).
-const pendingSeat = g => E.pendingSeat(g);
+// Which seat acts next? In a reaction window several seats owe an answer; the
+// live server gives each AI its own random clock, so answers land in a random
+// order. Mirror that with a seeded pick — always taking the lowest seat first
+// made low seats do all the challenging, and skewed win rate by seat index.
+const pendingSeat = (g, rng) => {
+  const s = E.pendingSeats(g);
+  return s.length ? s[Math.floor(rng() * s.length)] : null;
+};
 
 function apply(g, s, msg) {
   switch (msg.kind) {
@@ -81,10 +86,11 @@ function playGame(seed, nPlayers, difficulty, agg, seasons) {
   const names = E.shuffle(pool, E.mulberry32(seed ^ 0x9e3779b9)).slice(0, nPlayers);
   const seats = names.map((name, i) => ({ seat: i, id: 'ai:' + i, name, isAI: true }));
   const g = E.create(seats, { rng: E.mulberry32(seed), difficulty, seed, seasons });
+  const orderRng = E.mulberry32(seed ^ 0x51ed27);
 
   let steps = 0;
   while (g.phase !== 'gameover' && steps < TURN_CAP) {
-    const seat = pendingSeat(g);
+    const seat = pendingSeat(g, orderRng);
     if (seat == null) { agg.problems.push(`seed ${seed}: no pending seat in phase ${g.phase}`); return; }
     const decision = E.aiResolve(g, seat);
     if (!decision) { agg.problems.push(`seed ${seed}: null decision, phase ${g.phase}, seat ${seat}`); return; }
@@ -136,7 +142,7 @@ function main() {
   const nPlayers = parseInt(process.argv[3], 10) || 4;
   const difficulty = process.argv[4] || 'smart';
   const baseSeed = parseInt(process.argv[5], 10) || 1;
-  const seasons = process.argv[6] === 'seasons';
+  const seasons = process.argv[6] !== 'noseasons';
 
   const agg = {
     completed: 0, stalls: 0, targeted: 0, hitTop: 0, targetedFull: 0, hitTopFull: 0,
@@ -147,7 +153,7 @@ function main() {
   for (let k = 0; k < games; k++) playGame(baseSeed + k, nPlayers, difficulty, agg, seasons);
   const dt = ((Date.now() - t0) / 1000).toFixed(1);
 
-  console.log(`\nBriar self-play — ${games} games, ${nPlayers} players, difficulty=${difficulty}, baseSeed=${baseSeed}${seasons ? ', seasons on' : ''} (${dt}s)`);
+  console.log(`\nBriar self-play — ${games} games, ${nPlayers} players, difficulty=${difficulty}, baseSeed=${baseSeed}${seasons ? '' : ', seasons off'} (${dt}s)`);
   console.log(`completed=${agg.completed}  stalls=${agg.stalls}  invariant-issues=${agg.problems.length}`);
 
   console.log('\nWin rate by seat position:');
