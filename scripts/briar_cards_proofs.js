@@ -232,15 +232,39 @@ function withSeason(season, opts = {}) {
     const beforeTurn = g.turn, beforeDeck = g._seasonDeck.length;
     E.doAction(g, g.players[g.turn].seat, 'forage');
     g.players.forEach(p => { p.acorns = 2; });               // keep clear of forced coup
-    const wrapped = g.turn <= beforeTurn;
+    const wrapped = g.turn === g.lapAnchor;                  // back to the opener = new round
     const drew = g._seasonDeck.length !== beforeDeck;        // popped one, or reshuffled
     if (wrapped) { laps++; seen.push(g.season); }
     if (wrapped !== drew) { check('season turns only when the marker wraps', false, `step ${step}`); break; }
   }
   check('season turns once per round', seen.length === laps + 1);
+  check('a round is a full lap (4 turns at 4 seats)', laps === 12);
   const first5 = seen.slice(0, 5), next5 = seen.slice(5, 10);
   check('first 5 rounds see each season once', new Set(first5).size === 5);
   check('deck reshuffles after 5 rounds (next 5 also each once)', new Set(next5).size === 5);
+}
+{
+  // Regression: the opener sits in the LAST chair. The season must hold for a
+  // full lap of all six, not turn after the opener's single move.
+  const g = setup(6, { seasons: true, acorns: [2, 2, 2, 2, 2, 2], turn: 5 });
+  g.lapAnchor = 5;
+  const first = g.seasonSeq;
+  const turnsBefore = [];
+  for (let i = 0; i < 6; i++) {
+    turnsBefore.push(g.seasonSeq);
+    E.doAction(g, g.players[g.turn].seat, 'forage');
+    g.players.forEach(p => { p.acorns = 2; });
+  }
+  check('opener in the last seat: no new season until all six have played', turnsBefore.every(x => x === first) && g.seasonSeq === first + 1);
+  // A dead opener still anchors the lap.
+  const h = setup(4, { seasons: true, acorns: [2, 2, 2, 2], turn: 1 });
+  h.lapAnchor = 1; h.players[1].alive = false; h.players[1].cards.forEach(c => { c.revealed = true; });
+  h.turn = 2;
+  const seq = h.seasonSeq;
+  E.doAction(h, 2, 'forage'); E.doAction(h, 3, 'forage');
+  check('no season mid-lap', h.seasonSeq === seq);
+  E.doAction(h, 0, 'forage');                               // skips dead seat 1 → new lap
+  check('passing a dead opener still turns the season', h.seasonSeq === seq + 1 && h.turn === 2);
 }
 {
   // Seasons are part of the game: on unless a test opts out.
@@ -514,6 +538,38 @@ section('Rooms (game_rooms): fixed 6-seat Court, Fill with AI, AFK human, real _
   check('nothing moves during the hold', snap() === before);
   rooms._serverTick(hold + 2000);                           // past the hold + max delay
   check('play resumes after the hold', humanTurn || snap() !== before);
+}
+
+{
+  // Abandoned tables: when every human has left, the match ends and each
+  // human who sat at the table takes a loss (no AI winner is credited).
+  const rooms = require('../lib/game_rooms');
+  const statsPath = require.resolve('../lib/game_stats_store');
+  const recorded = [];
+  require.cache[statsPath] = { id: statsPath, filename: statsPath, loaded: true,
+    exports: { record: (uid, game, won, o) => { recorded.push({ uid, game, won }); return Promise.resolve(); } } };
+  const log = console.log; console.log = () => {};
+  const fake = () => ({ write() {}, end() {} });
+  // Two humans: one is cast out and disconnects (counts as leaving), the other forfeits.
+  const room = rooms.createRoom({ gameType: 'briar', hostId: 'ab-1', hostName: 'A' });
+  rooms.join(room, { id: 'ab-2', name: 'B' });
+  const r1 = fake(), r2 = fake();
+  rooms.subscribe(room, 'ab-1', r1); rooms.subscribe(room, 'ab-2', r2);
+  rooms.fillAI(room, 'ab-1');
+  rooms.start(room, 'ab-1');
+  console.log = log;
+  const seat2 = room.seats.find(x => x.id === 'ab-2').seat;
+  const gp2 = room.state.players.find(p => p.seat === seat2);
+  gp2.cards.forEach(c => { c.revealed = true; }); gp2.alive = false;
+  rooms.unsubscribe(room, 'ab-2', r2);
+  rooms.markAbsent(room, 'ab-2');
+  check('a cast-out player who disconnects is treated as leaving (no pause)', !(room.absent && [...room.absent.values()].some(e => !e.converted)) && room.status === 'playing');
+  rooms.forfeit(room, 'ab-1');
+  check('last human leaving ends the match', room.status === 'finished');
+  const losses = recorded.filter(r => r.game === 'briar');
+  check('every human is recorded a loss', losses.length === 2 && losses.every(r => r.won === false)
+    && new Set(losses.map(r => r.uid)).size === 2);
+  delete require.cache[statsPath];
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
