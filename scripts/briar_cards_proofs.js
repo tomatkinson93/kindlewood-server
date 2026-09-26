@@ -460,7 +460,7 @@ section('Rooms (game_rooms): fixed 6-seat Court, Fill with AI, AFK human, real _
   // own due time in [250, 1500] ms; answers are not in seat order.
   const rooms = require('../lib/game_rooms');
   const log = console.log;
-  let windows = 0, inSeatOrder = 0, inRange = true, t = 1e12;
+  let windows = 0, inSeatOrder = 0, inRange = true, t = Date.now();
   for (let r = 0; r < 40 && windows < 100; r++) {
     const host = 'scatter-human' + r;
     console.log = () => {};
@@ -487,6 +487,33 @@ section('Rooms (game_rooms): fixed 6-seat Court, Fill with AI, AFK human, real _
   }
   check(`AI reaction due times fall within 250–1500 ms (${windows} windows)`, windows > 20 && inRange);
   check(`AI answers are scattered, not seat-ordered (${inSeatOrder}/${windows} happened to match seat order)`, inSeatOrder / windows < 0.35);
+}
+{
+  // Season reveal hold: after a new season is drawn the AI waits out the
+  // client reveal (3.3 s) before acting, and a human's decision clock starts
+  // after it.
+  const rooms = require('../lib/game_rooms');
+  const log = console.log; console.log = () => {};
+  const host = 'hold-human';
+  const room = rooms.createRoom({ gameType: 'briar', hostId: host, hostName: 'H' });
+  rooms.fillAI(room, host);
+  rooms.start(room, host);
+  console.log = log;
+  const g = room.state;
+  const t0 = Date.now();
+  rooms._serverTick(t0);                                   // sees the opening season
+  const hold = room.seasonHoldUntil;
+  const aiAt = room.aiDue ? Object.values(room.aiDue.at) : [];
+  const humanTurn = rooms.pendingAiSeats(room).length === 0;
+  check('opening season starts a ~3.3 s hold', hold >= t0 + 3000 && hold <= Date.now() + 3400);
+  check('AI due times (or the human clock) start after the hold',
+    humanTurn ? room.deadlineAt >= hold : (aiAt.length > 0 && aiAt.every(x => x >= hold)));
+  const snap = () => JSON.stringify([g.phase, g.turn, g.pending, g.players.map(p => p.acorns)]);
+  const before = snap();
+  rooms._serverTick(t0 + 2500);                             // still inside the hold
+  check('nothing moves during the hold', snap() === before);
+  rooms._serverTick(hold + 2000);                           // past the hold + max delay
+  check('play resumes after the hold', humanTurn || snap() !== before);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
