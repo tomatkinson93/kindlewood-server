@@ -3,7 +3,7 @@
 // waiting on wall-clock delays.
 //
 // It stands up real briar rooms (1 human seat + AI courtiers) and drives them
-// purely with _serverTick, forcing the pacing gate (nextAiAt) and the human
+// purely with _serverTick, fast-forwarding the clock (every AI due) and the human
 // deadline (deadlineAt) into the past each cycle so a full game plays out
 // synchronously in milliseconds. The human seat is never acted for by a
 // "client", so its windows can ONLY advance via the timeout path — exercising
@@ -13,10 +13,8 @@
 
 const rooms = require('../lib/game_rooms');
 const briar = require('../lib/briar_engine');
-const ROLES = ['elder', 'adder', 'magpie', 'owl', 'hedgewitch'];
-
 function census(g) {
-  const c = {}; for (const r of ROLES) c[r] = 0;
+  const c = {}; for (const r of g.roster) c[r] = 0;
   for (const r of g.deck) c[r]++;
   for (const p of g.players) for (const cd of p.cards) c[cd.role]++;
   if (g.phase === 'consult' && g.pending && g.pending.consultPool) {
@@ -29,11 +27,9 @@ function assert(cond, msg) { if (!cond) { console.error('FAIL:', msg); process.e
 function buildRoom(i) {
   const room = rooms.createRoom({
     gameType: 'briar', hostId: 'human' + i, hostName: 'Human' + i,
-    visibility: 'private', maxPlayers: 4, difficulty: 'smart',
+    visibility: 'private', maxPlayers: 6, difficulty: 'smart',
   });
-  rooms.addAI(room, 'human' + i, 'Thorn');
-  rooms.addAI(room, 'human' + i, 'Marigold');
-  rooms.addAI(room, 'human' + i, 'Old Bracken');
+  rooms.fillAI(room, 'human' + i);   // Briar is a fixed 6-seat Court
   rooms.start(room, 'human' + i);
   return room;
 }
@@ -44,13 +40,12 @@ function playThroughTick(room) {
   while (room.state.phase !== 'gameover' && steps < 4000) {
     const before = room.state.log.length;
     const humanPending = rooms.pendingAiSeat(room) == null && room.state.phase !== 'gameover';
-    room.nextAiAt = 0;                 // let any pending AI move fire now
     room.deadlineAt = 1;               // force any human window to time out now
-    rooms._serverTick();
+    rooms._serverTick(Infinity);       // fast-forward: every pending AI is due now
     if (room.state.phase === 'gameover') break;
-    // Invariant: 15 cards, 3 of each role, always.
+    // Invariant: 3 of each dealt role, always.
     const c = census(room.state);
-    for (const r of ROLES) assert(c[r] === 3, `role ${r}=${c[r]} at step ${steps} (room ${room.code})`);
+    for (const r of room.state.roster) assert(c[r] === 3, `role ${r}=${c[r]} at step ${steps} (room ${room.code})`);
     for (const p of room.state.players) assert(p.acorns >= 0, `negative acorns (room ${room.code})`);
     if (humanPending) timeouts++; else aiMoves++;
     if (humanPending && room.state.log.slice(before).some(l => /declares Forage/i.test(l))) seen.forage = true;

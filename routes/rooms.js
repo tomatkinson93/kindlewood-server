@@ -70,7 +70,6 @@ router.post('/create', (req, res) => {
       visibility: req.body.visibility,
       maxPlayers: req.body.maxPlayers,
       difficulty: req.body.difficulty,
-      seasons: req.body.seasons,
     });
     res.json({ room: rooms.publicView(room) });
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -113,6 +112,14 @@ router.post('/:code/ai/add', (req, res) => {
   const u = user(req); if (!u) return res.status(401).json({ error: 'Not signed in' });
   const room = withRoom(req, res); if (!room) return;
   try { rooms.addAI(room, u.id, req.body && req.body.name); res.json({ room: rooms.publicView(room) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// Host fills every empty seat with random courtiers
+router.post('/:code/ai/fill', (req, res) => {
+  const u = user(req); if (!u) return res.status(401).json({ error: 'Not signed in' });
+  const room = withRoom(req, res); if (!room) return;
+  try { rooms.fillAI(room, u.id); res.json({ room: rooms.publicView(room) }); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 

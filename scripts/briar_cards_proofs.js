@@ -22,7 +22,9 @@ const NAMES = ['Old Bracken', 'Sly Whisper', 'Marigold', 'Thorn', 'Bramblefoot',
 // A seeded game with n seats. `hands` (optional) overrides each seat's two
 // cards; `acorns` overrides purses; the turn is set to seat `turn`. Any cards
 // swapped into hands are swapped out of the deck so the census stays exact.
-function setup(n, { hands, acorns, turn = 0, seasons, seed = 7, ai = false } = {}) {
+// Scripted scenarios default to seasons OFF so a random season can't disturb
+// the rule under test; the season tests switch it on explicitly.
+function setup(n, { hands, acorns, turn = 0, seasons = false, seed = 7, ai = false } = {}) {
   const seats = Array.from({ length: n }, (_, i) => ({ seat: i, id: 'p' + i, name: NAMES[i], isAI: ai }));
   const g = E.create(seats, { rng: E.mulberry32(seed), seed, seasons });
   if (hands) {
@@ -185,23 +187,31 @@ function withSeason(season, opts = {}) {
   return g;
 }
 {
-  const h = withSeason('harvest', { acorns: [2, 2, 2, 2] }); E.doAction(h, 0, 'forage');
-  const q = withSeason('quiet', { acorns: [2, 2, 2, 2] });   E.doAction(q, 0, 'forage');
-  const c = setup(4, { acorns: [2, 2, 2, 2] });              E.doAction(c, 0, 'forage');
-  check('Harvest Moon: forage yields 2', P(h, 0).acorns === 4);
-  check('forage yields 1 outside Harvest', P(q, 0).acorns === 3 && P(c, 0).acorns === 3);
-
-  const f = withSeason('frost', { acorns: [3, 2, 2, 2] });
-  check('Frost: Sting rejected at 3 acorns', !E.doAction(f, 0, 'sting', 1));
-  const f4 = withSeason('frost', { acorns: [4, 2, 2, 2] });
-  check('Frost: Sting costs 4', E.doAction(f4, 0, 'sting', 1) && P(f4, 0).acorns === 0);
-  check('Frost: view shows sting cost 4', E.view(f4, 'p0').costs.sting === 4);
+  // Forage and Gather yields per season (Gather runs unblocked here: seats pass).
+  const yieldOf = (season, action) => {
+    const g = withSeason(season, { acorns: [2, 2, 2, 2] });
+    E.doAction(g, 0, action);
+    if (g.phase === 'block') for (const s of E.pendingSeats(g)) E.block(g, s, null);
+    return P(g, 0).acorns - 2;
+  };
+  check('Harvest Moon: forage 2, gather 3', yieldOf('harvest', 'forage') === 2 && yieldOf('harvest', 'gather') === 3);
+  check('Frost: forage 0, gather 1', yieldOf('frost', 'forage') === 0 && yieldOf('frost', 'gather') === 1);
+  check('Quiet Court: forage 1, gather 2', yieldOf('quiet', 'forage') === 1 && yieldOf('quiet', 'gather') === 2);
+  const c = setup(4, { acorns: [2, 2, 2, 2] }); E.doAction(c, 0, 'forage');
+  check('seasons off: forage 1', P(c, 0).acorns === 3);
+  const fv = withSeason('frost', { acorns: [2, 2, 2, 2] });
+  check('Frost: view reports yields 0 / 1', E.view(fv, 'p0').forageGain === 0 && E.view(fv, 'p0').gatherGain === 1);
+  check('no season changes Sting cost', ['harvest', 'frost', 'festival', 'shadows', 'quiet']
+    .every(k => E.view(withSeason(k), 'p0').costs.sting === 3));
   const f10 = withSeason('frost', { acorns: [10, 2, 2, 2] });
   check('Frost never touches forced coup', !E.doAction(f10, 0, 'forage') && E.doAction(f10, 0, 'banish', 1) && P(f10, 0).acorns === 3);
 
   const fe = withSeason('festival', { acorns: [2, 2, 2, 2] });
   E.doAction(fe, 0, 'gather');
   check('Festival: gather resolves with no block window', fe.phase === 'action' && P(fe, 0).acorns === 4);
+  const hv = withSeason('harvest', { acorns: [2, 2, 2, 2] });
+  E.doAction(hv, 0, 'gather');
+  check('outside Festival (Harvest): gather still blockable', hv.phase === 'block');
   const nf = withSeason('quiet', { acorns: [2, 2, 2, 2] });
   E.doAction(nf, 0, 'gather');
   check('outside Festival: gather opens a block window', nf.phase === 'block');
@@ -233,23 +243,13 @@ function withSeason(season, opts = {}) {
   check('deck reshuffles after 5 rounds (next 5 also each once)', new Set(next5).size === 5);
 }
 {
-  // Classic games: no season field, no extra RNG consumed — identical to a game
-  // created without the option at all.
-  let same = true;
-  for (let seed = 1; seed <= 200 && same; seed++) {
-    const run = opts => {
-      const seats = [0, 1, 2, 3].map(i => ({ seat: i, id: 'ai' + i, name: NAMES[i], isAI: true }));
-      const g = E.create(seats, { rng: E.mulberry32(seed), seed, ...opts });
-      for (let k = 0; k < 3000 && g.phase !== 'gameover'; k++) {
-        const s = E.pendingSeat(g); applyAI(g, s, E.aiResolve(g, s));
-      }
-      return JSON.stringify(g.log) + g.winner;
-    };
-    same = run({}) === run({ seasons: false });
-  }
-  check('seasons:false is byte-identical to a classic game (200 seeds)', same);
-  const v = E.view(setup(4), 'p0');
-  check('classic view carries no season', v.season === undefined && v.seasonsEnabled === false);
+  // Seasons are part of the game: on unless a test opts out.
+  const seats = [0, 1, 2, 3].map(i => ({ seat: i, id: 'p' + i, name: NAMES[i], isAI: false }));
+  const g = E.create(seats, { rng: E.mulberry32(3) });
+  const v = E.view(g, 'p0');
+  check('seasons on by default', g.seasons === true && v.seasonsEnabled === true && E.SEASONS.includes(v.season) && v.seasonSeq === 1);
+  const off = E.view(setup(4), 'p0');
+  check('seasons:false (tests only) carries no season', off.season === undefined && off.seasonsEnabled === false);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -337,7 +337,7 @@ function applyAI(g, s, m) {
   }
   return false;
 }
-function selfplay(games, n, { seasons = false, baseSeed = 1, onDeal, onEnd } = {}) {
+function selfplay(games, n, { seasons, baseSeed = 1, onDeal, onEnd } = {}) {
   const r = { stalls: 0, rejected: 0, tithePhaseOverrun: 0, actions: {}, winsBySeat: {}, done: 0 };
   for (let k = 0; k < games; k++) {
     const seed = baseSeed + k;
@@ -407,25 +407,30 @@ const share = (r, a) => { const t = Object.values(r.actions).reduce((x, y) => x 
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-section('Rooms (game_rooms): 5-player Seasons table, AFK human, real _serverTick');
+section('Rooms (game_rooms): fixed 6-seat Court, Fill with AI, AFK human, real _serverTick');
 {
   const rooms = require('../lib/game_rooms');
   const log = console.log; console.log = () => {};          // silence "[game_rooms] start" lines
-  let stalls = 0, titheTimeouts = 0, seasonsSeen = new Set(), heronSeen = 0, games = 40;
-  let wrongCensus = false, seasonsFlag = true;
+  let stalls = 0, titheTimeouts = 0, seasonsSeen = new Set(), games = 40;
+  let wrongCensus = false, allSix = true, allSeasons = true, fillOk = true, distinctFills = new Set();
   for (let i = 0; i < games; i++) {
     const host = 'cards-human' + i;
     const room = rooms.createRoom({ gameType: 'briar', hostId: host, hostName: 'H' + i,
-      visibility: 'private', maxPlayers: 5, difficulty: 'smart', seasons: true });
-    for (const n of ['Thorn', 'Marigold', 'Old Bracken', 'Sly Whisper']) rooms.addAI(room, host, n);
+      visibility: 'private', maxPlayers: 3, difficulty: 'smart' });   // requested size is ignored
+    if (room.maxPlayers !== 6) allSix = false;
+    let threw = false; try { rooms.start(room, host); } catch (e) { threw = true; }
+    if (!threw) fillOk = false;                                  // can't start short of 6
+    rooms.fillAI(room, host);
+    const ai = room.players.filter(p => p.isAI).map(p => p.name);
+    if (room.players.length !== 6 || new Set(ai).size !== 5) fillOk = false;
+    distinctFills.add(ai.join(','));
     rooms.start(room, host);
-    if (!room.state.seasons || !rooms.publicView(room).seasons) seasonsFlag = false;
-    if (room.state.roster.includes('heron')) heronSeen++;
+    if (!room.state.seasons || !room.state.roster.includes('heron')) allSeasons = false;
     let steps = 0;
     while (room.state.phase !== 'gameover' && steps < 5000) {
       const humanTithe = room.state.phase === 'titheBlock' && rooms.pendingAiSeat(room) == null;
-      room.nextAiAt = 0; room.deadlineAt = 1;
-      rooms._serverTick();
+      room.deadlineAt = 1;
+      rooms._serverTick(Infinity);
       if (humanTithe) titheTimeouts++;
       seasonsSeen.add(room.state.season);
       const total = Object.values(census(room.state)).reduce((a, b) => a + b, 0);
@@ -435,16 +440,53 @@ section('Rooms (game_rooms): 5-player Seasons table, AFK human, real _serverTick
     if (room.state.phase !== 'gameover') stalls++;
   }
   console.log = log;
-  check('seasons flag reaches room + engine', seasonsFlag);
-  check('Heron dealt at every 5-seat room', heronSeen === games);
+  check('Briar rooms are always 6 seats', allSix);
+  check('start refused below 6; Fill with AI seats 5 distinct courtiers', fillOk);
+  check(`Fill with AI picks randomly (${distinctFills.size} distinct line-ups in ${games})`, distinctFills.size > 5);
+  check('every room deals the Heron and runs Seasons', allSeasons);
   check(`${games} rooms reach gameover via the tick (no stalls)`, stalls === 0, `stalls=${stalls}`);
   check(`AFK human's tithe window times out to pay (${titheTimeouts} timeouts)`, titheTimeouts > 0);
   check('18-card census holds throughout', !wrongCensus);
   check('seasons rotate in rooms', seasonsSeen.size >= 4);
-  // createRoom whitelists seasons: only strict true, and only for briar.
-  const r1 = rooms.createRoom({ gameType: 'squirrel', hostId: 'sq-x', hostName: 'x', seasons: true });
-  const r2 = rooms.createRoom({ gameType: 'briar', hostId: 'br-x', hostName: 'x', seasons: 'yes' });
-  check('seasons whitelisted (briar + strict boolean only)', r1.seasons === false && r2.seasons === false);
+  const full = rooms.createRoom({ gameType: 'briar', hostId: 'full-x', hostName: 'x' });
+  rooms.fillAI(full, 'full-x');
+  let threw = false; try { rooms.fillAI(full, 'full-x'); } catch (e) { threw = true; }
+  check('Fill with AI on a full table is refused', threw);
+  let nonHost = false; try { rooms.fillAI(rooms.createRoom({ gameType: 'briar', hostId: 'nh-x', hostName: 'x' }), 'intruder'); } catch (e) { nonHost = true; }
+  check('only the host can fill', nonHost);
+}
+{
+  // Scattered AI reactions: when a reaction window opens, every AI gets its
+  // own due time in [250, 1500] ms; answers are not in seat order.
+  const rooms = require('../lib/game_rooms');
+  const log = console.log;
+  let windows = 0, inSeatOrder = 0, inRange = true, t = 1e12;
+  for (let r = 0; r < 40 && windows < 100; r++) {
+    const host = 'scatter-human' + r;
+    console.log = () => {};
+    const room = rooms.createRoom({ gameType: 'briar', hostId: host, hostName: 'S' });
+    rooms.fillAI(room, host);
+    rooms.start(room, host);
+    console.log = log;
+    for (let k = 0; k < 40000 && room.state.phase !== 'gameover'; k++) {
+      const before = room.aiDue && room.aiDue.sig;
+      room.deadlineAt = 1;
+      rooms._serverTick(t);
+      // A freshly scheduled challenge window: nothing in it can be due yet.
+      if (room.state.phase === 'challengeAction' && room.aiDue && room.aiDue.sig !== before) {
+        const pend = rooms.pendingAiSeats(room), at = room.aiDue.at;
+        if (pend.length >= 3) {
+          if (pend.some(x => at[x] - t < 250 || at[x] - t > 1500)) inRange = false;
+          const order = pend.slice().sort((x, y) => at[x] - at[y]);
+          if (order.join() === pend.join()) inSeatOrder++;
+          windows++;
+        }
+      }
+      t += 300;
+    }
+  }
+  check(`AI reaction due times fall within 250–1500 ms (${windows} windows)`, windows > 20 && inRange);
+  check(`AI answers are scattered, not seat-ordered (${inSeatOrder}/${windows} happened to match seat order)`, inSeatOrder / windows < 0.35);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -13,11 +13,11 @@ function ok(cond, msg) { console.log((cond ? '  ✅ ' : '  ❌ ') + msg); if (!c
 // Build a started briar room with the given human ids (first is host) + AI fill.
 function build(humanIds) {
   const host = humanIds[0];
-  const room = rooms.createRoom({ gameType: 'briar', hostId: host, hostName: host, visibility: 'private', maxPlayers: 4, difficulty: 'smart' });
+  const room = rooms.createRoom({ gameType: 'briar', hostId: host, hostName: host, visibility: 'private', maxPlayers: 6, difficulty: 'smart' });
   const subs = {};
   subs[host] = fakeRes(); rooms.subscribe(room, host, subs[host]);
   for (const h of humanIds.slice(1)) { rooms.join(room, { id: h, name: h }); subs[h] = fakeRes(); rooms.subscribe(room, h, subs[h]); }
-  while (room.players.length < Math.max(3, humanIds.length + 1)) rooms.addAI(room, host);
+  rooms.fillAI(room, host);   // Briar is a fixed 6-seat Court
   rooms.start(room, host);
   return { room, subs };
 }
@@ -33,14 +33,13 @@ console.log('1. disconnect → AI conversion');
   ok(room.absent && room.absent.has('h0'), 'seat flagged absent');
   ok(seatOf(room, 'h0').isAI === false, 'still human before grace');
   room.absent.get('h0').since -= 61000;            // fast-forward past the 60s grace
-  room.nextAiAt = 0;
   rooms._serverTick();
   ok(seatOf(room, 'h0').isAI === true, 'seat converted to AI on grace expiry');
   const gp = room.state.players.find(p => p.seat === seatOf(room, 'h0').seat);
   ok(gp && gp.isAI === true, 'engine player marked AI too');
   // Drive to completion (now all AI).
   let steps = 0;
-  while (room.state.phase !== 'gameover' && steps < 4000) { room.nextAiAt = 0; room.deadlineAt = 1; rooms._serverTick(); steps++; }
+  while (room.state.phase !== 'gameover' && steps < 4000) { room.deadlineAt = 1; rooms._serverTick(Infinity); steps++; }
   ok(room.state.phase === 'gameover', 'converted game reaches gameover');
 }
 
@@ -97,7 +96,7 @@ console.log('5. rematch flow');
   ok(room.players.some(p => p.isAI), 'AI seats retained');
   ok(room.hostId === 'h0', 'host still valid');
   // and a fresh start works
-  while (room.players.length < 3) rooms.addAI(room, 'h0');
+  if (room.players.length < room.maxPlayers) rooms.fillAI(room, 'h0');
   rooms.start(room, 'h0');
   ok(room.status === 'playing' && room.state, 'fresh match starts after rematch');
   // non-host cannot rematch
