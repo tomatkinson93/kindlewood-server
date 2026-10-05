@@ -41,6 +41,8 @@ function apply(g, s, msg) {
     case 'loseInfluence':  E.resolveLoss(g, s, msg.cardIndex | 0); break;
     case 'consult':        E.resolveConsult(g, s, msg.keepIndices || []); break;
     case 'titheRespond':   E.titheRespond(g, s, !!msg.pay); break;
+    case 'titheChallenge': E.titheChallenge(g, s, msg.targetSeat); break;
+    case 'tithePass':      E.tithePass(g, s); break;
   }
 }
 

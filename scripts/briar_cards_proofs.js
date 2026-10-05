@@ -304,10 +304,53 @@ for (const n of [2, 3, 4, 5, 6]) {
   check('actor cannot respond', !E.titheRespond(g, 0, true));
   E.titheRespond(g, 1, true);
   E.titheRespond(g, 2, true);
+  check('window stays open while a refusal is undecided', g.phase === 'titheBlock');
+  check('everyone else — tither, payers, broke seat — may challenge it', JSON.stringify(E.pendingSeats(g)) === '[0,1,2,4]');
+  check('the refuser cannot challenge itself', !E.titheChallenge(g, 3, 3) && !E.tithePass(g, 3));
+  for (const x of [0, 1, 2, 4]) E.tithePass(g, x);
   check('tithe collects 2', P(g, 0).acorns === 4);
   check('payers −1, refuser and broke untouched', P(g, 1).acorns === 2 && P(g, 2).acorns === 2 && P(g, 3).acorns === 3 && P(g, 4).acorns === 0);
   check('summary line logged', g.log.some(l => /collects the tithe: 2 acorns; Thorn refuses/.test(l)));
   check('turn advances after tithe', g.phase === 'action' && g.turn === 1);
+}
+{
+  // Refusals stack; a pass covers only the refusals made so far.
+  const g = setup(5, { hands: [['heron', 'elder'], ['owl', 'elder'], ['heron', 'magpie'], ['owl', 'magpie'], ['adder', 'hedgewitch']],
+    acorns: [2, 3, 3, 3, 3] });
+  E.doAction(g, 0, 'tithe'); passAll(g);
+  E.titheRespond(g, 3, false);                              // Thorn (bluffing) refuses
+  check('titheOpen lists the refusal for each viewer', JSON.stringify(E.view(g, 'p0').pending.titheOpen) === '[3]');
+  E.tithePass(g, 0);
+  check('tither passed: no open refusals left for them', E.view(g, 'p0').pending.titheOpen.length === 0);
+  E.titheRespond(g, 2, false);                              // Marigold (honest) refuses later
+  check('a later refusal reopens the choice for the tither', JSON.stringify(E.view(g, 'p0').pending.titheOpen) === '[2]');
+
+  // Bluffed refusal challenged → refuser loses a card and pays after all.
+  check('challenge a bluffed refusal', E.titheChallenge(g, 1, 3));
+  check('caught refuser must choose a card to lose', g.phase === 'loseInfluence' && g.pending.loserSeat === 3);
+  E.resolveLoss(g, 3, 0);
+  check('back in the tithe window after the loss', g.phase === 'titheBlock');
+  check('a refusal can only be challenged once', !E.titheChallenge(g, 4, 3));
+
+  // Honest refusal challenged → challenger loses a card, refuser redraws, refusal stands.
+  const before = g.players[2].cards.map(c => c.role).join();
+  check('challenge an honest refusal', E.titheChallenge(g, 4, 2));
+  check('challenger loses a card', g.phase === 'loseInfluence' && g.pending.loserSeat === 4);
+  E.resolveLoss(g, 4, 0);
+  check('refuser shuffled the Heron back and redrew', g.log.some(l => /reveals the Heron — the refusal stands/.test(l)));
+  E.titheRespond(g, 1, true); E.titheRespond(g, 4, true);
+  for (const x of E.pendingSeats(g)) E.tithePass(g, x);
+  check('tithe completes: payers + the caught bluffer pay, honest refuser does not',
+    g.phase === 'action' && P(g, 0).acorns === 2 + 3 && P(g, 3).acorns === 2 && P(g, 2).acorns === 3);
+  check('summary names only the refusal that stood', g.log.some(l => /collects the tithe: 3 acorns; Marigold refuses\./.test(l)));
+}
+{
+  // Honest Tithe survives its challenge → the action goes through (coins collected).
+  const g = setup(5, { hands: [['heron', 'elder'], ['owl', 'elder'], ['adder', 'magpie'], ['owl', 'magpie'], ['adder', 'hedgewitch']],
+    acorns: [2, 3, 3, 3, 3] });
+  E.doAction(g, 0, 'tithe'); E.challengeAction(g, 1, true); E.resolveLoss(g, 1, 0);
+  for (const x of E.pendingSeats(g)) E.titheRespond(g, x, true);
+  check('failed challenge: the tithe still pays out (+4)', g.phase === 'action' && P(g, 0).acorns === 6);
 }
 {
   // Bluffing actor caught → loses influence, no tithe.
@@ -347,6 +390,26 @@ for (const n of [2, 3, 4, 5, 6]) {
   check('view JSON round-trips cleanly', !holes);
 }
 
+{
+  // AI claim memory: heads-up, cunning, the AI can afford a Sting. Once you've
+  // claimed the Hedgewitch (to block its Sting), it should mostly stop
+  // stinging into you; twice, almost never. Simple keeps no claim memory.
+  const rate = (claims, difficulty) => {
+    let n = 0, sting = 0;
+    for (let seed = 1; seed <= 1000; seed++) {
+      const seats = [{ seat: 0, id: 'p0', name: 'You', isAI: false }, { seat: 1, id: 'p1', name: 'Thorn', isAI: true }];
+      const g = E.create(seats, { rng: E.mulberry32(seed), seed, difficulty, seasons: false });
+      g.turn = 1; g.round = 4; g.players[1].acorns = 3 + (seed % 4); g.players[0].acorns = 2;
+      if (claims) g.players[0].claimedRoles = { hedgewitch: claims };
+      n++; if (E.aiDecide(g).action === 'sting') sting++;
+    }
+    return sting / n;
+  };
+  const none = rate(0, 'cunning'), once = rate(1, 'cunning'), twice = rate(2, 'cunning');
+  check(`AI remembers a Hedgewitch claim (1v1 cunning: sting ${(none * 100).toFixed(0)}% → ${(once * 100).toFixed(0)}% after one claim → ${(twice * 100).toFixed(0)}% after two)`,
+    none > 0.8 && once < 0.3 && twice < 0.05);
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 section('Self-play (AI)');
 function applyAI(g, s, m) {
@@ -358,6 +421,8 @@ function applyAI(g, s, m) {
     case 'loseInfluence':   return E.resolveLoss(g, s, m.cardIndex | 0);
     case 'consult':         return E.resolveConsult(g, s, m.keepIndices || []);
     case 'titheRespond':    return E.titheRespond(g, s, !!m.pay);
+    case 'titheChallenge':  return E.titheChallenge(g, s, m.targetSeat);
+    case 'tithePass':       return E.tithePass(g, s);
   }
   return false;
 }
@@ -375,7 +440,8 @@ function selfplay(games, n, { seasons, baseSeed = 1, onDeal, onEnd } = {}) {
       if (!m) { r.rejected++; break; }
       if (m.kind === 'action') r.actions[m.action] = (r.actions[m.action] || 0) + 1;
       if (!applyAI(g, s, m)) { r.rejected++; break; }
-      if (g.phase === 'titheBlock') { if (++titheSteps > n) { r.tithePhaseOverrun++; break; } } else titheSteps = 0;
+      // Answers + passes (+ re-passes after later refusals + challenges) stay bounded.
+      if (g.phase === 'titheBlock') { if (++titheSteps > n * (n + 2)) { r.tithePhaseOverrun++; break; } } else titheSteps = 0;
       steps++;
     }
     if (g.phase !== 'gameover') { r.stalls++; continue; }
