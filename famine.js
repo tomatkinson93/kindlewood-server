@@ -23,7 +23,7 @@
 'use strict';
 
 const { query } = require('./db');
-const { SEASONS } = require('./seasons');
+const { seasonAt } = require('./seasons');
 const { FAMINE_NARRATIVES } = require('./lib/injury_table');
 const { writeDeathEvent } = require('./deaths');
 // Outposts (010) — per-outpost food upkeep, season-flat (spec §5).
@@ -72,13 +72,9 @@ const STARVING_STAT_MODIFIERS = { strength: -2, endurance: -2, agility: -1 };
 // ── Season lookup at an arbitrary timestamp ───────────────────────────────
 // getCurrentSeason() reads Date.now(); the per-quantum loop needs the season
 // at each quantum's START so long offline windows cross season boundaries
-// correctly and deterministically.
-const SEASON_DURATION_MS = 6 * 60 * 60 * 1000;
-const YEAR_DURATION_MS   = 24 * 60 * 60 * 1000;
-function seasonAt(ms) {
-  const idx = Math.floor((ms % YEAR_DURATION_MS) / SEASON_DURATION_MS);
-  return SEASONS[idx] || SEASONS[0];
-}
+// correctly and deterministically. seasonAt is imported from seasons.js —
+// the single source of season math (spec 021 §1.1). It handles the 6h→7h
+// cutover, so a quantum loop that spans it stays deterministic.
 
 // ── Seeded narrative pick (the only "random" in this file) ───────────────
 function hash32(a, b) {
