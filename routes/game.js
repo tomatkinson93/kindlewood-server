@@ -12,6 +12,9 @@ const gameEvents = require('../lib/game_events');
 
 const router = express.Router();
 
+// Spec 021 — server time: GET /time, GET /time/me, POST /time/debug.
+router.use(require('./time'));
+
 const SPECIES_RATES = {
   Mice:    { food: 20, timber: 10, stone: 5,  metal: 3, wealth: 8  },
   Badgers: { food: 12, timber: 8,  stone: 10, metal: 6, wealth: 4  },
