@@ -410,6 +410,24 @@ for (const n of [2, 3, 4, 5, 6]) {
     none > 0.8 && once < 0.3 && twice < 0.05);
 }
 
+{
+  // Challenge events for the client's arrow: action claim, block, tithe refusal.
+  const g = setup(5, { hands: [['heron', 'elder'], ['owl', 'elder'], ['adder', 'magpie'], ['owl', 'magpie'], ['adder', 'hedgewitch']],
+    acorns: [2, 3, 3, 3, 3] });
+  E.doAction(g, 0, 'tithe'); E.challengeAction(g, 2, true);
+  const c1 = E.view(g, 'p1').lastChallenge;
+  check('challenge event: claim challenge (held)', c1 && c1.challengerSeat === 2 && c1.targetSeat === 0 && c1.role === 'heron' && c1.held === true);
+  E.resolveLoss(g, 2, 0);
+  E.titheRespond(g, 3, false);
+  E.titheChallenge(g, 0, 3);
+  const c2 = E.view(g, 'p4').lastChallenge;
+  check('challenge event: tithe refusal (bluff), new seq', c2 && c2.seq > c1.seq && c2.challengerSeat === 0 && c2.targetSeat === 3 && c2.held === false);
+  const b = setup(4, { hands: [['adder', 'elder'], ['owl', 'magpie'], ['magpie', 'owl'], ['owl', 'elder']], acorns: [5, 2, 2, 2] });
+  E.doAction(b, 0, 'sting', 1); passAll(b); E.block(b, 1, 'hedgewitch'); E.challengeBlock(b, 0, true);
+  const c3 = E.view(b, 'p2').lastChallenge;
+  check('challenge event: block challenge (bluffed block)', c3 && c3.challengerSeat === 0 && c3.targetSeat === 1 && c3.role === 'hedgewitch' && c3.held === false);
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 section('Self-play (AI)');
 function applyAI(g, s, m) {
@@ -636,6 +654,33 @@ section('Rooms (game_rooms): fixed 6-seat Court, Fill with AI, AFK human, real _
   check('every human is recorded a loss', losses.length === 2 && losses.every(r => r.won === false)
     && new Set(losses.map(r => r.uid)).size === 2);
   delete require.cache[statsPath];
+}
+
+{
+  // Multiplayer path: a human tither sees an AI's refusal in their view and
+  // contests it through the real room action dispatcher.
+  const rooms = require('../lib/game_rooms');
+  const log = console.log; console.log = () => {};
+  const host = 'tithe-human';
+  const room = rooms.createRoom({ gameType: 'briar', hostId: host, hostName: 'T' });
+  rooms.fillAI(room, host);
+  rooms.start(room, host);
+  console.log = log;
+  const g = room.state;
+  const me = room.seats.find(x => x.id === host).seat;
+  const meP = g.players.find(p => p.seat === me);
+  // Rig: my turn, I hold the Heron; an AI rival refuses without it.
+  const hk = g.deck.indexOf('heron'); if (hk >= 0) { g.deck.splice(hk, 1); g.deck.push(meP.cards[0].role); meP.cards[0].role = 'heron'; }
+  g.players.forEach(p => { p.acorns = 3; });
+  g.turn = g.players.indexOf(meP); g.phase = 'action'; g.pending = null;
+  rooms.gameAction(room, host, { kind: 'action', action: 'tithe' });
+  for (const x of E.pendingSeats(g)) E.challengeAction(g, x, false);
+  const ai = g.players.find(p => p.seat !== me && !p.cards.some(c => c.role === 'heron' && !c.revealed));
+  E.titheRespond(g, ai.seat, false);
+  const v = room.engine.view(g, host);
+  check('room: my view lists the AI refusal as challengeable', g.phase === 'titheBlock' && (v.pending.titheOpen || []).includes(ai.seat));
+  rooms.gameAction(room, host, { kind: 'titheChallenge', targetSeat: ai.seat });
+  check('room: titheChallenge dispatches and catches the bluff', g.log.some(l => new RegExp(ai.name + ' was bluffing — and must pay').test(l)));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
