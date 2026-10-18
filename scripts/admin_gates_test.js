@@ -1,6 +1,6 @@
 // Dev Tools admin gates — every Dev Tools route answers 401 without a login
 // and 403 for a logged-in non-admin; an admin gets past the gate. Routes that
-// normal play needs (enemy + card lists, inventory add for fishing) stay open.
+// normal play needs (enemy + card lists) stay open.
 // In-process express with a stubbed db module — never touches Postgres.
 // Run from the server root: node scripts/admin_gates_test.js
 'use strict';
@@ -40,7 +40,7 @@ const GATED = [
   ['POST', '/api/clans/cheat/prestige'], ['POST', '/api/clan-quests/cheat/finish'],
   ['POST', '/api/game/time/debug'],
 ];
-const OPEN = [['GET', '/api/combat/enemies'], ['GET', '/api/card-admin'], ['POST', '/api/inventory/add']];
+const OPEN = [['GET', '/api/combat/enemies'], ['GET', '/api/card-admin']];   // (player item adds are gone: scripts/fishing_test.js)
 
 (async () => {
   const express = require('express');
@@ -82,7 +82,7 @@ const OPEN = [['GET', '/api/combat/enemies'], ['GET', '/api/card-admin'], ['POST
 
   const blocked = [];
   for (const [m, p] of OPEN) { const s = await call(m, p, 2); if (s.status === 401 || s.status === 403) blocked.push(`${m} ${p}=${s.status}`); }
-  check('4. gameplay routes stay open to players (enemy + card lists, inventory add for fishing)', !blocked.length, blocked.join(' · '));
+  check('4. gameplay routes stay open to players (enemy + card lists)', !blocked.length, blocked.join(' · '));
 
   // Test battles (no quest_run_id) trust the client → admins only; quest battles stay open.
   const resolve = async (userId, body) => (await fetch(base + '/api/combat/resolve', { method: 'POST',
