@@ -123,6 +123,20 @@ function getCurrentSeason() {
   return seasonAt(Date.now());
 }
 
+// [fromMs, toMs) cut at season boundaries: [{ season, fromMs, toMs }, …].
+// Lets offline catch-up apply each season to the hours it actually covered.
+function seasonSegments(fromMs, toMs) {
+  const out = [];
+  let t = fromMs;
+  while (t < toMs) {
+    const season = seasonAt(t);
+    const end = Math.min(toMs, t + season.msRemaining);
+    out.push({ season, fromMs: t, toMs: end });
+    t = end;
+  }
+  return out;
+}
+
 function applySeasonModifiers(rates, season) {
   const modified = { ...rates };
   for (const [res, mult] of Object.entries(season.modifiers)) {
@@ -134,7 +148,7 @@ function applySeasonModifiers(rates, season) {
 }
 
 module.exports = {
-  SEASONS, getCurrentSeason, seasonAt, legacyYearAt, applySeasonModifiers,
+  SEASONS, getCurrentSeason, seasonAt, seasonSegments, legacyYearAt, applySeasonModifiers,
   SEASON_DURATION_MS, YEAR_DURATION_MS, LEGACY_SEASON_MS, LEGACY_YEAR_MS,
   SEASON_CUTOVER_MS, YEAR_EPOCH_MS,
 };

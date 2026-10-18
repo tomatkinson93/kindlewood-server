@@ -145,7 +145,7 @@ const def = (id, rule, effects) => ({ id, title: id, enabled: true, archived: fa
         /happeningHappiness/.test(r('happiness.js')) && /hMods\.birth_chance/.test(r('simulation.js')) && /hMods\.bonding/.test(r('simulation.js')) &&
         /hMods\.birth_chance/.test(r('routes/citizens.js')));
   check('10b. applyTick integrates production over [last_tick, now]; topbar + breakdown show current multipliers',
-        /averageProductionFactor\(hDefs, res, lastTick, now\)/.test(r('routes/game.js')) && /applyHappeningRates\(/.test(r('routes/game.js')) && /happeningPseudoSeason\(/.test(r('routes/game.js')));
+        /effectiveProductionHours\(await happenings.loadLive\(\), lastTick, now\)/.test(r('routes/game.js')) && /averageProductionFactor\(defs, res, seg.fromMs, seg.toMs\)/.test(r('lib/away_report.js')) && /applyHappeningRates\(/.test(r('routes/game.js')) && /happeningPseudoSeason\(/.test(r('routes/game.js')));
   check('10c. economy stays on the real clock (no gameplayNow in famine / simulation)',
         !/gameplayNow/.test(r('famine.js')) && !/gameplayNow/.test(r('simulation.js')));
 }
