@@ -1,6 +1,7 @@
 const express = require('express');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/admin');
 
 const router = express.Router();
 
@@ -202,7 +203,7 @@ async function completeExpeditions(settlementId, userId) {
 }
 
 // Cheat — reveal all fog
-router.post('/reveal-all', requireAuth, async (req, res) => {
+router.post('/reveal-all', requireAuth, requireAdmin, async (req, res) => {
   try {
     const tilesRes = await query('SELECT q, r FROM tiles');
     for (const t of tilesRes.rows) {
@@ -218,7 +219,7 @@ router.post('/reveal-all', requireAuth, async (req, res) => {
 });
 
 // Cheat — reset fog
-router.post('/reset-fog', requireAuth, async (req, res) => {
+router.post('/reset-fog', requireAuth, requireAdmin, async (req, res) => {
   try {
     await query('DELETE FROM fog_of_war WHERE user_id=$1', [req.user.userId]);
     // Re-reveal just around settlement

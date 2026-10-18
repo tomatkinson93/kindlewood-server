@@ -13,6 +13,7 @@
 const express = require('express');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
+const { requireAdmin, isAdminUser } = require('../middleware/admin');
 const combatResolver = require('../lib/combat_resolver');
 const eventBus = require('../lib/event_bus');
 const gameEvents = require('../lib/game_events');
@@ -127,7 +128,7 @@ function _validateEnemy(body, isNew) {
 }
 
 // ── POST /api/combat/enemies — create new ───────────────────────────────
-router.post('/enemies', requireAuth, async (req, res) => {
+router.post('/enemies', requireAuth, requireAdmin, async (req, res) => {
   try {
     const e = _validateEnemy(req.body, /*isNew=*/true);
     const dupe = await query('SELECT id FROM enemy_definitions WHERE id=$1', [e.id]);
@@ -149,7 +150,7 @@ router.post('/enemies', requireAuth, async (req, res) => {
 });
 
 // ── PATCH /api/combat/enemies/:id — update ──────────────────────────────
-router.patch('/enemies/:id', requireAuth, async (req, res) => {
+router.patch('/enemies/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = req.params.id;
     const existing = await query('SELECT id FROM enemy_definitions WHERE id=$1', [id]);
@@ -180,7 +181,7 @@ router.patch('/enemies/:id', requireAuth, async (req, res) => {
 // future encounter tables, so flipping `archived` keeps history intact while
 // hiding it from the active roster. A second DELETE call hard-deletes if the
 // enemy was already archived (escape hatch for cleanup).
-router.delete('/enemies/:id', requireAuth, async (req, res) => {
+router.delete('/enemies/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = req.params.id;
     const r = await query('SELECT archived FROM enemy_definitions WHERE id=$1', [id]);
@@ -200,7 +201,7 @@ router.delete('/enemies/:id', requireAuth, async (req, res) => {
 // Only inserts rows whose id isn't already present, so an admin who has
 // customised an existing enemy won't have their changes overwritten. Use
 // `?force=1` to re-overwrite all defaults (resets to the bundled stats).
-router.post('/enemies/seed', requireAuth, async (req, res) => {
+router.post('/enemies/seed', requireAuth, requireAdmin, async (req, res) => {
   try {
     const force = req.query.force === '1';
     let inserted = 0, updated = 0;
@@ -533,6 +534,9 @@ router.post('/resolve', requireAuth, async (req, res) => {
     // against — but rewards stay capped by MAX_BATTLE_WEALTH so even a bad
     // actor can't print money.
     const { outcome: clientOutcome, wealth_reward, citizen_ids, quest_run_id } = req.body || {};
+    // Test battles (no quest) trust the client's outcome, so they're a Dev
+    // Tools feature: admins only.
+    if (!quest_run_id && !isAdminUser(req.user)) return res.status(403).json({ error: 'Admins only.' });
 
     const settRes = await query('SELECT id, wealth FROM settlements WHERE user_id=$1', [req.user.userId]);
     const sett = settRes.rows[0];
@@ -898,7 +902,7 @@ router.get('/citizen/:id/events', requireAuth, async (req, res) => {
 
 // POST /api/combat/admin/inflict — DEV ONLY. Manually inflict an injury.
 // Body: { citizen_id, severity?, body_part? } — any omitted field is rolled.
-router.post('/admin/inflict', requireAuth, async (req, res) => {
+router.post('/admin/inflict', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { citizen_id, severity, body_part } = req.body || {};
     const cid = parseInt(citizen_id);
@@ -959,7 +963,7 @@ router.post('/admin/inflict', requireAuth, async (req, res) => {
 });
 
 // POST /api/combat/admin/heal — DEV ONLY. Clear all active conditions on a citizen.
-router.post('/admin/heal', requireAuth, async (req, res) => {
+router.post('/admin/heal', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { citizen_id } = req.body || {};
     const cid = parseInt(citizen_id);

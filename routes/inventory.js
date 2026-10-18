@@ -4,6 +4,8 @@
 const express     = require('express');
 const { query }   = require('../db');
 const requireAuth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/admin');
+const { grantItem } = require('../lib/inventory');
 const router      = express.Router();
 
 // ── GET /api/inventory — fetch all items for settlement ──
@@ -25,49 +27,27 @@ router.get('/', requireAuth, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── POST /api/inventory/add — add item(s) to inventory ──
-router.post('/add', requireAuth, async (req, res) => {
+// ── POST /api/inventory/cheat/add — Dev Tools: add an item (admins only) ──
+// There is deliberately no player-facing add: items enter inventories only
+// through server-side grants (lib/inventory.js) — fishing lands via
+// /api/fishing/land, quests and battles grant on the server.
+router.post('/cheat/add', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { item_key, name, description, icon, category, rarity, quantity, equip_slot, stat_bonuses, source, metadata } = req.body;
-    if (!item_key || !name) return res.status(400).json({ error: 'item_key and name required.' });
-
+    const b = req.body || {};
+    if (!b.item_key || !b.name) return res.status(400).json({ error: 'item_key and name required.' });
     const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
     const sett = settRes.rows[0];
     if (!sett) return res.status(404).json({ error: 'No settlement.' });
-
-    // Stack if item is stackable (non-equipment) and already exists
-    if (!equip_slot) {
-      const existing = await query(
-        'SELECT id, quantity FROM inventory_items WHERE settlement_id=$1 AND item_key=$2 AND equipped_to IS NULL',
-        [sett.id, item_key]
-      );
-      if (existing.rows.length) {
-        const newQty = existing.rows[0].quantity + (parseInt(quantity) || 1);
-        await query('UPDATE inventory_items SET quantity=$1 WHERE id=$2', [newQty, existing.rows[0].id]);
-        return res.json({ ok: true, stacked: true, quantity: newQty });
-      }
-    }
-
-    const result = await query(
-      `INSERT INTO inventory_items
-         (settlement_id, item_key, name, description, icon, category, rarity, quantity, equip_slot, stat_bonuses, source, metadata)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-      [
-        sett.id, item_key, name,
-        description || '', icon || '📦',
-        category || 'misc', rarity || 'common',
-        parseInt(quantity) || 1,
-        equip_slot || null,
-        JSON.stringify(stat_bonuses || {}),
-        source || null,
-        JSON.stringify(metadata || {})
-      ]
-    );
-    res.json({ ok: true, item: result.rows[0] });
+    const r = await grantItem(query, sett.id, {
+      item_key: b.item_key, name: b.name, description: b.description, icon: b.icon, category: b.category,
+      rarity: b.rarity, quantity: b.quantity, equip_slot: b.equip_slot, stat_bonuses: b.stat_bonuses,
+      source: b.source || 'dev_tools', metadata: b.metadata,
+    });
+    res.json({ ok: true, ...r });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── PATCH /api/inventory/:id — update item (equip, unequip, qty) ──
+// ── PATCH /api/inventory/:id — equip / unequip ──
 router.patch('/:id', requireAuth, async (req, res) => {
   try {
     const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
@@ -77,22 +57,16 @@ router.patch('/:id', requireAuth, async (req, res) => {
     const item = await query('SELECT * FROM inventory_items WHERE id=$1 AND settlement_id=$2', [req.params.id, sett.id]);
     if (!item.rows[0]) return res.status(404).json({ error: 'Item not found.' });
 
-    const { equipped_to, quantity } = req.body;
-    const updates = [], vals = [];
-    let i = 1;
-
-    if (equipped_to !== undefined) {
-      updates.push(`equipped_to=$${i++}`);
-      vals.push(equipped_to || null);
+    // Equip / unequip only. Quantity is never client-settable (it would let a
+    // player inflate a stack and sell it).
+    const { equipped_to } = req.body || {};
+    if (equipped_to === undefined) return res.status(400).json({ error: 'Nothing to update.' });
+    if (equipped_to) {
+      const c = await query('SELECT id FROM citizens WHERE id=$1 AND settlement_id=$2', [equipped_to, sett.id]);
+      if (!c.rows.length) return res.status(400).json({ error: 'That citizen is not in your settlement.' });
     }
-    if (quantity !== undefined) {
-      updates.push(`quantity=$${i++}`);
-      vals.push(Math.max(0, parseInt(quantity)));
-    }
-    if (!updates.length) return res.status(400).json({ error: 'Nothing to update.' });
-
-    vals.push(req.params.id, sett.id);
-    await query(`UPDATE inventory_items SET ${updates.join(',')} WHERE id=$${i++} AND settlement_id=$${i}`, vals);
+    await query('UPDATE inventory_items SET equipped_to=$1 WHERE id=$2 AND settlement_id=$3',
+      [equipped_to || null, req.params.id, sett.id]);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

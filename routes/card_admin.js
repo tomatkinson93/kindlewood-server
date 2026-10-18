@@ -13,6 +13,7 @@
 const express = require('express');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/admin');
 const FORMULA = require('../lib/card_formula');
 
 const router = express.Router();
@@ -40,7 +41,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // ── POST /api/card-admin — create a card ──
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const d = req.body || {};
     if (!d.card_key || !d.name) return res.status(400).json({ error: 'card_key and name required.' });
@@ -68,7 +69,7 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // ── PATCH /api/card-admin/:key — update a card ──
-router.patch('/:key', requireAuth, async (req, res) => {
+router.patch('/:key', requireAuth, requireAdmin, async (req, res) => {
   try {
     const d = req.body || {};
     if (d.formula !== undefined) {
@@ -101,7 +102,7 @@ router.patch('/:key', requireAuth, async (req, res) => {
 });
 
 // ── DELETE /api/card-admin/:key ──
-router.delete('/:key', requireAuth, async (req, res) => {
+router.delete('/:key', requireAuth, requireAdmin, async (req, res) => {
   try {
     await query('DELETE FROM card_templates WHERE card_key=$1', [req.params.key]);
     res.json({ ok: true });
@@ -109,7 +110,7 @@ router.delete('/:key', requireAuth, async (req, res) => {
 });
 
 // ── POST /api/card-admin/validate — check a formula without saving ──
-router.post('/validate', requireAuth, async (req, res) => {
+router.post('/validate', requireAuth, requireAdmin, async (req, res) => {
   const fv = validateFormula((req.body || {}).formula);
   res.json({ ok: fv.ok, errors: fv.errors });
 });

@@ -6,13 +6,14 @@
 const express    = require('express');
 const { query }  = require('../db');
 const requireAuth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/admin');
 const { seedQuestDefinitions } = require('../quest_seed');
 const clanQuests = require('../lib/clan_quests');
 
 const router = express.Router();
 
 // ── GET /api/quest-admin — list all quest definitions ──
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const r = await query('SELECT * FROM quest_definitions ORDER BY archived ASC, quest_type ASC, sort_order ASC, created_at ASC');
     res.json({ ok: true, quests: r.rows });
@@ -20,7 +21,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // ── POST /api/quest-admin — create a quest ──
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const {
       id, title, description, flavour, icon, category, quest_type,
@@ -71,7 +72,7 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // ── PATCH /api/quest-admin/:id — update a quest ──
-router.patch('/:id', requireAuth, async (req, res) => {
+router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const fields = [
       'title','description','flavour','icon','category','quest_type','skill_key',
@@ -103,7 +104,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
 });
 
 // ── DELETE /api/quest-admin/:id — permanently delete ──
-router.delete('/:id', requireAuth, async (req, res) => {
+router.delete('/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     await query('DELETE FROM quest_definitions WHERE id=$1', [req.params.id]);
     clanQuests.invalidateDefs();
@@ -112,7 +113,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
 });
 
 // ── POST /api/quest-admin/seed — seed hardcoded quests into DB ──
-router.post('/seed', requireAuth, async (req, res) => {
+router.post('/seed', requireAuth, requireAdmin, async (req, res) => {
   try {
     const count = await seedQuestDefinitions() + await clanQuests.seedDefinitions();
     res.json({ ok: true, seeded: count });
