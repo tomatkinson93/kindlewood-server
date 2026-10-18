@@ -26,6 +26,7 @@
 const express = require('express');
 const { query, withTransaction } = require('../db');
 const requireAuth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/admin');
 const { requireClanMember, checkClanPermission } = require('../lib/clan_permissions');
 const CQ = require('../lib/clan_quests');
 
@@ -343,7 +344,7 @@ router.post('/runs/:id/cancel', requireAuth, requireClanMember, async (req, res)
 // ── POST /api/clan-quests/cheat/finish (Dev Tools) ───────────────────────
 //  Same gate as the other Dev Tools cheats: brings every active run of your
 //  clan that you're part of to its end now and resolves it.
-router.post('/cheat/finish', requireAuth, requireClanMember, async (req, res) => {
+router.post('/cheat/finish', requireAuth, requireAdmin, requireClanMember, async (req, res) => {
   try {
     const r = await query(
       `UPDATE clan_quest_runs r SET completes_at = NOW(),

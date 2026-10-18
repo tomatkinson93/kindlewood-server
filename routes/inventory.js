@@ -4,6 +4,7 @@
 const express     = require('express');
 const { query }   = require('../db');
 const requireAuth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/admin');
 const router      = express.Router();
 
 // ── GET /api/inventory — fetch all items for settlement ──
@@ -26,7 +27,11 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // ── POST /api/inventory/add — add item(s) to inventory ──
-router.post('/add', requireAuth, async (req, res) => {
+// Still open to every player: fishing awards its catches through it until the
+// fishing server-auth work lands. Dev Tools uses /cheat/add (admins only).
+router.post('/add', requireAuth, addItem);
+router.post('/cheat/add', requireAuth, requireAdmin, addItem);
+async function addItem(req, res) {
   try {
     const { item_key, name, description, icon, category, rarity, quantity, equip_slot, stat_bonuses, source, metadata } = req.body;
     if (!item_key || !name) return res.status(400).json({ error: 'item_key and name required.' });
@@ -65,7 +70,7 @@ router.post('/add', requireAuth, async (req, res) => {
     );
     res.json({ ok: true, item: result.rows[0] });
   } catch(e) { res.status(500).json({ error: e.message }); }
-});
+}
 
 // ── PATCH /api/inventory/:id — update item (equip, unequip, qty) ──
 router.patch('/:id', requireAuth, async (req, res) => {

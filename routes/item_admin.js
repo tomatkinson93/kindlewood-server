@@ -1,10 +1,11 @@
 const express    = require('express');
 const { query }  = require('../db');
 const requireAuth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/admin');
 const router = express.Router();
 
 // ── GET /api/item-admin — list all item templates ──
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const r = await query('SELECT * FROM item_templates ORDER BY category, rarity_order, name');
     res.json({ ok: true, items: r.rows });
@@ -12,7 +13,7 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // ── POST /api/item-admin — create item template ──
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const d = req.body;
     if (!d.item_key || !d.name) return res.status(400).json({ error: 'item_key and name required.' });
@@ -39,7 +40,7 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // ── PATCH /api/item-admin/:key — update item template ──
-router.patch('/:key', requireAuth, async (req, res) => {
+router.patch('/:key', requireAuth, requireAdmin, async (req, res) => {
   try {
     const d = req.body;
     const jsonFields = ['stat_bonuses','metadata','fish_seasons','item_effects'];
@@ -62,7 +63,7 @@ router.patch('/:key', requireAuth, async (req, res) => {
 });
 
 // ── DELETE /api/item-admin/:key ──
-router.delete('/:key', requireAuth, async (req, res) => {
+router.delete('/:key', requireAuth, requireAdmin, async (req, res) => {
   try {
     await query('DELETE FROM item_templates WHERE item_key=$1', [req.params.key]);
     res.json({ ok: true });
@@ -70,7 +71,7 @@ router.delete('/:key', requireAuth, async (req, res) => {
 });
 
 // ── POST /api/item-admin/:key/spawn — add item to player inventory ──
-router.post('/:key/spawn', requireAuth, async (req, res) => {
+router.post('/:key/spawn', requireAuth, requireAdmin, async (req, res) => {
   try {
     const qty = parseInt(req.body.quantity) || 1;
     const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);

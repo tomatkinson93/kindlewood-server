@@ -21,6 +21,7 @@
 const express = require('express');
 const { query, withTransaction, CURRENT_WORLD_VERSION } = require('../db');
 const requireAuth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/admin');
 const eventBus = require('../lib/event_bus');
 const palette = require('../lib/clan_palette');
 const mapgen = require('../mapgen');
@@ -872,7 +873,7 @@ router.post('/territory/claim', requireAuth, requireClanPermission('claim_territ
 //  in player, own clan only. Adding moves spendable + lifetime and can level
 //  the clan up, skipping the daily cap. Removing only lowers the spendable
 //  balance (floored at 0) — lifetime and level never go down.
-router.post('/cheat/prestige', requireAuth, requireClanMember, async (req, res) => {
+router.post('/cheat/prestige', requireAuth, requireAdmin, requireClanMember, async (req, res) => {
   const amount = parseInt((req.body || {}).amount, 10);
   if (!Number.isFinite(amount) || amount === 0 || Math.abs(amount) > 1000000) {
     return res.status(400).json({ error: 'Amount must be a non-zero number.' });

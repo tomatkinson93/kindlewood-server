@@ -265,7 +265,7 @@ router.get('/resource-breakdown', requireAuth, async (req, res) => {
 });
 
 // Cheat: add one citizen
-router.post('/cheat/citizen', requireAuth, async (req, res) => {
+router.post('/cheat/citizen', requireAuth, requireAdmin, async (req, res) => {
   try {
     const userResult = await query('SELECT * FROM users WHERE id=$1', [req.user.userId]);
     const user = userResult.rows[0];
@@ -316,7 +316,7 @@ router.post('/award-gold', requireAuth, async (req, res) => {
 });
 
 // ── Cheat: simulate event ─────────────────────────────────────────────────────
-router.post('/cheat/simulate-event', requireAuth, async (req, res) => {
+router.post('/cheat/simulate-event', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { event_type } = req.body;
     const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
@@ -396,7 +396,7 @@ router.post('/cheat/simulate-event', requireAuth, async (req, res) => {
 });
 
 // ── Cheat: set relationship score between two citizens ────────────────────────
-router.post('/cheat/relationship', requireAuth, async (req, res) => {
+router.post('/cheat/relationship', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { citizen_a_id, citizen_b_id, score } = req.body;
     if (!citizen_a_id || !citizen_b_id || score === undefined)
@@ -434,7 +434,7 @@ router.post('/cheat/relationship', requireAuth, async (req, res) => {
 
 
 // ── Cheat: set or remove partnership between two specific citizens ────────────
-router.post('/cheat/partnership', requireAuth, async (req, res) => {
+router.post('/cheat/partnership', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { citizen_a_id, citizen_b_id, action } = req.body; // action: 'set' | 'remove'
     const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
@@ -484,7 +484,7 @@ router.post('/cheat/partnership', requireAuth, async (req, res) => {
 });
 
 // ── Cheat: trigger a real birth between two specific citizens ─────────────────
-router.post('/cheat/trigger-birth', requireAuth, async (req, res) => {
+router.post('/cheat/trigger-birth', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { citizen_a_id, citizen_b_id } = req.body;
     const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
@@ -524,7 +524,7 @@ router.post('/cheat/trigger-birth', requireAuth, async (req, res) => {
 });
 
 // ── Cheat: edit any citizen field ────────────────────────────────────────────
-router.patch('/cheat/citizen/:id', requireAuth, async (req, res) => {
+router.patch('/cheat/citizen/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { name, gender, role, life_stage, stats, skills, life, generation } = req.body;
     const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
@@ -567,7 +567,7 @@ router.patch('/cheat/citizen/:id', requireAuth, async (req, res) => {
 
 
 // ── POST /api/game/seed-npcs — seed NPC settlements ──
-router.post('/seed-npcs', async (req, res) => {
+router.post('/seed-npcs', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { seedNpcSettlements } = require('../npc_seed');
     const n = await seedNpcSettlements();
@@ -578,7 +578,7 @@ router.post('/seed-npcs', async (req, res) => {
 
 
 // ── POST /api/game/migrate — run pending DB migrations ──
-router.post('/migrate', async (req, res) => {
+router.post('/migrate', requireAuth, requireAdmin, async (req, res) => {
   const { query } = require('../db');
   const results = [];
   const run = async (sql, label) => {
@@ -965,7 +965,7 @@ router.post('/world/restore', requireAuth, requireAdmin, async (req, res) => {
 
 
 // ── GET /api/game/npc-list — list all NPC settlements ──
-router.get('/npc-list', requireAuth, async (req, res) => {
+router.get('/npc-list', requireAuth, requireAdmin, async (req, res) => {
   try {
     const r = await require('../db').query("SELECT id, name, disposition, faction FROM npc_settlements WHERE disposition != 'hostile' ORDER BY name");
     res.json({ ok: true, npcs: r.rows });
@@ -973,7 +973,7 @@ router.get('/npc-list', requireAuth, async (req, res) => {
 });
 
 // ── POST /api/game/debug-diplomacy — set trust for a relation ──
-router.post('/debug-diplomacy', requireAuth, async (req, res) => {
+router.post('/debug-diplomacy', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { npc_id, trust } = req.body;
     const db = require('../db');
@@ -996,7 +996,7 @@ router.post('/debug-diplomacy', requireAuth, async (req, res) => {
 });
 
 // ── POST /api/game/debug-diplomacy-reset — reset all relations ──
-router.post('/debug-diplomacy-reset', requireAuth, async (req, res) => {
+router.post('/debug-diplomacy-reset', requireAuth, requireAdmin, async (req, res) => {
   try {
     const db = require('../db');
     const settRes = await db.query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
@@ -1009,14 +1009,14 @@ router.post('/debug-diplomacy-reset', requireAuth, async (req, res) => {
 
 
 // ── /api/game/items — inline item admin (fallback if item_admin route missing) ──
-router.get('/items', requireAuth, async (req, res) => {
+router.get('/items', requireAuth, requireAdmin, async (req, res) => {
   try {
     const r = await require('../db').query('SELECT * FROM item_templates ORDER BY category, rarity_order, name');
     res.json({ ok: true, items: r.rows });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/items', requireAuth, async (req, res) => {
+router.post('/items', requireAuth, requireAdmin, async (req, res) => {
   try {
     const d = req.body;
     if (!d.item_key || !d.name) return res.status(400).json({ error: 'item_key and name required.' });
@@ -1038,14 +1038,14 @@ router.post('/items', requireAuth, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-router.delete('/items/:key', requireAuth, async (req, res) => {
+router.delete('/items/:key', requireAuth, requireAdmin, async (req, res) => {
   try {
     await require('../db').query('DELETE FROM item_templates WHERE item_key=$1', [req.params.key]);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/items/:key/spawn', requireAuth, async (req, res) => {
+router.post('/items/:key/spawn', requireAuth, requireAdmin, async (req, res) => {
   try {
     const db = require('../db');
     const settRes = await db.query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
@@ -1080,7 +1080,7 @@ router.post('/reset-placement', requireAuth, async (req, res) => {
 });
 
 // ── Cheat menu ──
-router.post('/cheat/resources', requireAuth, async (req, res) => {
+router.post('/cheat/resources', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { food, timber, stone, metal, wealth } = req.body;
     const settlementRes = await query(
