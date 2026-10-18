@@ -13,10 +13,17 @@ This file and the spec are identical in both repos (`kindlewood-server/docs/` an
 | 0 Ground & report | ✅ done | findings in §4 below |
 | 1 Seasons 6h → 7h | ✅ merged to `main` (server PR #64, frontend PR #19) + deployed | |
 | 2 Clock core | ✅ merged to `main` (server PR #65, frontend PR #20) + deployed + tested live | |
-| 3 Map lighting, lit windows, Time dev tab, setting | ⏭ **next** | |
-| 4 HUD dial + ambient audio | pending | |
-| 5 Nocturnal/lunar creatures | pending | |
-| 6 Happenings | pending | |
+| 3 Map lighting, lit windows, Time dev tab, setting | ✅ merged (frontend PR #22) | |
+| 4 HUD dial + ambient audio | ✅ merged (frontend PR #23); ambient beds fail silently until audio files exist | |
+| 5 Nocturnal/lunar creatures | ✅ merged (server PR #67, frontend PR #25) | |
+| 6 Happenings | 🔍 built on `claude/practical-euler-4x48ig`, awaiting review | |
+
+**Also done alongside (not in the original spec):**
+- Settings modal (profile menu → ⚙️) has Audio / Graphics tabs; every map setting moved there from the season panel (`js/settings-panel.js`).
+- Season, Time and Settings panels use the modern modal look (ink card, ornate frame).
+- Dev Tools are admin-only: `requireAdmin` on every Dev Tools route (`scripts/admin_gates_test.js`), the ⚗ button hidden for non-admins.
+- Fishing is server-authoritative (`/api/fishing/cast` + `/land`, `lib/fishing.js`); there is no player-facing "add item" route — items only enter inventories via `lib/inventory.grantItem`.
+- Admin "?" tooltips float on `<body>` (`js/kw-tooltip.js`) instead of being clipped by the card.
 
 **Live check, 2026-10-17:**
 - `/api/game/time` and `/time/me` respond.
