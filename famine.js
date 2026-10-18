@@ -24,6 +24,16 @@
 
 const { query } = require('./db');
 const { seasonAt } = require('./seasons');
+const HFX = require('./lib/happening_effects');
+
+// The season with any Happening food_upkeep modifier folded into its
+// foodConsumption (×(1 + value)), so upkeepPerHour needs no new argument.
+// happeningDefs [] → the season unchanged (pure: the defs are passed in).
+function seasonWithUpkeep(season, happeningDefs, ms) {
+  const mods = happeningDefs && happeningDefs.length ? HFX.modifiersAt(happeningDefs, ms) : null;
+  if (!mods || !mods.food_upkeep) return season;
+  return { ...season, foodConsumption: (season.foodConsumption || 1) * (1 + mods.food_upkeep) };
+}
 const { FAMINE_NARRATIVES } = require('./lib/injury_table');
 const { writeDeathEvent } = require('./deaths');
 // Outposts (010) — per-outpost food upkeep, season-flat (spec §5).
@@ -143,7 +153,7 @@ function simulateConsumption(state, nQuanta, startMs) {
   for (let q = 0; q < nQuanta; q++) {
     const quantumStartMs = startMs + q * QUANTUM_MS;
     const quantumIndex = Math.floor(quantumStartMs / QUANTUM_MS); // global index — the seed
-    const season = seasonAt(quantumStartMs);
+    const season = seasonWithUpkeep(seasonAt(quantumStartMs), state.happenings, quantumStartMs);
 
     // Feeding order (spec Q3, DECIDED): children first, then most desperate,
     // id ascending as total-order tie-break. Re-sorted every quantum as
@@ -296,6 +306,7 @@ async function applyConsumption(settlementId) {
   const state = {
     foodF: (Number(s.food) || 0) + (Number(s.consumption_carry) || 0),
     outpostCount,
+    happenings: await require('./lib/happenings').loadLive(),   // food_upkeep per quantum
     citizens: cRes.rows.map(c => ({
       id: c.id,
       name: c.name,
@@ -395,7 +406,7 @@ async function getFamineSummary(settlementId, foodProductionPerHour = 0) {
        FROM citizens WHERE settlement_id=$1 AND life_stage != 'deceased'`,
     [settlementId]
   );
-  const season = seasonAt(Date.now());
+  const season = seasonWithUpkeep(seasonAt(Date.now()), await require('./lib/happenings').loadLive(), Date.now());
   let upkeep = 0, unfed = 0, starving = 0;
   for (const c of cRes.rows) {
     upkeep += upkeepPerHour(c, season);
@@ -441,7 +452,7 @@ async function buildUpkeepBreakdownSource(settlementId) {
        FROM citizens WHERE settlement_id=$1 AND life_stage != 'deceased'`,
     [settlementId]
   );
-  const season = seasonAt(Date.now());
+  const season = seasonWithUpkeep(seasonAt(Date.now()), await require('./lib/happenings').loadLive(), Date.now());
   let total = 0;
   const citizens = cRes.rows.map(c => {
     const u = upkeepPerHour(c, season);
@@ -449,7 +460,7 @@ async function buildUpkeepBreakdownSource(settlementId) {
     return { id: c.id, name: c.name, upkeep: Math.round(u * 100) / 100 };
   });
   const seasonNote = season.foodConsumption && season.foodConsumption !== 1.0
-    ? `, ${season.name} ×${season.foodConsumption.toFixed(2)}`
+    ? `, ${season.name}${season.foodConsumption !== seasonAt(Date.now()).foodConsumption ? ' + Happenings' : ''} ×${season.foodConsumption.toFixed(2)}`
     : '';
   return {
     kind: 'citizen_upkeep',
@@ -492,6 +503,7 @@ module.exports = {
   simulateConsumption,
   upkeepPerHour,
   seasonAt,
+  seasonWithUpkeep,
   hash32,
   pickSeeded,
   // tunables (exported for tests)

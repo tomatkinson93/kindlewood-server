@@ -23,7 +23,9 @@ const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
 const F = require('../lib/fishing');
 const { grantItem } = require('../lib/inventory');
-const { wallNow } = require('../lib/server_clock');
+const { wallNow, gameplayNow } = require('../lib/server_clock');
+const happenings = require('../lib/happenings');
+const HFX = require('../lib/happening_effects');
 const { seasonAt } = require('../seasons');
 
 const router = express.Router();
@@ -47,7 +49,7 @@ router.get('/pool', requireAuth, (req, res) => {
   });
 });
 
-router.post('/cast', requireAuth, (req, res) => {
+router.post('/cast', requireAuth, async (req, res) => {
   const now = wallNow();
   const id = uid(req);
   let stamps = _stamps.get(id);
@@ -56,7 +58,9 @@ router.post('/cast', requireAuth, (req, res) => {
   if (!lim.ok) return res.status(429).json({ error: 'The fish need a moment — try again shortly.', retryMs: lim.retryMs });
 
   const season = seasonAt(now);
-  const c = F.rollCatch(_rng, now, season.id, !!(req.body && req.body.ripple));
+  // Happening rare_fish / junk_catch at this player's gameplay clock.
+  const mods = HFX.modifiersAt(await happenings.loadLive(), gameplayNow(req.user));
+  const c = F.rollCatch(_rng, now, season.id, !!(req.body && req.body.ripple), mods);
   const p = { catchId: crypto.randomUUID(), kind: c.kind, fish: c.fish, castAt: now, biteAt: now + c.biteDelayMs };
   _pending.set(id, p);                     // a new cast replaces any catch still on the line
   res.json({ ok: true, catchId: p.catchId, biteDelayMs: c.biteDelayMs, catch: F.publicCatch(c) });

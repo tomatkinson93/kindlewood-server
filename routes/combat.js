@@ -345,6 +345,7 @@ router.post('/engage/:questRunId', requireAuth, async (req, res) => {
         seed: parseInt(run.combat_seed) || 1,
         actions,
         settlementId: sett.id,
+        mods: run.combat_mods,   // Happening modifiers frozen at trigger
       });
     } catch (e) {
       console.error('engage replay failed', e);
@@ -420,6 +421,7 @@ router.post('/action/:questRunId', requireAuth, async (req, res) => {
         citizenIds: partyIds, enemyKeys: encounter,
         seed: parseInt(run.combat_seed) || 1, actions,
         settlementId: sett.id,
+        mods: run.combat_mods,   // Happening modifiers frozen at trigger
       });
     } catch (e) {
       return res.status(500).json({ error: 'State corrupt: ' + e.message });
@@ -448,6 +450,7 @@ router.post('/action/:questRunId', requireAuth, async (req, res) => {
         citizenIds: partyIds, enemyKeys: encounter,
         seed: parseInt(run.combat_seed) || 1, actions: nextActions,
         settlementId: sett.id,
+        mods: run.combat_mods,   // Happening modifiers frozen at trigger
       });
     } catch (e) {
       return res.status(400).json({ error: 'Invalid move: ' + e.message });
@@ -579,6 +582,7 @@ router.post('/resolve', requireAuth, async (req, res) => {
           citizenIds: partyIds, enemyKeys: encounter,
           seed: parseInt(questRun.combat_seed) || 1, actions,
           settlementId: sett.id,
+        mods: questRun.combat_mods,   // Happening modifiers frozen at trigger
         });
       } catch (e) {
         console.error('resolve replay failed', e);

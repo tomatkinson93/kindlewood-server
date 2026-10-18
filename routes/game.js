@@ -8,6 +8,8 @@ const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/admin');
 const eventBus = require('../lib/event_bus');
+const happenings = require('../lib/happenings');
+const HFX = require('../lib/happening_effects');
 const gameEvents = require('../lib/game_events');
 
 const router = express.Router();
@@ -23,6 +25,24 @@ const SPECIES_RATES = {
   Foxes:   { food: 14, timber: 10, stone: 4,  metal: 5, wealth: 10 },
   Hares:   { food: 18, timber: 8,  stone: 4,  metal: 3, wealth: 6  },
 };
+
+// Happening modifiers right now (real clock — economy is shared time).
+async function happeningModsNow() {
+  return HFX.modifiersAt(await happenings.loadLive(), Date.now());
+}
+// Current production rates with Happening multipliers (topbar +N/hr).
+function applyHappeningRates(rates, mods) {
+  const out = { ...rates };
+  for (const r of HFX.RESOURCES) if (typeof out[r] === 'number') out[r] = Math.round(out[r] * HFX.productionFactor(mods, r));
+  return out;
+}
+// The same multipliers shaped like a season, so the rate breakdown modal
+// shows them as one "🏮 Happenings bonus (×1.20)" row per resource.
+function happeningPseudoSeason(mods) {
+  const modifiers = {};
+  for (const r of HFX.RESOURCES) modifiers[r] = HFX.productionFactor(mods, r);
+  return { name: '🏮 Happenings', modifiers };
+}
 
 async function applyTick(settlement, species) {
   const now = Date.now();
@@ -40,12 +60,17 @@ async function applyTick(settlement, species) {
   const season = getCurrentSeason();
   const baseRates = calculateRates(bRes.rows, cRes.rows, species, oRes.rows);
   const rates = applySeasonModifiers(baseRates, season);
+  // Happening production modifiers, time-weighted over exactly
+  // [last_tick, now] (lib/happening_effects.averageProductionFactor): a
+  // window that covered part of the absence boosts only that part.
+  const hDefs = await happenings.loadLive();
+  const hf = (res) => HFX.averageProductionFactor(hDefs, res, lastTick, now);
   const updated = {
-    food:   Math.floor(settlement.food   + rates.food   * hoursElapsed),
-    timber: Math.floor(settlement.timber + rates.timber * hoursElapsed),
-    stone:  Math.floor(settlement.stone  + rates.stone  * hoursElapsed),
-    metal:  Math.floor(settlement.metal  + rates.metal  * hoursElapsed),
-    wealth: Math.floor(settlement.wealth + rates.wealth * hoursElapsed),
+    food:   Math.floor(settlement.food   + rates.food   * hf('food')   * hoursElapsed),
+    timber: Math.floor(settlement.timber + rates.timber * hf('timber') * hoursElapsed),
+    stone:  Math.floor(settlement.stone  + rates.stone  * hf('stone')  * hoursElapsed),
+    metal:  Math.floor(settlement.metal  + rates.metal  * hf('metal')  * hoursElapsed),
+    wealth: Math.floor(settlement.wealth + rates.wealth * hf('wealth') * hoursElapsed),
   };
 
   await query(`
@@ -120,7 +145,7 @@ router.get('/settlement', requireAuth, async (req, res) => {
     ).catch(() => ({ rows: [] }));
     const season = getCurrentSeason();
     const baseRates = calculateRates(buildingsResult.rows, citizensResult.rows, user.species, outpostsResult.rows);
-    const rates = applySeasonModifiers(baseRates, season);
+    const rates = applyHappeningRates(applySeasonModifiers(baseRates, season), await happeningModsNow());
 
     // Famine status for the warning banner (spec Q5). rates.food is the
     // post-season production side of hours-to-empty; upkeep is computed
@@ -225,7 +250,7 @@ router.get('/resource-breakdown', requireAuth, async (req, res) => {
 
     const season = getCurrentSeason();
     const base = calculateRatesBreakdown(buildingsResult.rows, citizensResult.rows, user.species, outpostsResult.rows);
-    const breakdown = applyBreakdownSeasonModifiers(base, season);
+    const breakdown = applyBreakdownSeasonModifiers(applyBreakdownSeasonModifiers(base, season), happeningPseudoSeason(await happeningModsNow()));
 
     // Citizen food upkeep — negative source row (🍽 in the modal, "Upkeep"
     // in the tooltip). Pushed AFTER the season multiplier on purpose: the

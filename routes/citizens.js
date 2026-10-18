@@ -72,6 +72,8 @@ router.get('/', requireAuth, async (req, res) => {
 
     // Build lookup maps for happiness context
     const season = getCurrentSeason();
+    // Happening modifiers right now (real clock; happiness + birth chance).
+    const hMods = require('../lib/happening_effects').modifiersAt(await require('../lib/happenings').loadLive(), Date.now());
     const settRes = await query('SELECT food FROM settlements WHERE id=$1', [settlement.id]);
     const lowFood = (settRes.rows[0]?.food ?? 999) < 50;
 
@@ -101,6 +103,7 @@ router.get('/', requireAuth, async (req, res) => {
         onExpedition: !!expByCitizen[c.id] || !!questByCitizen[c.id],
         partnerHouseId: c.partner_id ? partnerHouseMap[c.partner_id] : null,
         houseChildCount: houseChildCount[c.house_id] || 0,
+        happeningHappiness: hMods.happiness || 0,
       };
       const { factors, base, delta, computed } = calculateHappinessFactors(c, context);
       // Breeding status — only for partnered adults
@@ -115,8 +118,8 @@ router.get('/', requireAuth, async (req, res) => {
 
         if (canBreed) {
           const sameHouse = c.house_id && partner?.house_id && c.house_id === partner.house_id;
-          const myHappy   = c.life?.happiness ?? 70;
-          const ptHappy   = partner?.life?.happiness ?? 70;
+          const myHappy   = (c.life?.happiness ?? 70) + (hMods.happiness || 0);
+          const ptHappy   = (partner?.life?.happiness ?? 70) + (hMods.happiness || 0);
           const happyOk   = myHappy >= 60 && ptHappy >= 60;
           const residentCount = c.house_id ? (houseResidents[c.house_id]?.length || 1) : 0;
 
@@ -124,6 +127,7 @@ router.get('/', requireAuth, async (req, res) => {
           let chance = 0.04;
           if (sameHouse && happyOk) {
             chance += season.birthChanceBonus || 0;
+            chance += hMods.birth_chance || 0;
             const avgHappy = (myHappy + ptHappy) / 2;
             chance += Math.floor((avgHappy - 60) / 10) * 0.04;
             chance = Math.min(0.35, Math.max(0, chance));
