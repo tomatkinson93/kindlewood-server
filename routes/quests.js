@@ -57,6 +57,20 @@ async function _pickFallbackEnemy(ownerUserId) {
 const router = express.Router();
 const timeGates = require('../lib/time_gates');
 const { gameplayNow, wallNow } = require('../lib/server_clock');
+const happenings = require('../lib/happenings');
+const HFX = require('../lib/happening_effects');
+
+// Happening modifiers for a quest owner's gameplay clock (an admin's warp
+// moves only their own quests). No owner → real time.
+async function questMods(ownerUserId) {
+  return HFX.modifiersAt(await happenings.loadLive(), ownerUserId ? gameplayNow({ userId: ownerUserId }) : wallNow());
+}
+// Quest length after a quest_duration modifier (−0.2 = 20% faster).
+function moddedDuration(durationS, mods) {
+  return Math.max(10, Math.round(Number(durationS) * Math.max(0.1, 1 + (mods.quest_duration || 0))));
+}
+const moddedSuccess = (chance, mods) => Math.min(0.95, Math.max(0.02, chance + (mods.quest_success || 0)));
+const moddedReward = (amount, mods) => Math.round(Number(amount) * Math.max(0, 1 + (mods.quest_rewards || 0)));
 
 // ══════════════════════════════════════════════
 //  QUEST DEFINITIONS
@@ -496,9 +510,10 @@ router.post('/accept', requireAuth, async (req, res) => {
       }
     }
 
-    const completesAt = new Date(Date.now() + quest.duration_s * 1000);
+    const durationS = moddedDuration(quest.duration_s, await questMods(req.user.userId));   // Happening quest_duration
+    const completesAt = new Date(Date.now() + durationS * 1000);
     const auto = req.body.auto_resolve_combat === true;
-    const combat = _rollCombatScheduling(quest, quest.duration_s, auto);
+    const combat = _rollCombatScheduling(quest, durationS, auto);
 
     const result = await query(
       `INSERT INTO settlement_quests
@@ -623,9 +638,10 @@ router.post('/accept-party', requireAuth, async (req, res) => {
       }
     }
 
-    const completesAt = new Date(Date.now() + quest.duration_s * 1000);
+    const durationS = moddedDuration(quest.duration_s, await questMods(req.user.userId));   // Happening quest_duration
+    const completesAt = new Date(Date.now() + durationS * 1000);
     const auto = req.body.auto_resolve_combat === true;
-    const combat = _rollCombatScheduling(quest, quest.duration_s, auto);
+    const combat = _rollCombatScheduling(quest, durationS, auto);
 
     const result = await query(
       `INSERT INTO settlement_quests
@@ -687,10 +703,12 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
     let bonusReward = null;
     if (run.status === 'completed' && quest) {
       const isPartyRun = run.quest_type === 'party' || quest.quest_type === 'party';
+      const rMods = await questMods(req.user.userId);   // Happening quest_rewards
 
       if (isPartyRun) {
         // Party rewards live in `rewards` JSONB. Apply each resource delta.
-        const rewards = quest.rewards || {};
+        const rewards = {};
+        for (const [k, v] of Object.entries(quest.rewards || {})) rewards[k] = moddedReward(v, rMods);
         const sets = Object.entries(rewards).map(([k,v]) => `${k} = ${k} + ${v}`).join(', ');
         if (sets) await query(`UPDATE settlements SET ${sets} WHERE id=$1`, [run.settlement_id]);
         goldAwarded = rewards.wealth || 0;
@@ -709,7 +727,7 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
         }
       } else {
         // Solo: flat gold reward.
-        goldAwarded = quest.reward_gold ?? 10;
+        goldAwarded = moddedReward(quest.reward_gold ?? 10, rMods);
         if (goldAwarded > 0) {
           await query('UPDATE settlements SET wealth = wealth + $1 WHERE id=$2', [goldAwarded, run.settlement_id]);
         }
@@ -791,13 +809,14 @@ async function processCombatTriggers(settlementId) {
       if (typeof encounter === 'string') {
         try { encounter = JSON.parse(encounter); } catch(e) { encounter = []; }
       }
-      if (!encounter.length) {
-        if (ownerUserId === undefined) {
-          const o = await client.query('SELECT user_id FROM settlements WHERE id=$1', [settlementId]);
-          ownerUserId = o.rows.length ? o.rows[0].user_id : null;
-        }
-        encounter = await _pickFallbackEnemy(ownerUserId);
+      if (ownerUserId === undefined) {
+        const o = await client.query('SELECT user_id FROM settlements WHERE id=$1', [settlementId]);
+        ownerUserId = o.rows.length ? o.rows[0].user_id : null;
       }
+      if (!encounter.length) encounter = await _pickFallbackEnemy(ownerUserId);
+      // Happening combat modifiers at the owner's gameplay clock, frozen for
+      // this battle (stored on the run; every replay reuses them).
+      const combatMods = combatResolver.combatModsOf(await questMods(ownerUserId));
 
       if (run.auto_resolve_combat) {
         const partyIds = (run.quest_type === 'party' && Array.isArray(run.party_ids))
@@ -810,6 +829,7 @@ async function processCombatTriggers(settlementId) {
             citizenIds: partyIds,
             enemyKeys: encounter,
             seed: parseInt(run.combat_seed) || 1,
+            mods: combatMods,
           });
         } catch (e) {
           console.error('auto-resolve crashed for quest run', run.id, e);
@@ -893,9 +913,9 @@ async function processCombatTriggers(settlementId) {
         await client.query(
           `UPDATE settlement_quests
            SET combat_status='pending', combat_clock_paused_at=NOW(),
-               combat_encounter=$1
+               combat_encounter=$1, combat_mods=$3
            WHERE id=$2`,
-          [JSON.stringify(encounter), run.id]
+          [JSON.stringify(encounter), run.id, combatMods ? JSON.stringify(combatMods) : null]
         );
         // Buffer: a new battle awaits. Frontend refreshes battles badge +
         // freezes the quest's countdown. Flushed after COMMIT.
@@ -966,6 +986,15 @@ async function resolveCompletedQuests(settlementId) {
       [settlementId]
     );
 
+    // Happening quest_success at the settlement owner's gameplay clock,
+    // loaded once per batch and only if something resolves.
+    let _resolveMods = null;
+    const resolveMods = async () => {
+      if (_resolveMods) return _resolveMods;
+      const o = await client.query('SELECT user_id FROM settlements WHERE id=$1', [settlementId]);
+      _resolveMods = await questMods(o.rows.length ? o.rows[0].user_id : null);
+      return _resolveMods;
+    };
     for (const run of dueRes.rows) {
       const isParty = run.quest_type === 'party';
       // Look up def: hardcoded pool first, then DB. NPC quests live only in DB.
@@ -998,7 +1027,7 @@ async function resolveCompletedQuests(settlementId) {
           });
         }
         const avgSkill = count > 0 ? totalSkill / count : 1;
-        successChance = Math.min(0.95, quest.base_success + (avgSkill - 1) * 0.04);
+        successChance = moddedSuccess(Math.min(0.95, quest.base_success + (avgSkill - 1) * 0.04), await resolveMods());
         roll = Math.random();
         outcome = roll < successChance ? 'completed' : 'failed';
 
@@ -1032,7 +1061,7 @@ async function resolveCompletedQuests(settlementId) {
       } else {
         const skills = run.citizen_skills || {};
         const skillVal = skills[quest.skill_key] ?? 1;
-        successChance = Math.min(0.95, quest.base_success + (skillVal - 1) * 0.04);
+        successChance = moddedSuccess(Math.min(0.95, quest.base_success + (skillVal - 1) * 0.04), await resolveMods());
         roll = Math.random();
         outcome = roll < successChance ? 'completed' : 'failed';
       }
@@ -1075,3 +1104,4 @@ module.exports.QUEST_POOL = QUEST_POOL;
 module.exports.PARTY_QUEST_POOL = PARTY_QUEST_POOL;
 module.exports.resolveCompletedQuests = resolveCompletedQuests;
 module.exports.processCombatTriggers = processCombatTriggers;
+module.exports._happeningHelpers = { moddedDuration, moddedSuccess, moddedReward };

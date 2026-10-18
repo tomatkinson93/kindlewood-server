@@ -5,6 +5,11 @@
 
 const { query } = require('./db');
 const { getCurrentSeason } = require('./seasons');
+const HFX = require('./lib/happening_effects');
+// Happening modifiers right now (real clock — citizens live in shared time).
+async function happeningModsNow() {
+  return HFX.modifiersAt(await require('./lib/happenings').loadLive(), Date.now());
+}
 const { VISIBLE_TRAITS, HIDDEN_TRAITS, MALE_NAMES, FEMALE_NAMES, LAST_NAMES } = require('./citizens');
 
 // ── Relationship score thresholds ─────────────
@@ -90,6 +95,7 @@ async function runSimulation(settlement, hoursElapsed) {
 
 async function _updateRelationships(settlementId, adults) {
   const season = getCurrentSeason();
+  const hMods = await happeningModsNow();
 
   // Build lookup: citizen_id -> citizen
   const byId = {};
@@ -133,9 +139,11 @@ async function _updateRelationships(settlementId, adults) {
     }
 
     // Happiness multiplier (both citizens contribute)
-    const avgHappiness = ((a.life?.happiness ?? 70) + (b.life?.happiness ?? 70)) / 2;
+    const avgHappiness = ((a.life?.happiness ?? 70) + (b.life?.happiness ?? 70)) / 2 + (hMods.happiness || 0);
     const happMult = 1 + (Math.max(0, avgHappiness - 40) / 100) * CFG.HAPPINESS_MULT;
     gain = gain * happMult;
+    // Happening bonding modifier (e.g. a lantern festival brings folk together).
+    gain = gain * Math.max(0.1, 1 + (hMods.bonding || 0));
 
     // Cap and round
     gain = Math.max(0, gain);
@@ -253,6 +261,7 @@ async function _checkPartnerships(settlementId, adults) {
 
 async function _checkBreeding(settlementId, citizens, adults) {
   const season = getCurrentSeason();
+  const hMods = await happeningModsNow();
 
   // Find partnered male+female pairs who share a house
   const breedPairs = await query(
@@ -289,8 +298,8 @@ async function _checkBreeding(settlementId, citizens, adults) {
     if (occupants >= pair.house_cap) continue;
 
     // Happiness check
-    const happA = pair.life_a?.happiness ?? 70;
-    const happB = pair.life_b?.happiness ?? 70;
+    const happA = (pair.life_a?.happiness ?? 70) + (hMods.happiness || 0);
+    const happB = (pair.life_b?.happiness ?? 70) + (hMods.happiness || 0);
     if (happA < CFG.BREED_MIN_HAPPINESS || happB < CFG.BREED_MIN_HAPPINESS) continue;
 
     // Build breed chance
@@ -298,6 +307,8 @@ async function _checkBreeding(settlementId, citizens, adults) {
 
     // Season bonus
     chance += season.birthChanceBonus || 0;
+    // Happening birth-chance modifier
+    chance += hMods.birth_chance || 0;
 
     // Happiness bonus
     const avgHappy = (happA + happB) / 2;

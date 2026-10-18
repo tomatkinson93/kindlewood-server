@@ -22,6 +22,7 @@ const requireAuth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/admin');
 const D = require('../lib/day_cycle');
 const H = require('../lib/happenings');
+const HFX = require('../lib/happening_effects');
 const { gameplayNow, wallNow } = require('../lib/server_clock');
 
 const router = express.Router();
@@ -46,7 +47,10 @@ router.get('/active', requireAuth, async (req, res) => {
     const at = gameplayNow(req.user);
     const active = H.activeAt(await H.loadLive(query), at);
     res.set('Cache-Control', 'no-store');
-    res.json({ ok: true, at, active: active.map(h => ({ ...publicDef(h), window: h.window })) });
+    // effects: this window's resolved effects (a random_modifier shows the
+    // stat + value it rolled); modifiers: the summed totals now in force.
+    res.json({ ok: true, at, modifiers: HFX.modifiersAt(await H.loadLive(query), at),
+               active: active.map(h => ({ ...publicDef(h), effects: h.resolvedEffects, window: h.window })) });
   } catch (e) { res.status(500).json({ error: 'Could not load active Happenings.' }); }
 });
 

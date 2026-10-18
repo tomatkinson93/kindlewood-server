@@ -160,7 +160,7 @@ const GOLDEN = {
           JSON.stringify(v({ type: 'daily', start: '22:00', durationMin: '180', extra: 1 }).rule) === '{"type":"daily","start":"22:00","durationMin":180}');
     check('5c. effects: unknown type / bad enemy ids / bad flourish rejected',
           !H.validateEffects([{ type: 'wealth_x2' }]).ok && !H.validateEffects([{ type: 'enemy_pool', add: [] }]).ok &&
-          !H.validateEffects([{ type: 'map_flourish', kind: 'fireworks' }]).ok &&
+          !H.validateEffects([{ type: 'map_flourish', kind: 'disco_ball' }]).ok &&
           H.validateEffects([{ type: 'banner' }, { type: 'map_flourish', kind: 'lanterns' }]).ok);
   }
 
@@ -210,14 +210,14 @@ const GOLDEN = {
     srv.close();
   }
 
-  // 7. The no-economy-multiplier rule is documented at the effect dispatcher
+  // 7. The D7 replacement (offline integration) is documented
   {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'happenings.js'), 'utf8');
-    check('7. lib/happenings.js documents why there are no economy multipliers (D7)', /NO economy or resource multipliers \(decision D7\)/.test(src));
+    const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'happening_effects.js'), 'utf8');
+    check('7. happening_effects.js documents the offline integration that replaced D7', /replaces decision D7/.test(src) && /averageFactor|averageOver/.test(src));
     const db = fs.readFileSync(path.join(__dirname, '..', 'db.js'), 'utf8');
     const mig = fs.readdirSync(path.join(__dirname, '..', 'migrations')).find(f => f.endsWith('_happenings.sql'));
     check('7b. happenings migration exists (BEGIN/COMMIT) and is registered', !!mig &&
-          /BEGIN;[\s\S]*CREATE TABLE IF NOT EXISTS happenings[\s\S]*COMMIT;/.test(fs.readFileSync(path.join(__dirname, '..', 'migrations', mig), 'utf8')) && /'happenings'\]/.test(db));
+          /BEGIN;[\s\S]*CREATE TABLE IF NOT EXISTS happenings[\s\S]*COMMIT;/.test(fs.readFileSync(path.join(__dirname, '..', 'migrations', mig), 'utf8')) && /'happenings'[,\]]/.test(db) && /'happening_modifiers'\]/.test(db));
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

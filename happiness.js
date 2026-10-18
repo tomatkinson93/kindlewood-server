@@ -88,6 +88,12 @@ function calculateHappinessFactors(citizen, context = {}) {
   if (season === 'spring') factors.push(HAPPINESS_FACTORS.season_spring);
   if (season === 'winter') factors.push(HAPPINESS_FACTORS.season_winter);
 
+  // Happenings (spec 021) — the summed happiness modifier of every running
+  // Happening, as one factor (context.happeningHappiness, real clock).
+  if (context.happeningHappiness) {
+    factors.push({ label: 'Happenings', value: context.happeningHappiness, icon: '🏮' });
+  }
+
   // Compute base + sum of modifiers, clamped 0–100
   const base = 70;
   const delta = factors.reduce((sum, f) => sum + f.value, 0);
