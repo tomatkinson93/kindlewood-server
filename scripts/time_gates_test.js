@@ -39,9 +39,9 @@ function stubDb(rows) {
   return q;
 }
 // Every id a pick can return at ms (the stub rotates through the pool).
-async function pickable(q, ms, n = 24) {
+async function pickable(q, ms, n = 24, happenings = []) {
   const s = new Set();
-  for (let i = 0; i < n; i++) (await TG.pickRandomEnemy(ms, q)).forEach(id => s.add(id));
+  for (let i = 0; i < n; i++) (await TG.pickRandomEnemy(ms, q, happenings)).forEach(id => s.add(id));
   return s;
 }
 
@@ -60,7 +60,7 @@ const FULL_NIGHT = D.MOON_EPOCH_MS + 4 * DAY + 16 * H;               // 03:00, m
   {
     const g = TG.enemyEligibleSql(3, { phase: 'night', moon: 'full' });
     check('0. enemyEligibleSql returns { sql, params } with placeholders from $start',
-          /\$3::text/.test(g.sql) && /\$4::text/.test(g.sql) && g.params[0] === 'night' && g.params[1] === 'full' &&
+          /\$3::text/.test(g.sql) && /\$4::text/.test(g.sql) && g.sql.startsWith('(') && g.sql.endsWith(')') && g.params[0] === 'night' && g.params[1] === 'full' &&
           /active_phases @> jsonb_build_array/.test(g.sql) && !/\?\s/.test(g.sql));
     const c = TG.timeContext(FULL_NIGHT);
     check('0b. timeContext → phase + moon ids', c.phase === 'night' && c.moon === 'full', JSON.stringify(c));
@@ -89,11 +89,11 @@ const FULL_NIGHT = D.MOON_EPOCH_MS + 4 * DAY + 16 * H;               // 03:00, m
   // 3. Fallbacks
   {
     const q = stubDb([{ id: 'owl_hag', active_phases: ['night'] }]);
-    const p = await TG.pickRandomEnemy(NOON, q);
+    const p = await TG.pickRandomEnemy(NOON, q, []);
     check('3. empty filtered pool → falls back to the unfiltered pool', p[0] === 'owl_hag' && q.calls.length === 2);
-    const empty = await TG.pickRandomEnemy(NOON, stubDb([]));
+    const empty = await TG.pickRandomEnemy(NOON, stubDb([]), []);
     check('3b. empty table → engine fallback', empty[0] === TG.ENGINE_FALLBACK);
-    const broken = await TG.pickRandomEnemy(NOON, async () => { throw new Error('db down'); });
+    const broken = await TG.pickRandomEnemy(NOON, async () => { throw new Error('db down'); }, []);
     check('3c. DB error → engine fallback (combat never fails)', broken[0] === TG.ENGINE_FALLBACK);
   }
 

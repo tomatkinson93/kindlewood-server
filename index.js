@@ -53,6 +53,7 @@ app.use('/api/quest-admin', questAdminRoutes);
 const inventoryRoutes = require('./routes/inventory');
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/fishing', require('./routes/fishing'));
+app.use('/api/happenings', require('./routes/happenings'));
 const diplomacyRoutes = require('./routes/diplomacy');
 app.use('/api/diplomacy', diplomacyRoutes);
 // item-admin endpoints are in /api/game/items (routes/game.js)
