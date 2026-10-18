@@ -46,16 +46,17 @@ function _rollCombatScheduling(questDef, durationSecs, autoResolve) {
 }
 
 // Pick a random enemy to fill an empty encounter at trigger time, so quests
-// authored without a specific encounter still produce *something*.
-async function _pickFallbackEnemy() {
-  try {
-    const r = await query("SELECT id FROM enemy_definitions WHERE archived = FALSE ORDER BY random() LIMIT 1");
-    if (r.rows.length) return [r.rows[0].id];
-  } catch (e) {}
-  return ['marsh_rat']; // engine bundled fallback
+// authored without a specific encounter still produce *something*. Gated by
+// time of day / moon (lib/time_gates.js) at the quest owner's gameplay clock,
+// so an admin's debug offset moves only their own creatures.
+async function _pickFallbackEnemy(ownerUserId) {
+  const at = ownerUserId ? gameplayNow({ userId: ownerUserId }) : wallNow();
+  return timeGates.pickRandomEnemy(at, query);
 }
 
 const router = express.Router();
+const timeGates = require('../lib/time_gates');
+const { gameplayNow, wallNow } = require('../lib/server_clock');
 
 // ══════════════════════════════════════════════
 //  QUEST DEFINITIONS
@@ -784,13 +785,18 @@ async function processCombatTriggers(settlementId) {
       [settlementId]
     );
 
+    let ownerUserId;   // loaded once, only if a random pick is needed
     for (const run of due.rows) {
       let encounter = run.combat_encounter || [];
       if (typeof encounter === 'string') {
         try { encounter = JSON.parse(encounter); } catch(e) { encounter = []; }
       }
       if (!encounter.length) {
-        encounter = await _pickFallbackEnemy();
+        if (ownerUserId === undefined) {
+          const o = await client.query('SELECT user_id FROM settlements WHERE id=$1', [settlementId]);
+          ownerUserId = o.rows.length ? o.rows[0].user_id : null;
+        }
+        encounter = await _pickFallbackEnemy(ownerUserId);
       }
 
       if (run.auto_resolve_combat) {

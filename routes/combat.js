@@ -54,6 +54,9 @@ router.get('/enemies', requireAuth, async (req, res) => {
   }
 });
 
+const timeGates = require('../lib/time_gates');
+const _jsonOrNull = (v) => (v == null ? null : JSON.stringify(v));
+
 // Validate + sanitise an enemy payload coming from the admin form. Returns
 // the cleaned object or throws an Error explaining what's wrong.
 function _validateEnemy(body, isNew) {
@@ -117,6 +120,9 @@ function _validateEnemy(body, isNew) {
     reward_weight: intIn(body.reward_weight, 0,   10,  1),
     sort_order:    intIn(body.sort_order,    0,   9999, 100),
     moves, move_mode, hp_min, hp_max, drops,
+    // Time gates (spec 021): known ids only; none selected → NULL ("any").
+    active_phases: timeGates.cleanPhases(body.active_phases),
+    moon_phases:   timeGates.cleanMoons(body.moon_phases),
   };
 }
 
@@ -129,11 +135,12 @@ router.post('/enemies', requireAuth, async (req, res) => {
 
     await query(
       `INSERT INTO enemy_definitions
-       (id, name, icon, flavour, max_hp, strength, agility, endurance, combat_skill, attack_verb, reward_weight, sort_order, moves, move_mode, hp_min, hp_max, drops)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+       (id, name, icon, flavour, max_hp, strength, agility, endurance, combat_skill, attack_verb, reward_weight, sort_order, moves, move_mode, hp_min, hp_max, drops, active_phases, moon_phases)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
       [e.id, e.name, e.icon, e.flavour, e.max_hp, e.strength, e.agility, e.endurance,
        e.combat_skill, e.attack_verb, e.reward_weight, e.sort_order,
-       JSON.stringify(e.moves), e.move_mode, e.hp_min, e.hp_max, JSON.stringify(e.drops)]
+       JSON.stringify(e.moves), e.move_mode, e.hp_min, e.hp_max, JSON.stringify(e.drops),
+       _jsonOrNull(e.active_phases), _jsonOrNull(e.moon_phases)]
     );
     res.json({ ok: true, enemy: e });
   } catch (err) {
@@ -155,12 +162,12 @@ router.patch('/enemies/:id', requireAuth, async (req, res) => {
          name=$1, icon=$2, flavour=$3, max_hp=$4, strength=$5, agility=$6,
          endurance=$7, combat_skill=$8, attack_verb=$9, reward_weight=$10,
          sort_order=$11, moves=$12, move_mode=$13, hp_min=$14, hp_max=$15,
-         drops=$16, updated_at=NOW()
-       WHERE id=$17`,
+         drops=$16, active_phases=$17, moon_phases=$18, updated_at=NOW()
+       WHERE id=$19`,
       [e.name, e.icon, e.flavour, e.max_hp, e.strength, e.agility,
        e.endurance, e.combat_skill, e.attack_verb, e.reward_weight,
        e.sort_order, JSON.stringify(e.moves), e.move_mode, e.hp_min, e.hp_max,
-       JSON.stringify(e.drops), id]
+       JSON.stringify(e.drops), _jsonOrNull(e.active_phases), _jsonOrNull(e.moon_phases), id]
     );
     res.json({ ok: true, enemy: { ...e, id } });
   } catch (err) {
