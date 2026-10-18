@@ -293,7 +293,7 @@ async function applyConsumption(settlementId) {
   const outpostCount = oCountRes.rows[0]?.n || 0;
 
   // No mouths at all (citizen or outpost) — nothing to simulate.
-  if (!cRes.rows.length && outpostCount === 0) return { quanta: nQuanta, deaths: 0, events: [] };
+  if (!cRes.rows.length && outpostCount === 0) return { quanta: nQuanta, deaths: 0, events: [], foodConsumed: 0 };
 
   const condRes = cRes.rows.length ? await query(
     `SELECT citizen_id FROM citizen_conditions
@@ -320,6 +320,7 @@ async function applyConsumption(settlementId) {
     })),
   };
 
+  const state0Food = state.foodF;                    // for foodConsumed (away report)
   const result = simulateConsumption(state, nQuanta, lastMs);
 
   // ── Persist ──────────────────────────────────────────────────────────
@@ -390,7 +391,7 @@ async function applyConsumption(settlementId) {
     );
   }
 
-  return { quanta: nQuanta, deaths: result.deaths, events: result.events };
+  return { quanta: nQuanta, deaths: result.deaths, events: result.events, foodConsumed: Math.max(0, state0Food - result.foodF) };
 }
 
 // ── /settlement famine block (spec Q5) ────────────────────────────────────

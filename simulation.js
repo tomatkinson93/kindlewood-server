@@ -4,12 +4,8 @@
 // ══════════════════════════════════════════════
 
 const { query } = require('./db');
-const { getCurrentSeason } = require('./seasons');
+const { seasonAt } = require('./seasons');
 const HFX = require('./lib/happening_effects');
-// Happening modifiers right now (real clock — citizens live in shared time).
-async function happeningModsNow() {
-  return HFX.modifiersAt(await require('./lib/happenings').loadLive(), Date.now());
-}
 const { VISIBLE_TRAITS, HIDDEN_TRAITS, MALE_NAMES, FEMALE_NAMES, LAST_NAMES } = require('./citizens');
 
 // ── Relationship score thresholds ─────────────
@@ -56,128 +52,104 @@ const CFG = {
 };
 
 // ── Main entry point ──────────────────────────
-// Called from within game.js applyTick gated by last_sim_tick
-async function runSimulation(settlement, hoursElapsed) {
+// Called from within game.js applyTick gated by last_sim_tick. Catches up
+// one simulated hour per real hour since last_sim_tick (capped), each hour
+// using the season and Happening modifiers in force at that time, so a
+// player who was away gets the bonding, partnerships and births they would
+// have had online. Runs in memory, then writes once.
+const SIM_MAX_CATCHUP_HOURS = 168;   // a week; older hours are skipped
+
+async function runSimulation(settlement, hoursElapsed, lastSimAt) {
   if (hoursElapsed < CFG.SIM_TICK_HOURS) return;
-
   const settlementId = settlement.id;
+  const HOUR = 3600 * 1000;
+  const hours = Math.floor(hoursElapsed / CFG.SIM_TICK_HOURS);
 
-  // Load all adult citizens with their current state
+  // Claim the window: advance last_sim_tick by WHOLE hours (no time lost)
+  // with a compare-and-swap, so concurrent ticks simulate it exactly once.
+  let startMs;
+  if (lastSimAt) {
+    startMs = new Date(lastSimAt).getTime();
+    const claim = await query(
+      `UPDATE settlements SET last_sim_tick=$1
+        WHERE id=$2 AND date_trunc('milliseconds', last_sim_tick) = $3 RETURNING id`,
+      [new Date(startMs + hours * HOUR).toISOString(), settlementId, new Date(startMs).toISOString()]
+    );
+    if (!claim.rows.length) return;
+  } else {
+    await query('UPDATE settlements SET last_sim_tick = NOW() WHERE id = $1', [settlementId]);
+    startMs = Date.now() - hours * HOUR;
+  }
+  const simHours = Math.min(hours, SIM_MAX_CATCHUP_HOURS);
+  const firstMs = startMs + (hours - simHours) * HOUR;
+
   const citizenRes = await query(
-    `SELECT c.*, h.id as house_id_val
-     FROM citizens c
-     LEFT JOIN houses h ON c.house_id = h.id
-     WHERE c.settlement_id = $1`,
+    `SELECT * FROM citizens WHERE settlement_id = $1 AND COALESCE(life_stage, 'adult') != 'deceased'`,
     [settlementId]
   );
   const citizens = citizenRes.rows;
   const adults = citizens.filter(c => (c.life_stage || 'adult') === 'adult');
-
   if (adults.length < 2) return;
 
-  // Update relationship scores
-  await _updateRelationships(settlementId, adults);
-
-  // Check partnership formation
-  await _checkPartnerships(settlementId, adults);
-
-  // Check breeding
-  await _checkBreeding(settlementId, citizens, adults);
-
-  // Update last_sim_tick
-  await query(
-    'UPDATE settlements SET last_sim_tick = NOW() WHERE id = $1',
-    [settlementId]
-  );
+  const hDefs = await require('./lib/happenings').loadLive();
+  const sim = await _loadSimState(settlementId, citizens, adults);
+  for (let h = 0; h < simHours; h++) {
+    const at = firstMs + h * HOUR + HOUR / 2;          // mid-hour: the modifiers for this hour
+    const ctx = { at, season: seasonAt(at), hMods: HFX.modifiersAt(hDefs, at) };
+    _hourRelationships(sim, ctx);
+    _hourPartnerships(sim, ctx);
+    _hourBreeding(sim, ctx);
+  }
+  await _persistSimState(settlementId, sim);
 }
 
-// ── Step 1: Update relationship scores ────────
-
-async function _updateRelationships(settlementId, adults) {
-  const season = getCurrentSeason();
-  const hMods = await happeningModsNow();
-
-  // Build lookup: citizen_id -> citizen
+// Everything the hourly loop reads or changes, keyed for quick lookup.
+async function _loadSimState(settlementId, citizens, adults) {
   const byId = {};
-  for (const c of adults) byId[c.id] = c;
-
-  // Get all current relationship pairs for this settlement
-  const relRes = await query(
-    'SELECT * FROM citizen_relationships WHERE settlement_id = $1',
-    [settlementId]
-  );
-  const relMap = {};
-  for (const r of relRes.rows) {
-    relMap[`${r.citizen_a_id}_${r.citizen_b_id}`] = r;
-  }
-
-  // Build pairs (canonical: lower id first)
+  for (const c of citizens) byId[c.id] = c;
+  const relRes = await query('SELECT * FROM citizen_relationships WHERE settlement_id = $1', [settlementId]);
+  const rels = {};
+  for (const r of relRes.rows) rels[`${r.citizen_a_id}_${r.citizen_b_id}`] = { ...r, gain: 0 };
+  const houseRes = await query('SELECT id, capacity, name FROM houses WHERE settlement_id = $1', [settlementId]);
+  const houses = {};
+  for (const hRow of houseRes.rows) houses[hRow.id] = { ...hRow, occupants: 0 };
+  for (const c of citizens) if (c.house_id && houses[c.house_id]) houses[c.house_id].occupants++;
   const pairs = [];
   for (let i = 0; i < adults.length; i++) {
     for (let j = i + 1; j < adults.length; j++) {
-      pairs.push([adults[i], adults[j]]);
+      const a = adults[i].id < adults[j].id ? adults[i] : adults[j];
+      const b = a === adults[i] ? adults[j] : adults[i];
+      pairs.push([a, b]);
     }
   }
+  return { byId, rels, houses, pairs, newPartners: [], events: [], births: [] };
+}
 
-  for (const [a, b] of pairs) {
-    const aId = Math.min(a.id, b.id);
-    const bId = Math.max(a.id, b.id);
-    const key = `${aId}_${bId}`;
-    const existing = relMap[key];
+function _happiness(c, ctx) { return (c.life?.happiness ?? 70) + (ctx.hMods.happiness || 0); }
 
-    // Calculate gain
+// ── Step 1 (hourly): relationship scores ─────
+function _hourRelationships(sim, ctx) {
+  for (const [a, b] of sim.pairs) {
+    const key = `${a.id}_${b.id}`;
     let gain = CFG.BASE_PROXIMITY;
-
-    // Same house bonus
-    if (a.house_id && b.house_id && a.house_id === b.house_id) {
-      gain += CFG.SAME_HOUSE_GAIN;
-    }
-
-    // Same role bonus
-    if (a.role && b.role && a.role === b.role && a.role !== 'idle') {
-      gain += CFG.SAME_ROLE_GAIN;
-    }
-
+    if (a.house_id && b.house_id && a.house_id === b.house_id) gain += CFG.SAME_HOUSE_GAIN;
+    if (a.role && b.role && a.role === b.role && a.role !== 'idle') gain += CFG.SAME_ROLE_GAIN;
     // Happiness multiplier (both citizens contribute)
-    const avgHappiness = ((a.life?.happiness ?? 70) + (b.life?.happiness ?? 70)) / 2 + (hMods.happiness || 0);
-    const happMult = 1 + (Math.max(0, avgHappiness - 40) / 100) * CFG.HAPPINESS_MULT;
-    gain = gain * happMult;
+    const avgHappiness = (_happiness(a, ctx) + _happiness(b, ctx)) / 2;
+    gain *= 1 + (Math.max(0, avgHappiness - 40) / 100) * CFG.HAPPINESS_MULT;
     // Happening bonding modifier (e.g. a lantern festival brings folk together).
-    gain = gain * Math.max(0.1, 1 + (hMods.bonding || 0));
-
-    // Cap and round
+    gain *= Math.max(0.1, 1 + (ctx.hMods.bonding || 0));
     gain = Math.max(0, gain);
 
-    const newScore = Math.min(100, (existing?.score ?? 0) + gain);
-    const newState = scoreToState(Math.floor(newScore));
-
-    if (existing) {
-      const prevState = existing.state;
-      await query(
-        `UPDATE citizen_relationships
-         SET score = $1, state = $2, last_updated = NOW()
-         WHERE id = $3`,
-        [Math.floor(newScore), newState, existing.id]
-      );
-      // Fire event if state improved meaningfully
-      if (prevState !== newState && newState === 'close') {
-        await _addEvent(settlementId, 'close_bond',
-          `${_name(byId[aId])} and ${_name(byId[bId])} have grown close.`,
-          [aId, bId]);
-      }
-      if (prevState !== newState && newState === 'bonded') {
-        await _addEvent(settlementId, 'bond_formed',
-          `${_name(byId[aId])} and ${_name(byId[bId])} share a strong bond.`,
-          [aId, bId]);
-      }
-    } else {
-      await query(
-        `INSERT INTO citizen_relationships
-           (settlement_id, citizen_a_id, citizen_b_id, score, state)
-         VALUES ($1,$2,$3,$4,$5)
-         ON CONFLICT (citizen_a_id, citizen_b_id) DO NOTHING`,
-        [settlementId, aId, bId, Math.floor(newScore), newState]
-      );
+    const rel = sim.rels[key] || (sim.rels[key] = { citizen_a_id: a.id, citizen_b_id: b.id, score: 0, state: 'strangers', gain: 0, isNew: true });
+    const before = scoreToState(Math.floor(rel.score + rel.gain));
+    rel.gain += gain;
+    const after = scoreToState(Math.floor(Math.min(100, rel.score + rel.gain)));
+    if (before !== after && after === 'close' && rel.state !== 'partners') {
+      sim.events.push({ type: 'close_bond', at: ctx.at, ids: [a.id, b.id], message: `${_name(a)} and ${_name(b)} have grown close.` });
+    }
+    if (before !== after && after === 'bonded' && rel.state !== 'partners') {
+      sim.events.push({ type: 'bond_formed', at: ctx.at, ids: [a.id, b.id], message: `${_name(a)} and ${_name(b)} share a strong bond.` });
     }
   }
 }
@@ -210,129 +182,87 @@ async function awardQuestRelationshipBonus(settlementId, citizenIds) {
   }
 }
 
-// ── Step 3: Partnership formation ─────────────
-
-async function _checkPartnerships(settlementId, adults) {
-  // Find pairs at 'bonded' or near-partners who are both unpartnered adults
-  const eligibleRels = await query(
-    `SELECT cr.*, 
-            ca.name as name_a, ca.gender as gender_a, ca.partner_id as partner_a,
-            ca.life as life_a,
-            cb.name as name_b, cb.gender as gender_b, cb.partner_id as partner_b,
-            cb.life as life_b
-     FROM citizen_relationships cr
-     JOIN citizens ca ON cr.citizen_a_id = ca.id
-     JOIN citizens cb ON cr.citizen_b_id = cb.id
-     WHERE cr.settlement_id = $1
-       AND cr.score >= $2
-       AND ca.partner_id IS NULL
-       AND cb.partner_id IS NULL
-       AND (ca.life->>'happiness')::int >= $3
-       AND (cb.life->>'happiness')::int >= $3`,
-    [settlementId, CFG.PARTNER_SCORE_THRESHOLD, CFG.PARTNER_MIN_HAPPINESS]
-  );
-
-  for (const rel of eligibleRels.rows) {
-    // Random chance per tick
+// ── Step 3 (hourly): partnership formation ────
+function _hourPartnerships(sim, ctx) {
+  for (const [a, b] of sim.pairs) {
+    if (a.partner_id || b.partner_id) continue;
+    const rel = sim.rels[`${a.id}_${b.id}`];
+    if (!rel || Math.min(100, rel.score + rel.gain) < CFG.PARTNER_SCORE_THRESHOLD) continue;
+    if (_happiness(a, ctx) < CFG.PARTNER_MIN_HAPPINESS || _happiness(b, ctx) < CFG.PARTNER_MIN_HAPPINESS) continue;
     if (Math.random() > CFG.PARTNER_FORM_CHANCE) continue;
-
-    // Form partnership (bidirectional)
-    await query(
-      'UPDATE citizens SET partner_id = $1 WHERE id = $2',
-      [rel.citizen_b_id, rel.citizen_a_id]
-    );
-    await query(
-      'UPDATE citizens SET partner_id = $1 WHERE id = $2',
-      [rel.citizen_a_id, rel.citizen_b_id]
-    );
-    await query(
-      "UPDATE citizen_relationships SET state = 'partners' WHERE id = $1",
-      [rel.id]
-    );
-
-    await _addEvent(settlementId, 'partnership',
-      `${rel.name_a} and ${rel.name_b} have become partners. 💕`,
-      [rel.citizen_a_id, rel.citizen_b_id]
-    );
+    a.partner_id = b.id;
+    b.partner_id = a.id;
+    rel.state = 'partners';
+    sim.newPartners.push([a, b]);
+    sim.events.push({ type: 'partnership', at: ctx.at, ids: [a.id, b.id], message: `${_name(a)} and ${_name(b)} have become partners. 💕` });
   }
 }
 
-// ── Step 4: Breeding ──────────────────────────
+// ── Step 4 (hourly): breeding ─────────────────
+// Partnered opposite-gender adults sharing a house with room for a child.
+function _hourBreeding(sim, ctx) {
+  for (const [a, b] of sim.pairs) {
+    if (a.partner_id !== b.id || a.gender === b.gender) continue;
+    if (!a.house_id || a.house_id !== b.house_id) continue;
+    const house = sim.houses[a.house_id];
+    if (!house || house.occupants >= house.capacity) continue;
 
-async function _checkBreeding(settlementId, citizens, adults) {
-  const season = getCurrentSeason();
-  const hMods = await happeningModsNow();
-
-  // Find partnered male+female pairs who share a house
-  const breedPairs = await query(
-    `SELECT ca.id as id_a, ca.name as name_a, ca.gender as gender_a,
-            ca.life as life_a, ca.hidden_traits as hidden_a,
-            ca.house_id as house_a,
-            cb.id as id_b, cb.name as name_b, cb.gender as gender_b,
-            cb.life as life_b, cb.hidden_traits as hidden_b,
-            ca.generation as gen_a, cb.generation as gen_b,
-            ca.visible_traits as traits_a, cb.visible_traits as traits_b,
-            ca.stats as stats_a, cb.stats as stats_b,
-            ca.skills as skills_a, cb.skills as skills_b,
-            h.capacity as house_cap
-     FROM citizens ca
-     JOIN citizens cb ON ca.partner_id = cb.id
-     JOIN houses h ON ca.house_id = h.id
-     WHERE ca.settlement_id = $1
-       AND ca.life_stage = 'adult'
-       AND cb.life_stage = 'adult'
-       AND ca.gender != cb.gender
-       AND ca.house_id IS NOT NULL
-       AND ca.house_id = cb.house_id
-       AND ca.id < cb.id`,
-    [settlementId]
-  );
-
-  for (const pair of breedPairs.rows) {
-    // Check house has capacity for a child
-    const occupantsRes = await query(
-      'SELECT COUNT(*) FROM citizens WHERE house_id = $1',
-      [pair.house_a]
-    );
-    const occupants = parseInt(occupantsRes.rows[0].count);
-    if (occupants >= pair.house_cap) continue;
-
-    // Happiness check
-    const happA = (pair.life_a?.happiness ?? 70) + (hMods.happiness || 0);
-    const happB = (pair.life_b?.happiness ?? 70) + (hMods.happiness || 0);
+    const happA = _happiness(a, ctx), happB = _happiness(b, ctx);
     if (happA < CFG.BREED_MIN_HAPPINESS || happB < CFG.BREED_MIN_HAPPINESS) continue;
 
-    // Build breed chance
     let chance = CFG.BREED_BASE_CHANCE;
-
-    // Season bonus
-    chance += season.birthChanceBonus || 0;
-    // Happening birth-chance modifier
-    chance += hMods.birth_chance || 0;
-
-    // Happiness bonus
-    const avgHappy = (happA + happB) / 2;
-    chance += Math.floor((avgHappy - CFG.BREED_MIN_HAPPINESS) / 10) * CFG.BREED_HAPPY_BONUS;
-
+    chance += ctx.season.birthChanceBonus || 0;               // season bonus
+    chance += ctx.hMods.birth_chance || 0;                    // Happening birth-chance modifier
+    chance += Math.floor(((happA + happB) / 2 - CFG.BREED_MIN_HAPPINESS) / 10) * CFG.BREED_HAPPY_BONUS;
     // Fertile trait bonus (hidden trait)
-    const hiddenA = pair.hidden_a || [];
-    const hiddenB = pair.hidden_b || [];
-    if (hiddenA.includes('fertile') || hiddenB.includes('fertile')) {
-      chance += CFG.BREED_FERTILE_BONUS;
-    }
-
+    if ((a.hidden_traits || []).includes('fertile') || (b.hidden_traits || []).includes('fertile')) chance += CFG.BREED_FERTILE_BONUS;
     chance = Math.min(0.35, Math.max(0, chance)); // cap at 35%
-
     if (Math.random() > chance) continue;
 
-    // Create child!
-    await _createChild(settlementId, pair);
+    house.occupants++;
+    sim.births.push({ at: ctx.at, house, pair: {
+      id_a: a.id, name_a: a.name, id_b: b.id, name_b: b.name,
+      gen_a: a.generation, gen_b: b.generation,
+      traits_a: a.visible_traits, traits_b: b.visible_traits,
+      stats_a: a.stats, stats_b: b.stats, skills_a: a.skills, skills_b: b.skills,
+      house_a: a.house_id,
+    } });
   }
+}
+
+// One write pass after the hourly loop. Score gains are summed over the
+// whole catch-up and rounded at random (score is an INTEGER column), so
+// sub-1 hourly gains still add up on average instead of being floored away.
+async function _persistSimState(settlementId, sim) {
+  for (const rel of Object.values(sim.rels)) {
+    if (!(rel.gain > 0) && !rel.isNew && rel.state !== 'partners') continue;
+    const total = rel.score + rel.gain;
+    const newScore = Math.min(100, Math.floor(total) + (Math.random() < total - Math.floor(total) ? 1 : 0));
+    const newState = rel.state === 'partners' ? 'partners' : scoreToState(newScore);
+    if (rel.isNew) {
+      await query(
+        `INSERT INTO citizen_relationships (settlement_id, citizen_a_id, citizen_b_id, score, state)
+         VALUES ($1,$2,$3,$4,$5) ON CONFLICT (citizen_a_id, citizen_b_id) DO NOTHING`,
+        [settlementId, rel.citizen_a_id, rel.citizen_b_id, newScore, newState]
+      );
+    } else if (newScore !== rel.score || newState !== rel.state) {
+      await query(
+        'UPDATE citizen_relationships SET score = $1, state = $2, last_updated = NOW() WHERE id = $3',
+        [newScore, newState, rel.id]
+      );
+    }
+  }
+  for (const [a, b] of sim.newPartners) {
+    await query('UPDATE citizens SET partner_id = $1 WHERE id = $2', [b.id, a.id]);
+    await query('UPDATE citizens SET partner_id = $1 WHERE id = $2', [a.id, b.id]);
+  }
+  for (const e of sim.events) await _addEvent(settlementId, e.type, e.message, e.ids, e.at);
+  for (const birth of sim.births) await _createChild(settlementId, birth.pair, birth.at, birth.house.name);
 }
 
 // ── Step 5: Child creation ────────────────────
 
-async function _createChild(settlementId, pair) {
+async function _createChild(settlementId, pair, atMs = null, houseNameKnown = null) {
   // Determine gender
   const isFemale = Math.random() < 0.5;
 
@@ -415,24 +345,28 @@ async function _createChild(settlementId, pair) {
 
   const childId = result.rows[0]?.id;
 
-  // Find house name for event
-  const houseRes = await query('SELECT name FROM houses WHERE id = $1', [pair.house_a]);
-  const houseName = houseRes.rows[0]?.name || 'a Willow Hut';
+  // House name for the event
+  let houseName = houseNameKnown;
+  if (!houseName) {
+    const houseRes = await query('SELECT name FROM houses WHERE id = $1', [pair.house_a]);
+    houseName = houseRes.rows[0]?.name || 'a Willow Hut';
+  }
 
   const babyGender = isFemale ? 'daughter' : 'son';
   await _addEvent(settlementId, 'child_born',
     `New beginnings — ${pair.name_a} and ${pair.name_b} welcome a ${babyGender} into the world. 🍼 May ${childName} grow strong in ${houseName}.`,
-    [pair.id_a, pair.id_b, childId]
+    [pair.id_a, pair.id_b, childId], atMs
   );
 }
 
 // ── Events ────────────────────────────────────
 
-async function _addEvent(settlementId, type, message, citizenIds = []) {
+// atMs: when it happened (catch-up events are back-dated to their hour).
+async function _addEvent(settlementId, type, message, citizenIds = [], atMs = null) {
   await query(
-    `INSERT INTO settlement_events (settlement_id, type, message, citizen_ids)
-     VALUES ($1, $2, $3, $4)`,
-    [settlementId, type, message, JSON.stringify(citizenIds)]
+    `INSERT INTO settlement_events (settlement_id, type, message, citizen_ids, created_at)
+     VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, NOW()))`,
+    [settlementId, type, message, JSON.stringify(citizenIds), atMs ? new Date(Math.min(atMs, Date.now())).toISOString() : null]
   );
 }
 
@@ -442,4 +376,5 @@ function _name(citizen) {
   return citizen?.name || 'Unknown';
 }
 
-module.exports = { runSimulation, awardQuestRelationshipBonus, _createChild };
+module.exports = { runSimulation, awardQuestRelationshipBonus, _createChild, CFG, SIM_MAX_CATCHUP_HOURS,
+  _hourly: { relationships: _hourRelationships, partnerships: _hourPartnerships, breeding: _hourBreeding } };

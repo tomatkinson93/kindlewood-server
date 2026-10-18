@@ -11,11 +11,14 @@ const eventBus = require('../lib/event_bus');
 const happenings = require('../lib/happenings');
 const HFX = require('../lib/happening_effects');
 const gameEvents = require('../lib/game_events');
+const awayReport = require('../lib/away_report');
 
 const router = express.Router();
 
 // Spec 021 — server time: GET /time, GET /time/me, POST /time/debug.
 router.use(require('./time'));
+// "Since you were gone…": POST /seen, GET /away-report.
+router.use(require('./away'));
 
 const SPECIES_RATES = {
   Mice:    { food: 20, timber: 10, stone: 5,  metal: 3, wealth: 8  },
@@ -44,6 +47,17 @@ function happeningPseudoSeason(mods) {
   return { name: '🏮 Happenings', modifiers };
 }
 
+// Add amounts to settlements.away_ledger (flat numeric keys). Never throws.
+async function addToAwayLedger(settlementId, amounts) {
+  const keys = Object.keys(amounts).filter(k => /^[a-z_]+$/.test(k) && amounts[k] > 0);
+  if (!keys.length) return;
+  const parts = keys.map((k, i) => `'${k}', COALESCE((away_ledger->>'${k}')::float8, 0) + $${i + 2}`);
+  await query(
+    `UPDATE settlements SET away_ledger = COALESCE(away_ledger, '{}'::jsonb) || jsonb_build_object(${parts.join(', ')}) WHERE id=$1`,
+    [settlementId, ...keys.map(k => Number(amounts[k]))]
+  ).catch(e => console.error('[away] ledger update failed:', e.message));
+}
+
 async function applyTick(settlement, species) {
   const now = Date.now();
   const lastTick = new Date(settlement.last_tick).getTime();
@@ -57,27 +71,25 @@ async function applyTick(settlement, species) {
     // clock. .catch → [] so pre-migration DBs keep ticking.
     query('SELECT id, tile_q, tile_r, terrain, level FROM outposts WHERE settlement_id=$1', [settlement.id]).catch(() => ({ rows: [] })),
   ]);
-  const season = getCurrentSeason();
   const baseRates = calculateRates(bRes.rows, cRes.rows, species, oRes.rows);
-  const rates = applySeasonModifiers(baseRates, season);
-  // Happening production modifiers, time-weighted over exactly
-  // [last_tick, now] (lib/happening_effects.averageProductionFactor): a
-  // window that covered part of the absence boosts only that part.
-  const hDefs = await happenings.loadLive();
-  const hf = (res) => HFX.averageProductionFactor(hDefs, res, lastTick, now);
-  const updated = {
-    food:   Math.floor(settlement.food   + rates.food   * hf('food')   * hoursElapsed),
-    timber: Math.floor(settlement.timber + rates.timber * hf('timber') * hoursElapsed),
-    stone:  Math.floor(settlement.stone  + rates.stone  * hf('stone')  * hoursElapsed),
-    metal:  Math.floor(settlement.metal  + rates.metal  * hf('metal')  * hoursElapsed),
-    wealth: Math.floor(settlement.wealth + rates.wealth * hf('wealth') * hoursElapsed),
-  };
+  // Effective production hours per resource over exactly [last_tick, now]:
+  // each season multiplier applies only to the hours it covered (seasons are
+  // 7h, so a long absence spans several), and Happening modifiers are
+  // time-weighted inside each season segment (lib/away_report).
+  const effHours = awayReport.effectiveProductionHours(await happenings.loadLive(), lastTick, now);
+  const updated = {};
+  for (const res of HFX.RESOURCES) updated[res] = Math.floor(settlement[res] + (baseRates[res] || 0) * effHours[res]);
 
   await query(`
     UPDATE settlements
     SET food=$1, timber=$2, stone=$3, metal=$4, wealth=$5, last_tick=NOW()
     WHERE id=$6
   `, [updated.food, updated.timber, updated.stone, updated.metal, updated.wealth, settlement.id]);
+  // away_ledger (the "Since you were gone…" splash) adds up what was
+  // produced since the player was last seen online. Separate statement so a
+  // ledger problem can never block production.
+  await addToAwayLedger(settlement.id, Object.fromEntries(
+    HFX.RESOURCES.map(res => ['produced_' + res, Math.max(0, updated[res] - settlement[res])])));
 
   // ── Consumption & famine tick ──
   // MUST run AFTER the production write above: applyConsumption deducts food
@@ -89,6 +101,7 @@ async function applyTick(settlement, species) {
   // value we return reflects the deduction.
   try {
     const famineResult = await applyConsumption(settlement.id);
+    if (famineResult && famineResult.foodConsumed > 0) await addToAwayLedger(settlement.id, { consumed_food: famineResult.foodConsumed });
     if (famineResult) {
       const freshFood = await query('SELECT food FROM settlements WHERE id=$1', [settlement.id]);
       if (freshFood.rows[0]) updated.food = freshFood.rows[0].food;
@@ -107,7 +120,8 @@ async function applyTick(settlement, species) {
       ? (Date.now() - new Date(lastSim).getTime()) / (1000 * 60 * 60)
       : 1.0;
     if (simHoursElapsed >= 1.0) {
-      await runSimulation({ id: settlement.id }, simHoursElapsed);
+      // One simulated hour per real hour away (catch-up), from last_sim_tick.
+      await runSimulation({ id: settlement.id }, simHoursElapsed, lastSim);
     }
   } catch(simErr) {
     console.error('Simulation tick error:', simErr.message);
@@ -1090,6 +1104,7 @@ router.post('/items/:key/spawn', requireAuth, requireAdmin, async (req, res) => 
 });
 
 module.exports = router;
+module.exports._addToAwayLedger = addToAwayLedger;
 
 // Dev-only: reset placement for testing
 router.post('/reset-placement', requireAuth, async (req, res) => {

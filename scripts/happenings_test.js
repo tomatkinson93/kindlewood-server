@@ -217,7 +217,7 @@ const GOLDEN = {
     const db = fs.readFileSync(path.join(__dirname, '..', 'db.js'), 'utf8');
     const mig = fs.readdirSync(path.join(__dirname, '..', 'migrations')).find(f => f.endsWith('_happenings.sql'));
     check('7b. happenings migration exists (BEGIN/COMMIT) and is registered', !!mig &&
-          /BEGIN;[\s\S]*CREATE TABLE IF NOT EXISTS happenings[\s\S]*COMMIT;/.test(fs.readFileSync(path.join(__dirname, '..', 'migrations', mig), 'utf8')) && /'happenings'[,\]]/.test(db) && /'happening_modifiers'\]/.test(db));
+          /BEGIN;[\s\S]*CREATE TABLE IF NOT EXISTS happenings[\s\S]*COMMIT;/.test(fs.readFileSync(path.join(__dirname, '..', 'migrations', mig), 'utf8')) && /'happenings'[,\]]/.test(db) && /'happening_modifiers'[,\]]/.test(db));
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);
