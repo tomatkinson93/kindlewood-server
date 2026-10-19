@@ -134,6 +134,10 @@ check('0. SEASON_CUTOVER_MS is 00:00 UTC', CUT % (24 * H) === 0, new Date(CUT).t
     }
     check(`6. frontend calcSeasonAt === server seasonAt (${samples.length} timestamps)`, !bad,
           bad ? new Date(bad).toISOString() : '');
+    const mods = vm.runInContext('SEASON_MODS', ctx);
+    const modBad = S.SEASONS.filter(se => JSON.stringify({ modifiers: se.modifiers, foodConsumption: se.foodConsumption, timberConsumption: se.timberConsumption, birthChanceBonus: se.birthChanceBonus })
+      !== JSON.stringify(mods[se.id] && { modifiers: mods[se.id].modifiers, foodConsumption: mods[se.id].foodConsumption, timberConsumption: mods[se.id].timberConsumption, birthChanceBonus: mods[se.id].birthChanceBonus }));
+    check('6c. frontend SEASON_MODS matches the server SEASONS effects', modBad.length === 0, modBad.map(x => x.id).join(','));
     const cur = vm.runInContext('calcCurrentSeason()', ctx);
     check('6b. frontend calcCurrentSeason() routes through _seasonNow()', !!cur && typeof cur.index === 'number');
   }
