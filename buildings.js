@@ -1,6 +1,7 @@
 // ── Building definitions ──
 //
-// Optional fields: requires (building ids that must exist), tierCaps
+// Optional fields: requires (building ids that must exist), levelTierReq
+// ({ level: tier } — the tier needed to build that level), tierCaps
 // (per-tier count cap for housing), minTier (lowest settlement tier that may
 // build it — compared through TIER_ORDER).
 
@@ -86,12 +87,14 @@ const BUILDINGS = {
     id: 'market',
     imgFile: 'market.png',
     label: 'Market',
-    desc: 'Traders bring wealth from distant settlements.',
+    desc: 'Traders bring wealth from distant settlements. Unlocks player trading — each level carries more per caravan and adds a merchant.',
     icon: '⚖️',
     cost: { timber: 60, food: 30 },
-    maxLevel: 3,
+    maxLevel: 5,
+    // Settlement tier needed to build each level (lib/market.js caps).
+    levelTierReq: { 2: 'village', 3: 'town', 4: 'city', 5: 'city' },
     effect: (level) => ({ wealth: level * 8 }),
-    citizenSlots: (level) => level,
+    citizenSlots: (level) => level,  // merchant slots = market level
     requires: [],
   },
   starter_house: {

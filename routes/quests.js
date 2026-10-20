@@ -472,6 +472,8 @@ router.post('/accept', requireAuth, async (req, res) => {
       return res.status(400).json({ error: `${citizen.name} is already in a party.` });
     if ((await require('../lib/clan_quests').busyCitizenIds([citizen.id])).length)
       return res.status(400).json({ error: `${citizen.name} is on a clan quest.` });
+    if ((await require('../lib/market').merchantCitizenIds([citizen.id])).length)
+      return res.status(400).json({ error: `${citizen.name} is working as a merchant.` });
 
     // Check citizen isn't on a scouting expedition
     const scoutRes = await query(
@@ -597,6 +599,11 @@ router.post('/accept-party', requireAuth, async (req, res) => {
     if (clanBusy.length) {
       const busy = citizenRes.rows.find(c => c.id === clanBusy[0]);
       return res.status(400).json({ error: `${busy?.name || 'A citizen'} is on a clan quest.` });
+    }
+    const tradeBusy = await require('../lib/market').merchantCitizenIds(citizen_ids);
+    if (tradeBusy.length) {
+      const busy = citizenRes.rows.find(c => c.id === tradeBusy[0]);
+      return res.status(400).json({ error: `${busy?.name || 'A citizen'} is working as a merchant.` });
     }
 
     // Check none are scouting
