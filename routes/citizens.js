@@ -70,6 +70,26 @@ router.get('/', requireAuth, async (req, res) => {
       });
     } catch (e) { /* pre-migration */ }
 
+    // Market merchants — working an order (at home) or on a trade run.
+    const tradeByCitizen = {};
+    try {
+      const tradeRes = await query(
+        `SELECT m.citizen_id, m.order_id, o.resource, NULL::timestamptz AS completes_at, NULL AS status
+           FROM market_order_merchants m JOIN market_orders o ON o.id = m.order_id
+          WHERE o.seller_settlement_id = $1
+         UNION ALL
+         SELECT t.citizen_id, t.order_id, t.resource,
+                CASE WHEN t.status = 'outbound' THEN t.arrives_at ELSE t.returns_at END, t.status
+           FROM market_trips t WHERE t.seller_settlement_id = $1 AND t.status IN ('outbound','returning')`,
+        [settlement.id]);
+      tradeRes.rows.forEach(t => {
+        const prev = tradeByCitizen[t.citizen_id];
+        if (!prev || t.status) tradeByCitizen[t.citizen_id] = {
+          order_id: t.order_id, resource: t.resource, on_road: !!t.status, status: t.status, completes_at: t.completes_at,
+        };
+      });
+    } catch (e) { /* pre-migration */ }
+
     // Build lookup maps for happiness context
     const season = getCurrentSeason();
     // Happening modifiers right now (real clock; happiness + birth chance).
@@ -100,7 +120,7 @@ router.get('/', requireAuth, async (req, res) => {
       const context = {
         season,
         lowFood,
-        onExpedition: !!expByCitizen[c.id] || !!questByCitizen[c.id],
+        onExpedition: !!expByCitizen[c.id] || !!questByCitizen[c.id] || !!tradeByCitizen[c.id]?.on_road,
         partnerHouseId: c.partner_id ? partnerHouseMap[c.partner_id] : null,
         houseChildCount: houseChildCount[c.house_id] || 0,
         happeningHappiness: hMods.happiness || 0,
@@ -171,6 +191,7 @@ router.get('/', requireAuth, async (req, res) => {
         parent_ids: c.parent_ids || [],
         expedition: expByCitizen[c.id] || null,
         active_quest: questByCitizen[c.id] || null,
+        trade: tradeByCitizen[c.id] || null,
         happiness_factors: factors,
         happiness_computed: computed,
         breeding_status: breedingStatus,
@@ -240,6 +261,18 @@ router.patch('/:id/role', requireAuth, async (req, res) => {
         error: `This citizen is currently scouting (${exp.target_q}, ${exp.target_r}) and cannot be reassigned.`
       });
     }
+
+    // Merchants (role set only by the Market): one on the road can't be
+    // reassigned; one at home leaves their order.
+    const onRoad = await query(
+      "SELECT id FROM market_trips WHERE citizen_id=$1 AND status IN ('outbound','returning')", [req.params.id]
+    ).catch(() => ({ rows: [] }));
+    if (onRoad.rows.length)
+      return res.status(400).json({ error: 'This citizen is on a trade run and cannot be reassigned until they return.' });
+    await query(
+      `DELETE FROM market_order_merchants m USING citizens c
+        WHERE m.citizen_id = c.id AND c.id = $1 AND c.settlement_id = $2`, [req.params.id, settlement.id]
+    ).catch(() => {});
 
     await query(
       'UPDATE citizens SET role=$1 WHERE id=$2 AND settlement_id=$3',

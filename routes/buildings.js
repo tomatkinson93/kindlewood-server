@@ -9,6 +9,14 @@ function tierMetFor(def, tier) {
   if (!def.minTier) return true;
   return TIER_ORDER.indexOf(tier || 'camp') >= TIER_ORDER.indexOf(def.minTier);
 }
+// Tier needed to build `level` of def (levelTierReq), or null.
+function levelTierFor(def, level) {
+  return (def.levelTierReq && def.levelTierReq[level]) || null;
+}
+function levelTierMet(def, level, tier) {
+  const need = levelTierFor(def, level);
+  return !need || TIER_ORDER.indexOf(tier || 'camp') >= TIER_ORDER.indexOf(need);
+}
 const tierLabel = t => t.charAt(0).toUpperCase() + t.slice(1);
 
 const router = express.Router();
@@ -54,6 +62,8 @@ router.get('/', requireAuth, async (req, res) => {
       // Check requirements met
       const requiresMet = def.requires.every(req => builtMap[req]);
       const tierMet = tierMetFor(def, settlement.tier);
+      const nextLevelTier = canUpgrade ? levelTierFor(def, currentLevel + 1) : null;
+      const nextLevelTierMet = !canUpgrade || levelTierMet(def, currentLevel + 1, settlement.tier);
 
       // Scale cost with level
       const levelMultiplier = currentLevel + 1;
@@ -74,6 +84,9 @@ router.get('/', requireAuth, async (req, res) => {
         requiresMet,
         tierMet,
         minTier: def.minTier || null,
+        nextLevelTier,
+        nextLevelTierMet,
+        levelTierReq: def.levelTierReq || null,
         cost,
         effect: def.effect(Math.max(1, currentLevel)),
         nextEffect: canUpgrade ? def.effect(currentLevel + 1) : null,
@@ -132,6 +145,9 @@ router.post('/build', requireAuth, async (req, res) => {
 
     if (currentLevel >= def.maxLevel)
       return res.status(400).json({ error: 'Already at max level.' });
+
+    if (!levelTierMet(def, currentLevel + 1, settlement.tier))
+      return res.status(400).json({ error: `Level ${currentLevel + 1} ${def.label} requires a ${tierLabel(levelTierFor(def, currentLevel + 1))} settlement.` });
 
     // Check requirements
     for (const req of def.requires) {

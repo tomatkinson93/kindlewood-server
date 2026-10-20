@@ -31,7 +31,7 @@ router.get('/world', requireAuth, async (req, res) => {
 
     // Get all player settlements for display
     const settlementsRes = await query(`
-      SELECT s.tile_q, s.tile_r, s.name, s.tier, s.user_id, u.species, u.username
+      SELECT s.id AS settlement_id, s.tile_q, s.tile_r, s.name, s.tier, s.user_id, u.species, u.username
       FROM settlements s JOIN users u ON s.user_id = u.id
       WHERE s.tile_q IS NOT NULL AND s.tile_r IS NOT NULL
     `);
@@ -39,6 +39,11 @@ router.get('/world', requireAuth, async (req, res) => {
     settlementsRes.rows.forEach(s => {
       settlementMap[`${s.tile_q},${s.tile_r}`] = { ...s, settlement_type: 'player' };
     });
+
+    // Player towns this viewer may trade with at the Market.
+    const tradePartners = new Set(settlement
+      ? await require('../lib/market').tradePartnerIds({ query }, settlement).catch(() => [])
+      : []);
 
     // Get NPC settlements
     const npcRes = await query('SELECT * FROM npc_settlements');
@@ -165,6 +170,8 @@ router.get('/world', requireAuth, async (req, res) => {
           npc_id: occupant.npc_id || null,
           settlement_type: occupant.settlement_type || 'player',
           isOwn: settlement && t.q === settlement.tile_q && t.r === settlement.tile_r,
+          settlement_id: occupant.settlement_type === 'player' ? occupant.settlement_id : null,
+          can_trade: occupant.settlement_type === 'player' && tradePartners.has(occupant.settlement_id),
           clan: occupant.user_id && clanByUser[occupant.user_id]
             ? { ...clanByUser[occupant.user_id], mine: clanByUser[occupant.user_id].id === myClanId }
             : null,
@@ -345,6 +352,9 @@ router.post('/place', requireAuth, async (req, res) => {
       );
     }
 
+    await require('../lib/market').revealClanmates({ query }, req.user.userId)
+      .catch(e => console.error('[map] clanmate reveal failed:', e.message));
+
     res.json({ ok: true, q, r, terrain: tile.terrain, bonus: TERRAIN_BONUSES[tile.terrain] });
   } catch (err) {
     console.error(err);
@@ -476,6 +486,9 @@ router.post('/arrive', requireAuth, async (req, res) => {
         [req.user.userId, tq, tr]
       );
     }
+
+    await require('../lib/market').revealClanmates({ query }, req.user.userId)
+      .catch(e => console.error('[map] clanmate reveal failed:', e.message));
 
     // Add starter buildings
     const buildings = STARTER_BUILDINGS[species] || STARTER_BUILDINGS.Mice;

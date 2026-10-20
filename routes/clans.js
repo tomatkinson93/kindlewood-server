@@ -396,6 +396,8 @@ async function joinLocked(client, clan, userId, username) {
   await client.query(
     "UPDATE clan_join_requests SET status = 'cancelled', decided_at = NOW() WHERE user_id = $1 AND status = 'pending'", [userId]);
   await logActivity(client, clan.id, 'member_joined', userId, { username });
+  // Clanmates always know where each other live (map + Market visibility).
+  await require('../lib/market').revealClanmates(client, userId);
 }
 
 // Settlement must be placed in the current world to join anything.
