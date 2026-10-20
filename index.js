@@ -83,6 +83,7 @@ app.use('/api/clans', require('./routes/clans'));
 app.use('/api/chat', require('./routes/chat'));
 app.use('/api/clan-quests', require('./routes/clan_quests'));
 app.use('/api/market', require('./routes/market'));
+app.use('/api/travel', require('./routes/travel'));
 app.use((err, req, res, next) => {
   console.error(err.message);
   res.status(500).json({ error: 'Internal server error.' });
