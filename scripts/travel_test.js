@@ -55,6 +55,7 @@ async function part2() {
   const later = s => new Date(Date.now() + s * 1000);
 
   const seller = await user('seller'), buyer = await user('buyer'), stranger = await user('stranger');
+  await q('DELETE FROM npc_settlements WHERE tile_q = 7 AND tile_r = 36');   // left by an earlier run
   const npc = (await q("INSERT INTO npc_settlements (name, tile_q, tile_r) VALUES ($1, 7, 36) RETURNING id", ['Burrowmere ' + RUN])).rows[0];
 
   // Market trip seller → buyer, outbound.

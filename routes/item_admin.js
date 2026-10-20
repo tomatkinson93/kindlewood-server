@@ -24,8 +24,8 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
       (item_key, name, description, icon, category, rarity, rarity_order, quality,
        equip_slot, stat_bonuses, metadata, sell_value, food_value,
        fish_seasons, fish_difficulty, fish_weight, fish_value, fish_flavour,
-       armor_class, damage_dice, damage_bonus, item_effects)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+       armor_class, damage_dice, damage_bonus, item_effects, tradeable)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
     [d.item_key, d.name, d.description||'', d.icon||'📦', d.category||'misc',
      d.rarity||'common', _rarityOrder(d.rarity), d.quality||'basic',
      d.equip_slot||null, JSON.stringify(d.stat_bonuses||{}), JSON.stringify(d.metadata||{}),
@@ -33,7 +33,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
      d.fish_seasons ? JSON.stringify(d.fish_seasons) : null,
      d.fish_difficulty||null, d.fish_weight||null, d.fish_value||null, d.fish_flavour||null,
      d.armor_class||null, d.damage_dice||null, d.damage_bonus||0,
-     JSON.stringify(d.item_effects||[])]);
+     JSON.stringify(d.item_effects||[]), d.tradeable !== false]);
 
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -48,7 +48,7 @@ router.patch('/:key', requireAuth, requireAdmin, async (req, res) => {
     let i = 1;
     const allowed = ['name','description','icon','category','rarity','quality','equip_slot',
       'stat_bonuses','metadata','sell_value','food_value','fish_seasons','fish_difficulty',
-      'fish_weight','fish_value','fish_flavour','armor_class','damage_dice','damage_bonus','item_effects'];
+      'fish_weight','fish_value','fish_flavour','armor_class','damage_dice','damage_bonus','item_effects','tradeable'];
     for (const f of allowed) {
       if (d[f] === undefined) continue;
       sets.push(`${f}=$${i++}`);
