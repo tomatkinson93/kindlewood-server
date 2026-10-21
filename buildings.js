@@ -95,6 +95,7 @@ const BUILDINGS = {
     levelTierReq: { 2: 'village', 3: 'town', 4: 'city', 5: 'city' },
     effect: (level) => ({ wealth: level * 8 }),
     citizenSlots: (level) => level,  // merchant slots = market level
+    stallSlots: (level) => level + 1,  // item stalls (one listing each)
     requires: [],
   },
   starter_house: {

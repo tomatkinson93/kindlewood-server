@@ -39,4 +39,19 @@ CREATE INDEX IF NOT EXISTS market_runs_citizen_idx   ON market_runs (citizen_id,
 
 -- Units on a stall that a buyer's porter is on the way to collect.
 ALTER TABLE market_orders ADD COLUMN IF NOT EXISTS qty_reserved INTEGER NOT NULL DEFAULT 0;
+-- Which building's stalls an item listing sits on (market, smithy, ...).
+ALTER TABLE market_orders ADD COLUMN IF NOT EXISTS venue TEXT;
+
+-- Item listings are stalls now: buyers' porters collect, priced per unit.
+-- Convert listings made under the old model (seller's merchants carried
+-- lots): free their merchants and turn lot prices into unit prices.
+-- Idempotent — only touches item orders that still have merchants or lots.
+UPDATE citizens c SET role = 'idle'
+  FROM market_order_merchants m JOIN market_orders o ON o.id = m.order_id
+ WHERE c.id = m.citizen_id AND o.kind = 'item' AND c.role = 'merchant'
+   AND NOT EXISTS (SELECT 1 FROM market_trips t WHERE t.citizen_id = c.id AND t.status IN ('outbound','returning'));
+DELETE FROM market_order_merchants m USING market_orders o WHERE o.id = m.order_id AND o.kind = 'item';
+UPDATE market_orders SET lot_price = GREATEST(1, CEIL(lot_price::numeric / lot_size)), lot_size = 1
+ WHERE kind = 'item' AND lot_size > 1;
+UPDATE market_orders SET venue = 'market' WHERE kind = 'item' AND venue IS NULL;
 COMMIT;
