@@ -84,31 +84,11 @@ router.delete('/:id', requireAuth, async (req, res) => {
 });
 
 
-// ── POST /api/inventory/:id/sell — sell item for gold ──
-router.post('/:id/sell', requireAuth, async (req, res) => {
-  try {
-    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
-    const sett = settRes.rows[0];
-    if (!sett) return res.status(404).json({ error: 'No settlement.' });
-
-    const itemRes = await query(
-      'SELECT * FROM inventory_items WHERE id=$1 AND settlement_id=$2',
-      [req.params.id, sett.id]
-    );
-    const item = itemRes.rows[0];
-    if (!item) return res.status(404).json({ error: 'Item not found.' });
-
-    // Calculate sell value — use metadata.sell_value if present, else 1 per item
-    const meta = item.metadata || {};
-    const sellPerUnit = meta.sell_value || 1;
-    const totalGold = sellPerUnit * (item.quantity || 1);
-
-    // Award gold and remove item
-    await query('UPDATE settlements SET wealth = wealth + $1 WHERE id=$2', [totalGold, sett.id]);
-    await query('DELETE FROM inventory_items WHERE id=$1', [item.id]);
-
-    res.json({ ok: true, gold_awarded: totalGold });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+// ── POST /api/inventory/:id/sell — retired ──
+// Instant selling to the town is gone: sell to Ironhaven by porter (low
+// prices) or to other players at the Market (/api/market).
+router.post('/:id/sell', requireAuth, (req, res) => {
+  res.status(410).json({ error: 'Instant selling has moved: sell to Ironhaven or list it at the Market.' });
 });
 
 module.exports = router;

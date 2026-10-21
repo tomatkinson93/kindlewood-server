@@ -95,6 +95,7 @@ const BUILDINGS = {
     levelTierReq: { 2: 'village', 3: 'town', 4: 'city', 5: 'city' },
     effect: (level) => ({ wealth: level * 8 }),
     citizenSlots: (level) => level,  // merchant slots = market level
+    stallSlots: (level) => level + 1,  // item stalls (one listing each)
     requires: [],
   },
   starter_house: {
@@ -123,6 +124,7 @@ const BUILDINGS = {
     maxLevel: 5,
     effect: (level) => ({ food: level * 3 }),
     citizenSlots: (level) => level * 2,
+    stallSlots: (level) => Math.min(10, level * 2),   // fish & food stall
     requires: [],
   },
   guild_hall: {
@@ -136,6 +138,34 @@ const BUILDINGS = {
     citizenSlots: () => 0,
     requires: [],
     minTier: 'town',             // enforced in routes/buildings.js
+  },
+  // Shops (Market v2): item stalls run by a shopkeeper citizen. Storefronts
+  // for now — crafting arrives with advanced jobs on these same buildings.
+  smithy: {
+    id: 'smithy',
+    label: 'Smithy',
+    desc: 'An anvil and a counter. Sells weapons, armour and tools to other towns while a shopkeeper minds it.',
+    icon: '⚒️',
+    cost: { timber: 120, stone: 80, metal: 40 },
+    maxLevel: 3,
+    effect: () => ({}),
+    citizenSlots: () => 1,           // the shopkeeper
+    stallSlots: (level) => level * 4,
+    requires: [],
+    minTier: 'village',
+  },
+  jeweller: {
+    id: 'jeweller',
+    label: 'Jeweller',
+    desc: 'Glass cases and a careful eye. Sells trinkets and trophies while a shopkeeper minds it.',
+    icon: '💍',
+    cost: { stone: 60, metal: 30, wealth: 120 },
+    maxLevel: 3,
+    effect: () => ({}),
+    citizenSlots: () => 1,
+    stallSlots: (level) => level * 4,
+    requires: [],
+    minTier: 'town',
   },
 };
 

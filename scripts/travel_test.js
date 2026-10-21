@@ -43,7 +43,7 @@ async function part2() {
     const [tq, tr] = tiles[seq++];
     const u = (await q("INSERT INTO users (username, email, password_hash, species) VALUES ($1,$2,'x','Otters') RETURNING id",
       [username, `${username}@t.l`])).rows[0];
-    await q('DELETE FROM settlements WHERE tile_q=$1 AND tile_r=$2', [tq, tr]).catch(() => {});
+    await q('UPDATE settlements SET tile_q = NULL, tile_r = NULL WHERE tile_q=$1 AND tile_r=$2', [tq, tr]);   // earlier runs' towns
     const s = (await q(`INSERT INTO settlements (user_id, name, tile_q, tile_r, world_version) VALUES ($1,$2,$3,$4,2) RETURNING id`,
       [u.id, username, tq, tr])).rows[0];
     const c = (await q("INSERT INTO citizens (settlement_id, name, role, life_stage) VALUES ($1,$2,'idle','adult') RETURNING id",

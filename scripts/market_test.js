@@ -53,6 +53,18 @@ function part1() {
   check(iv({}) === null && /one piece per order/.test(iv({ qty_total: 2, lot_size: 1 })), 'equipment: one piece per order');
   check(/at most 200 Trout/.test(market.validateOrder({ lot_size: 201, lot_price: 5, qty_total: 300 }, m1, { name: 'Trout', category: 'fish' })), 'stack lot over carry weight rejected');
 
+  console.log('Ironhaven & categories (pure)');
+  check(market.ironhavenUnitPrice(10, false) === 3 && market.ironhavenUnitPrice(10, true) === 6, 'Ironhaven pays 30%, wanted items 60%');
+  check(market.ironhavenUnitPrice(1, false) === 1 && market.ironhavenUnitPrice(0, false) === 1, 'Ironhaven pays at least 1 gold');
+  const tpls = Array.from({ length: 12 }, (_, i) => ({ item_key: 'k' + i, sell_value: 5, tradeable: i !== 3 }));
+  const w1 = market.ironhavenWants(tpls, 100), w1b = market.ironhavenWants(tpls, 100), w2 = market.ironhavenWants(tpls, 101);
+  check(w1.length === 3 && JSON.stringify(w1) === JSON.stringify(w1b) && JSON.stringify(w1) !== JSON.stringify(w2), 'weekly wants: 3 items, stable within a week, change weekly');
+  check(!market.ironhavenWants(tpls.map(t => ({ ...t, tradeable: false })), 100).length, 'untradeable items are never wanted');
+  check(market.categoryOf({ equip_slot: 'weapon', category: 'equipment' }) === 'weapon' && market.categoryOf({ category: 'fish' }) === 'fish' &&
+        market.categoryOf({ category: 'quest_item' }) === 'misc', 'categories: slot first, then category, else misc');
+  check(market.porterMax({ category: 'fish' }) === 40 && market.porterMax({ equip_slot: 'weapon' }) === 6 && market.porterMax({ equip_slot: 'armour' }) === 4,
+    'porter carries 20: 40 fish, 6 weapons, 4 armour');
+
   console.log('Travel');
   check(market.legSeconds(0, {}, m1) === market.MIN_LEG_SECONDS, 'minimum leg');
   check(market.legSeconds(10, {}, m1) === 450, '10 hexes at 45s = 450s');
@@ -79,7 +91,7 @@ async function part2() {
     const [tq, tr] = tiles[seq++];
     const u = (await q("INSERT INTO users (username, email, password_hash, species) VALUES ($1,$2,'x','Mice') RETURNING id",
       [username, `${username}@t.l`])).rows[0];
-    await q('DELETE FROM settlements WHERE tile_q=$1 AND tile_r=$2', [tq, tr]).catch(() => {});
+    await q('UPDATE settlements SET tile_q = NULL, tile_r = NULL WHERE tile_q=$1 AND tile_r=$2', [tq, tr]);   // earlier runs' towns
     const s = (await q(`INSERT INTO settlements (user_id, name, tile_q, tile_r, world_version, wealth, timber, last_tick)
                         VALUES ($1,$2,$3,$4,2,$5,$6,NOW()) RETURNING *`, [u.id, username, tq, tr, wealth, timber])).rows[0];
     if (lvl) await q("INSERT INTO buildings (settlement_id, type, level) VALUES ($1,'market',$2)", [s.id, lvl]);
@@ -271,48 +283,89 @@ async function part2() {
   await inv(ibuy, tradeKey, { name: 'Test Trout', quantity: 5 });   // buyer already has a stack
   const qty = async id => ((await q('SELECT quantity FROM inventory_items WHERE id=$1', [id])).rows[0] || {}).quantity || 0;
   const itemOrder = (id, extra) => api(isel, 'POST', '/api/market/orders',
-    { kind: 'item', inventory_id: id, lot_size: 10, lot_price: 15, qty_total: 20, citizen_ids: [m1], ...extra });
+    { kind: 'item', inventory_id: id, unit_price: 15, qty_total: 20, ...extra });
+  const bp1 = await citizen(ibuy, 'Pip', 1), bp2 = await citizen(ibuy, 'Wren', 1);
+  const landRuns = async () => {
+    await q("UPDATE market_runs SET arrives_at = NOW() - INTERVAL '2 seconds' WHERE status = 'outbound' AND (settlement_id = $1 OR target_settlement_id = $1)", [isel.sid]);
+    await market.resolveDue();
+    await q("UPDATE market_runs SET returns_at = NOW() - INTERVAL '1 second' WHERE status = 'returning' AND (settlement_id = $1 OR target_settlement_id = $1)", [isel.sid]);
+    await market.resolveDue();
+  };
 
-  r = await itemOrder(relic, { lot_size: 1, qty_total: 1 });
+  r = await itemOrder(relic, { qty_total: 1 });
   check(r.status === 400 && /cannot be traded/.test(r.body.error), 'template marked not tradeable → refused');
-  r = await itemOrder(bound, { lot_size: 1, qty_total: 1 });
+  r = await itemOrder(bound, { qty_total: 1 });
   check(r.status === 400 && /cannot be traded/.test(r.body.error), 'stack marked not tradeable → refused');
-  r = await itemOrder(worn, { lot_size: 1, qty_total: 1 });
+  r = await itemOrder(worn, { qty_total: 1 });
   check(r.status === 400 && /Unequip/.test(r.body.error), 'equipped item → refused');
-  r = await itemOrder(trout, { lot_size: 10, qty_total: 301 });
+  r = await itemOrder(trout, { qty_total: 301 });
   check(r.status === 400 && /only have 300/.test(r.body.error), 'cannot list more than the stack holds');
-  r = await itemOrder(plate, { lot_size: 1, qty_total: 2 });
+  r = await itemOrder(plate, { qty_total: 2 });
   check(r.status === 400, 'cannot list more equipment than you have');
   r = await itemOrder(trout);
-  check(r.status === 200 && r.body.order.kind === 'item' && r.body.order.item_snapshot.name === 'Test Trout', 'stack listed as an item order');
+  check(r.status === 200 && r.body.order.kind === 'item' && r.body.order.venue === 'market' && r.body.order.lot_price === 15,
+    'stack listed on a Market stall at 15 each — no merchants needed');
   const fishOrder = r.body.order.id;
   check(await qty(trout) === 280, 'listed units leave the stack (300 → 280)');
-  r = await api(isel, 'POST', '/api/market/orders', { kind: 'item', inventory_id: plate, lot_size: 1, lot_price: 90, qty_total: 1, citizen_ids: [await citizen(isel, 'Reed')] });
-  check(r.status === 200 && r.body.order.qty_total === 1, 'equipment listed as a single piece');
+  r = await itemOrder(plate, { qty_total: 1, unit_price: 90 });
+  check(r.status === 200 && r.body.order.qty_total === 1, 'equipment listed');
   const plateOrder = r.body.order.id;
   check((await q('SELECT 1 FROM inventory_items WHERE id=$1', [plate])).rowCount === 0, 'a fully listed row leaves the inventory');
+  r = await itemOrder(trout, { qty_total: 1 }); const extra1 = r.body.order.id;
+  r = await itemOrder(trout, { qty_total: 1 }); const extra2 = r.body.order.id;
+  r = await itemOrder(trout, { qty_total: 1 });
+  check(r.status === 400 && /stalls/.test(r.body.error), 'Market level 3 has 4 item stalls', r.body.error);
+  r = await api(isel, 'GET', '/api/market/mine');
+  check(r.body.stalls && r.body.stalls.market.slots === 4 && r.body.stalls.market.free === 0, 'stall usage reported');
+  await api(isel, 'POST', `/api/market/orders/${extra1}/cancel`);
+  await api(isel, 'POST', `/api/market/orders/${extra2}/cancel`);
 
   r = await api(ibuy, 'GET', '/api/market/orders?resource=items');
   const seenItems = (r.body.orders || []).filter(o => o.seller.id === isel.sid);
-  check(seenItems.length === 2 && seenItems.every(o => o.kind === 'item' && o.item && o.item.name), 'Items filter lists item orders with their details');
+  check(seenItems.length === 2 && seenItems.every(o => o.kind === 'item' && o.item && o.unit_price && o.porter_max), 'Items list: stalls with unit price and porter cap');
+  check(((r.body.orders || []).find(o => o.id === fishOrder) || {}).porter_max === 20, 'porter cap is min(available, carry): 20 trout');
   r = await api(ibuy, 'GET', '/api/market/orders?resource=timber');
   check(!(r.body.orders || []).some(o => o.kind === 'item'), 'resource filters exclude items');
-
   r = await api(ibuy, 'POST', `/api/market/orders/${fishOrder}/buy`);
-  check(r.status === 200 && r.body.trip.qty === 10 && r.body.trip.item.name === 'Test Trout', 'buy a lot of 10 trout');
-  await landAll(fishOrder);
+  check(r.status === 409 && /porter/.test(r.body.error), 'items can only be collected, not delivered');
+
+  const buyerGold = await res(ibuy, 'wealth'), sellerGold = await res(isel, 'wealth');
+  r = await api(ibuy, 'POST', `/api/market/orders/${fishOrder}/pickup`, { qty: 10, citizen_id: bp1 });
+  check(r.status === 200 && r.body.run.qty === 10 && r.body.run.gold === 150, 'porter sent for 10 trout (150 gold held)');
+  check(await res(ibuy, 'wealth') === buyerGold - 150, 'buyer\'s gold held at dispatch');
+  check((await q('SELECT qty_reserved FROM market_orders WHERE id=$1', [fishOrder])).rows[0].qty_reserved === 10, '10 trout reserved on the stall');
+  r = await api(ibuy, 'POST', `/api/market/orders/${fishOrder}/pickup`, { qty: 11, citizen_id: bp2 });
+  check(r.status === 409 && /Only 10 left/.test(r.body.error), 'reserved units can\'t be bought twice');
+  r = await api(isel, 'GET', '/api/travel');
+  check((r.body.journeys || []).some(j => j.incoming && /to buy 10× Test Trout/.test(j.title)), 'seller sees the porter coming on the map');
+  await landRuns();
+  check(await res(isel, 'wealth') === sellerGold + 150 - 7, 'seller paid on arrival, minus the 5% fee');
   const buyerTrout = (await q('SELECT quantity FROM inventory_items WHERE settlement_id=$1 AND item_key=$2', [ibuy.sid, tradeKey])).rows;
-  check(buyerTrout.length === 1 && buyerTrout[0].quantity === 15, 'delivered trout stack onto the buyer\'s existing 5');
-  r = await api(ibuy, 'POST', `/api/market/orders/${plateOrder}/buy`);
-  await landAll(plateOrder);
+  check(buyerTrout.length === 1 && buyerTrout[0].quantity === 15, 'porter home: trout stacked onto the buyer\'s 5');
+
+  // Race for the last plate: exactly one porter wins.
+  const [pa, pb] = await Promise.all([
+    api(ibuy, 'POST', `/api/market/orders/${plateOrder}/pickup`, { qty: 1, citizen_id: bp1 }),
+    api(ibuy, 'POST', `/api/market/orders/${plateOrder}/pickup`, { qty: 1, citizen_id: bp2 }),
+  ]);
+  check([pa.status, pb.status].sort().join() === '200,409', 'two porters for the last piece: exactly one is sent');
+  await landRuns();
   check((await q("SELECT 1 FROM inventory_items WHERE settlement_id=$1 AND item_key=$2 AND equip_slot='armour'", [ibuy.sid, 'mt_plate_' + RUN])).rowCount === 1,
     'equipment arrives as its own piece');
+  check((await q('SELECT status FROM market_orders WHERE id=$1', [plateOrder])).rows[0].status === 'sold_out', 'emptied stall closes');
+
+  // Cancelling with a porter on the way: they still get theirs.
+  r = await api(ibuy, 'POST', `/api/market/orders/${fishOrder}/pickup`, { qty: 4, citizen_id: bp1 });
+  const tBefore = await qty(trout);
   r = await api(isel, 'POST', `/api/market/orders/${fishOrder}/cancel`);
-  check(r.status === 200 && r.body.refunded === 10 && await qty(trout) === 290, 'cancel returns unsold items to the stack');
+  check(r.status === 200 && r.body.refunded === 6 && await qty(trout) === tBefore + 6, 'cancel returns the unreserved 6, keeps the 4 on the way');
+  await landRuns();
+  check((await q('SELECT quantity FROM inventory_items WHERE settlement_id=$1 AND item_key=$2', [ibuy.sid, tradeKey])).rows[0].quantity === 19,
+    'the porter still collects the reserved 4');
 
   r = await api(isel, 'GET', '/api/market/mine');
   const pick = (r.body.items || []).reduce((m, i) => (m[i.id] = i, m), {});
-  check(pick[trout] && pick[trout].tradeable && pick[trout].max_lot === 700 && pick[trout].sell_value === 10, 'Sell picker: tradeable stack, carry cap, town price');
+  check(pick[trout] && pick[trout].tradeable && pick[trout].sell_value === 10, 'Sell picker: tradeable stack with its town value');
   check(pick[relic] && !pick[relic].tradeable && pick[worn] && /Unequip/.test(pick[worn].reason), 'Sell picker: untradeable and equipped items say why');
 
   // Dev Tools: the tradeable toggle on a template.
@@ -330,6 +383,148 @@ async function part2() {
     check(r.status === 200 && row && row.tradeable === false, 'Dev Tools: new items can be created not tradeable');
     await api(admin, 'PATCH', `/api/game/items/${tradeKey}`, { tradeable: true });
   } else console.log('  (MARKET_TEST_ADMIN_ID not set — skipping Dev Tools checks)');
+
+  // ── Shops ──────────────────────────────────────────────────────────────
+  console.log('Shops');
+  r = await api(isel, 'POST', '/api/buildings/build', { buildingId: 'smithy' });
+  check(r.status === 400 && /Village/.test(r.body.error), 'Smithy needs a Village');
+  r = await api(isel, 'POST', '/api/buildings/build', { buildingId: 'jeweller' });
+  check(r.status === 400 && /Town/.test(r.body.error), 'Jeweller needs a Town');
+  await q("INSERT INTO buildings (settlement_id, type, level) VALUES ($1,'smithy',1), ($1,'fishing_post',2)", [isel.sid]);
+  const sword = await inv(isel, 'mt_sword_' + RUN, { name: 'Shop Sword', icon: '🗡', category: 'equipment', equip_slot: 'weapon' });
+  r = await itemOrder(sword, { qty_total: 1, unit_price: 50, venue: 'smithy' });
+  check(r.status === 400 && /needs a shopkeeper/.test(r.body.error), 'a shop without a shopkeeper can\'t sell');
+  r = await api(isel, 'GET', '/api/market/shops');
+  check(r.body.stalls.smithy.slots === 4 && r.body.stalls.smithy.open === false && r.body.stalls.fishing_post.slots === 4, 'Smithy L1: 4 stalls (closed); Fishing Post L2: 4');
+  const smith = await citizen(isel, 'Anvil'), fishwife = await citizen(isel, 'Marsh');
+  r = await api(isel, 'PATCH', '/api/market/shops/smithy/keeper', { citizen_id: smith });
+  check(r.status === 200 && r.body.stalls.smithy.open && r.body.stalls.smithy.keeper.id === smith && await role(smith) === 'shopkeeper', 'shopkeeper assigned; the Smithy opens');
+  r = await api(isel, 'PATCH', '/api/market/shops/fishing_post/keeper', { citizen_id: smith });
+  check(r.status === 400 && /busy/.test(r.body.error), 'one citizen minds one shop');
+  await api(isel, 'PATCH', '/api/market/shops/fishing_post/keeper', { citizen_id: fishwife });
+  r = await itemOrder(sword, { qty_total: 1, unit_price: 50 });
+  check(r.status === 200 && r.body.order.venue === 'smithy', 'weapons go to the Smithy by default');
+  const swordOrder = r.body.order.id;
+  r = await itemOrder(trout, { qty_total: 5, unit_price: 3 });
+  check(r.status === 200 && r.body.order.venue === 'fishing_post', 'fish go to the Fishing Post stall');
+  const fishStall = r.body.order.id;
+  r = await itemOrder(trout, { qty_total: 1, unit_price: 3, venue: 'smithy' });
+  check(r.status === 400 && /doesn't sell fish/.test(r.body.error), 'a shop only sells its own kinds of item');
+  r = await api(ibuy, 'GET', '/api/market/orders?category=weapon');
+  const swordRow = (r.body.orders || []).find(o => o.id === swordOrder);
+  check(swordRow && swordRow.venue_label === 'Smithy', 'buyers see it at the Smithy');
+  r = await api(isel, 'PATCH', `/api/citizens/${smith}/role`, { role: 'farmer' });
+  check(r.status === 200 && (await q('SELECT 1 FROM shop_keepers WHERE citizen_id=$1', [smith])).rowCount === 0, 'reassigning the shopkeeper closes the shop');
+  r = await api(ibuy, 'GET', '/api/market/orders?category=weapon');
+  check(!(r.body.orders || []).some(o => o.id === swordOrder), 'closed shop: its stalls are hidden');
+  r = await api(ibuy, 'POST', `/api/market/orders/${swordOrder}/pickup`, { qty: 1, citizen_id: bp1 });
+  check(r.status === 409 && /closed/.test(r.body.error), 'and nobody can collect from it');
+  await api(isel, 'PATCH', '/api/market/shops/smithy/keeper', { citizen_id: smith });
+  r = await api(ibuy, 'POST', `/api/market/orders/${swordOrder}/pickup`, { qty: 1, citizen_id: bp1 });
+  check(r.status === 200, 'shop reopened: the sword can be collected');
+  await landRuns();
+  await api(isel, 'POST', `/api/market/orders/${fishStall}/cancel`);
+
+  // ── Wanted (buy orders) ───────────────────────────────────────────────
+  console.log('Wanted');
+  r = await api(ibuy, 'POST', '/api/market/wants', { kind: 'item', item_key: lockedKey, qty: 1, price: 5 });
+  check(r.status === 400 && /cannot be traded/.test(r.body.error), 'cannot ask for untradeable items');
+  let bGold = await res(ibuy, 'wealth');
+  r = await api(ibuy, 'POST', '/api/market/wants', { kind: 'item', item_key: tradeKey, qty: 10, price: 4 });
+  check(r.status === 200 && r.body.gold_held === 40 && await res(ibuy, 'wealth') === bGold - 40, 'want 10 trout at 4 each: 40 gold held');
+  const troutWant = r.body.want.id;
+  r = await api(ibuy, 'POST', '/api/market/wants', { kind: 'resource', resource: 'timber', qty: 300, price: 60 });
+  check(r.status === 200 && r.body.gold_held === 180, 'want 300 timber at 60 per 100: 180 gold held');
+  const timberWant = r.body.want.id;
+  r = await api(isel, 'GET', '/api/market/wants');
+  const wv = (r.body.wants || []).find(w => w.id === troutWant);
+  check(wv && wv.you_have > 0 && wv.qty_open === 10 && wv.item.name === 'Test Trout' && wv.buyer.id === ibuy.sid, 'sellers see the want and how many they hold');
+  r = await api(isel, 'GET', '/api/market/wants?category=fish');
+  check((r.body.wants || []).every(w => w.item && w.item.cat === 'fish') && (r.body.wants || []).some(w => w.id === troutWant), 'wants filter by category');
+  const filler = await citizen(isel, 'Courier');
+  r = await api(isel, 'POST', `/api/market/wants/${troutWant}/fill`, { inventory_id: relic, qty: 1, citizen_id: filler });
+  check(r.status === 400 && /exactly/.test(r.body.error), 'only the exact item can fill a want');
+  const tq0 = await qty(trout), sGold0 = await res(isel, 'wealth');
+  r = await api(isel, 'POST', `/api/market/wants/${troutWant}/fill`, { inventory_id: trout, qty: 4, citizen_id: filler });
+  check(r.status === 200 && r.body.gold === 16, 'fill 4 of 10: a porter sets off (16 gold due)');
+  check(await qty(trout) === tq0 - 4, 'the 4 trout leave the seller');
+  r = await api(isel, 'POST', `/api/market/wants/${troutWant}/fill`, { inventory_id: trout, qty: 7, citizen_id: await citizen(isel, 'Runner') });
+  check(r.status === 409 && /only want 6/.test(r.body.error), 'cannot over-fill: 6 still wanted');
+  const bt0 = (await q('SELECT COALESCE(SUM(quantity),0)::int AS n FROM inventory_items WHERE settlement_id=$1 AND item_key=$2', [ibuy.sid, tradeKey])).rows[0].n;
+  await landRuns();
+  const bt1 = (await q('SELECT COALESCE(SUM(quantity),0)::int AS n FROM inventory_items WHERE settlement_id=$1 AND item_key=$2', [ibuy.sid, tradeKey])).rows[0].n;
+  check(bt1 === bt0 + 4, 'buyer receives the trout');
+  check(await res(isel, 'wealth') === sGold0 + 16, 'seller paid when the porter is home (fee rounds to 0)');
+  bGold = await res(ibuy, 'wealth');
+  r = await api(ibuy, 'POST', `/api/market/wants/${troutWant}/cancel`);
+  check(r.status === 200 && r.body.refunded === 24 && await res(ibuy, 'wealth') === bGold + 24, 'cancel refunds the 24 gold still held');
+  // Equipment is one row per piece: a fill draws from several rows.
+  const bladeKey = 'mt_blade_' + RUN;
+  await q("INSERT INTO item_templates (item_key, name, category, equip_slot, sell_value) VALUES ($1,'Test Blade','equipment','weapon',20)", [bladeKey]);
+  for (let i = 0; i < 3; i++) await inv(isel, bladeKey, { name: 'Test Blade', icon: '🗡', category: 'equipment', equip_slot: 'weapon' });
+  r = await api(ibuy, 'POST', '/api/market/wants', { kind: 'item', item_key: bladeKey, qty: 2, price: 25 });
+  const bladeWant = r.body.want.id;
+  r = await api(isel, 'POST', `/api/market/wants/${bladeWant}/fill`, { qty: 2, citizen_id: await citizen(isel, 'Smith2') });
+  check(r.status === 200 && (await q('SELECT COUNT(*)::int AS n FROM inventory_items WHERE settlement_id=$1 AND item_key=$2', [isel.sid, bladeKey])).rows[0].n === 1,
+    'filling 2 blades takes two separate pieces');
+  await landRuns();
+  check((await q('SELECT COUNT(*)::int AS n FROM inventory_items WHERE settlement_id=$1 AND item_key=$2', [ibuy.sid, bladeKey])).rows[0].n === 2,
+    'buyer receives both blades');
+  const tb0 = await res(isel, 'timber'), btb0 = await res(ibuy, 'timber'), sg1 = await res(isel, 'wealth');
+  r = await api(isel, 'POST', `/api/market/wants/${timberWant}/fill`, { qty: 300, citizen_id: filler });
+  check(r.status === 200 && r.body.gold === 180, 'fill all 300 timber with one trip (Market L3 caravan)');
+  check((await q('SELECT status FROM market_wants WHERE id=$1', [timberWant])).rows[0].status === 'filled', 'fully promised want closes');
+  await landRuns();
+  check(await res(isel, 'timber') === tb0 - 300 && await res(ibuy, 'timber') === btb0 + 300, 'timber moves from seller to buyer');
+  check(await res(isel, 'wealth') === sg1 + 171, 'seller gets 180 minus the 5% fee');
+  r = await api(ibuy, 'POST', '/api/market/wants', { kind: 'item', item_key: tradeKey, qty: 2, price: 3 });
+  const stale = r.body.want.id; bGold = await res(ibuy, 'wealth');
+  await q("UPDATE market_wants SET expires_at = NOW() - INTERVAL '1 second' WHERE id=$1", [stale]);
+  await market.tick();
+  check((await q('SELECT status FROM market_wants WHERE id=$1', [stale])).rows[0].status === 'expired' && await res(ibuy, 'wealth') === bGold + 6,
+    'expired want refunds its gold');
+
+  // ── Search & Ironhaven ─────────────────────────────────────────────────
+  console.log('Search & Ironhaven');
+  r = await api(isel, 'GET', '/api/market/catalog?q=Te');
+  check(r.status === 200 && r.body.items.length === 0, 'search needs 3+ characters');
+  r = await api(isel, 'GET', '/api/market/catalog?q=' + encodeURIComponent('Test Tro'));
+  // (Earlier runs leave more "Test Trout" templates; match by name.)
+  check((r.body.items || []).some(i => i.name === 'Test Trout' && i.cat === 'fish') && r.body.items.length <= 8, 'search finds "Test Trout" with its category (max 8)');
+  r = await api(isel, 'GET', '/api/market/catalog?q=' + encodeURIComponent('Test Rel'));
+  check(!(r.body.items || []).some(i => i.item_key === lockedKey), 'untradeable items are not offered in search');
+  r = await api(isel, 'GET', '/api/market/catalog');
+  check(Array.isArray(r.body.categories) && r.body.categories.length === 9, 'category list with order counts');
+  r = await api(isel, 'POST', `/api/inventory/${trout}/sell`);
+  check(r.status === 410, 'instant selling is retired (410)');
+
+  let ih = (await q('SELECT id FROM npc_settlements WHERE is_kingdom LIMIT 1')).rows[0];
+  if (!ih) {
+    await q('DELETE FROM npc_settlements WHERE tile_q = 0 AND tile_r = 0');
+    ih = (await q("INSERT INTO npc_settlements (name, tile_q, tile_r, faction, is_kingdom) VALUES ('Ironhaven', 0, 0, 'kingdom', TRUE) RETURNING id")).rows[0];
+  }
+  r = await api(isel, 'GET', '/api/market/ironhaven');
+  check(r.status === 200 && r.body.ironhaven && r.body.wants.length <= 3 && r.body.porter_carry === 20, 'Ironhaven: location, weekly wants, porter carry');
+  const offer = (r.body.items || []).find(i => i.id === trout);
+  const wantedTrout = offer && offer.wanted;
+  check(offer && offer.unit_price === (wantedTrout ? 6 : 3) && offer.max_qty === 40, 'Ironhaven offers 30% (60% if wanted) and caps the porter at 40 fish');
+  check(((r.body.items || []).find(i => i.id === relic) || {}).tradeable === false, 'untradeable items flagged on the Ironhaven list');
+  const porter = await citizen(isel, 'Thistle', 3);
+  r = await api(isel, 'POST', '/api/market/ironhaven/sell', { inventory_id: relic, qty: 1, citizen_id: porter });
+  check(r.status === 400 && /cannot be traded/.test(r.body.error), 'Ironhaven refuses untradeable items');
+  r = await api(isel, 'POST', '/api/market/ironhaven/sell', { inventory_id: trout, qty: 41, citizen_id: porter });
+  check(r.status === 400 && /at most 40/.test(r.body.error), 'porter carry limit enforced');
+  const troutBefore = await qty(trout), goldBefore = await res(isel, 'wealth');
+  r = await api(isel, 'POST', '/api/market/ironhaven/sell', { inventory_id: trout, qty: 10, citizen_id: porter });
+  check(r.status === 200 && r.body.gold === (wantedTrout ? 60 : 30), 'porter sets off with 10 trout, priced now');
+  check(await qty(trout) === troutBefore - 10, 'the trout leave the inventory');
+  r = await api(isel, 'POST', '/api/market/ironhaven/sell', { inventory_id: trout, qty: 1, citizen_id: porter });
+  check(r.status === 400 && /busy/.test(r.body.error), 'a porter on the road cannot be sent again');
+  await q("UPDATE market_runs SET arrives_at = NOW() - INTERVAL '2 seconds', returns_at = NOW() - INTERVAL '1 second' WHERE citizen_id = $1", [porter]);
+  await market.resolveDue();
+  check(await res(isel, 'wealth') === goldBefore + (wantedTrout ? 60 : 30), 'gold credited when the porter is home');
+  r = await api(isel, 'GET', '/api/travel');
+  check(!(r.body.journeys || []).some(j => j.id && j.id.startsWith('run:')), 'finished run leaves the map');
 
   await pool.end();
 }
