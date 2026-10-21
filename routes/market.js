@@ -5,6 +5,7 @@ const requireAuth = require('../middleware/auth');
 const { BUILDINGS } = require('../buildings');
 const market = require('../lib/market');
 const eventBus = require('../lib/event_bus');
+const { takeItem, snapshotOf, untradeableReason } = require('../lib/inventory');
 
 const router = express.Router();
 
@@ -92,6 +93,8 @@ router.get('/status', requireAuth, async (req, res) => {
       merchantsAssigned: counts.merchants,
       tradeable: market.TRADEABLE,
       unitWeight: market.UNIT_WEIGHT,
+      itemSlotWeight: market.ITEM_SLOT_WEIGHT,
+      itemCategoryWeight: market.ITEM_CATEGORY_WEIGHT,
       referencePrice: market.REFERENCE_PRICE,
       secondsPerHex: market.SECONDS_PER_HEX,
       minLegSeconds: market.MIN_LEG_SECONDS,
@@ -125,7 +128,8 @@ router.get('/orders', requireAuth, async (req, res) => {
 
     const params = [me.user_id, me.tile_q, me.tile_r, me.world_version, me.id];
     let extra = '';
-    if (req.query.resource && market.isTradeable(req.query.resource)) {
+    if (req.query.resource === 'items') extra += ` AND o.kind = 'item'`;
+    else if (req.query.resource && market.isTradeable(req.query.resource)) {
       params.push(req.query.resource); extra += ` AND o.resource = $${params.length}`;
     }
     const sellerId = parseId(req.query.seller);
@@ -133,7 +137,7 @@ router.get('/orders', requireAuth, async (req, res) => {
 
     const live = "COALESCE(c.life_stage, 'adult') NOT IN ('deceased','child')";
     const rows = (await query(
-      `SELECT o.id, o.resource, o.lot_size, o.lot_price, o.qty_total, o.qty_escrowed, o.created_at, o.expires_at,
+      `SELECT o.id, o.kind, o.resource, o.item_key, o.item_snapshot, o.lot_size, o.lot_price, o.qty_total, o.qty_escrowed, o.created_at, o.expires_at,
               s.id AS seller_id, s.name AS seller_name, s.tier AS seller_tier, s.tile_q, s.tile_r,
               u.username AS seller_username, u.species AS seller_species,
               (SELECT COUNT(*) FROM market_order_merchants m JOIN citizens c ON c.id = m.citizen_id
@@ -161,7 +165,7 @@ router.get('/orders', requireAuth, async (req, res) => {
       const wait = paused && o.next_free_at ? Math.max(0, Math.round((new Date(o.next_free_at).getTime() - now) / 1000)) : 0;
       const nextQty = Math.min(o.lot_size, o.qty_escrowed);
       return {
-        id: o.id, resource: o.resource,
+        id: o.id, kind: o.kind, resource: o.resource, item: o.item_snapshot || null,
         lot_size: o.lot_size, lot_price: o.lot_price,
         next_lot_qty: nextQty, next_lot_price: market.priceFor(o, nextQty),
         unit_price: Math.round((o.lot_price / o.lot_size) * 100) / 100,
@@ -214,6 +218,24 @@ router.get('/mine', requireAuth, async (req, res) => {
         ORDER BY name`, [me.id])).rows;
     const busy = adults.length ? await unavailable(me.id, adults.map(c => c.id)) : {};
 
+    // Inventory for the Sell tab's item picker: each stack with whether it
+    // can be listed, how many fit on one trip, and the town merchant price.
+    const mods = await market.loadModifiers({ query }, me.id);
+    const inv = (await query(
+      `SELECT i.*, t.tradeable AS template_tradeable, t.sell_value AS template_sell
+         FROM inventory_items i LEFT JOIN item_templates t ON t.item_key = i.item_key
+        WHERE i.settlement_id = $1 ORDER BY i.category, i.name`, [me.id])).rows;
+    const items = inv.map(r => {
+      const snap = snapshotOf(r);
+      const why = untradeableReason(r, r.template_tradeable == null ? null : { tradeable: r.template_tradeable });
+      return {
+        id: r.id, ...snap, quantity: r.quantity,
+        tradeable: !why, reason: why,
+        weight: market.itemWeight(snap), max_lot: market.maxItemUnits(snap, mods.carryWeight),
+        sell_value: Number(r.template_sell) || Number(r.metadata && r.metadata.sell_value) || 0,
+      };
+    });
+
     res.json({
       ok: true,
       now: new Date().toISOString(),
@@ -226,12 +248,13 @@ router.get('/mine', requireAuth, async (req, res) => {
         })),
       })),
       trips: trips.map(t => ({
-        id: t.id, order_id: t.order_id, resource: t.resource, qty: t.qty,
+        id: t.id, order_id: t.order_id, kind: t.kind, resource: t.resource, item: t.item_snapshot || null, qty: t.qty,
         gold_paid: t.gold_paid, fee: t.fee, distance: t.distance, status: t.status,
         departs_at: t.departs_at, arrives_at: t.arrives_at, returns_at: t.returns_at,
         direction: t.seller_settlement_id === me.id ? 'selling' : 'buying',
         seller_name: t.seller_name, buyer_name: t.buyer_name, citizen_name: t.citizen_name,
       })),
+      items,
       candidates: adults.map(c => ({
         id: c.id, name: c.name, role: c.role, scouting: Number(c.skills?.scouting) || 1,
         busy: busy[c.id] || null,
@@ -247,16 +270,33 @@ router.post('/orders', requireAuth, async (req, res) => {
     const me = await mySettlement(req.user.userId);
     await settle(me.id);
     if (me.tile_q == null) throw new MarketError(400, 'Place your settlement on the map first.');
+    const isItem = req.body.kind === 'item';
     const body = {
-      resource: req.body.resource,
+      resource: isItem ? null : req.body.resource,
       lot_size: toInt(req.body.lot_size), lot_price: toInt(req.body.lot_price), qty_total: toInt(req.body.qty_total),
     };
+    // Item orders: read the stack now to validate weight and lot size; it is
+    // taken (and re-checked) under a row lock in the transaction below.
+    let item = null, invId = null;
+    if (isItem) {
+      invId = parseId(req.body.inventory_id);
+      if (!invId) throw new MarketError(400, 'Choose an item to sell.');
+      const row = (await query(
+        `SELECT i.*, t.tradeable AS template_tradeable FROM inventory_items i
+           LEFT JOIN item_templates t ON t.item_key = i.item_key
+          WHERE i.id = $1 AND i.settlement_id = $2`, [invId, me.id])).rows[0];
+      if (!row) throw new MarketError(404, 'That item is not in your inventory.');
+      const why = untradeableReason(row, row.template_tradeable == null ? null : { tradeable: row.template_tradeable });
+      if (why) throw new MarketError(400, why);
+      if (body.qty_total > row.quantity) throw new MarketError(400, `You only have ${row.quantity} ${row.name}.`);
+      item = snapshotOf(row);
+    }
     const ids = parseCitizenIds(req.body.citizen_ids);
     if (!ids || !ids.length) throw new MarketError(400, 'Choose at least one merchant.');
 
     const mods = await market.loadModifiers({ query }, me.id);
     if (!mods.marketLevel) throw new MarketError(403, 'Build a Market first.');
-    const bad = market.validateOrder(body, mods);
+    const bad = market.validateOrder(body, mods, item);
     if (bad) throw new MarketError(400, bad);
 
     const reasons = await unavailable(me.id, ids);
@@ -274,22 +314,31 @@ router.post('/orders', requireAuth, async (req, res) => {
       if (counts.merchants + ids.length > mods.merchants)
         throw new MarketError(400, `Your Market has room for ${mods.merchants} merchant${mods.merchants === 1 ? '' : 's'} (${counts.merchants} already working).`);
 
-      const col = body.resource;  // whitelisted by validateOrder
-      const paid = await client.query(
-        `UPDATE settlements SET ${col} = ${col} - $2 WHERE id = $1 AND ${col} >= $2 RETURNING ${col}`,
-        [me.id, body.qty_total]);
-      if (!paid.rowCount) throw new MarketError(400, `Not enough ${col} — you need ${body.qty_total}.`);
+      let remaining = null, snapshot = null;
+      if (isItem) {
+        try { snapshot = await takeItem(client, me.id, invId, body.qty_total); }
+        catch (e) { throw new MarketError(e.status || 400, e.message); }
+      } else {
+        const col = body.resource;  // whitelisted by validateOrder
+        const paid = await client.query(
+          `UPDATE settlements SET ${col} = ${col} - $2 WHERE id = $1 AND ${col} >= $2 RETURNING ${col}`,
+          [me.id, body.qty_total]);
+        if (!paid.rowCount) throw new MarketError(400, `Not enough ${col} — you need ${body.qty_total}.`);
+        remaining = paid.rows[0][col];
+      }
 
       const o = (await client.query(
-        `INSERT INTO market_orders (seller_settlement_id, resource, lot_size, lot_price, qty_total, qty_escrowed, expires_at)
-         VALUES ($1,$2,$3,$4,$5,$5, NOW() + make_interval(hours => $6)) RETURNING *`,
-        [me.id, col, body.lot_size, body.lot_price, body.qty_total, mods.expiryHours])).rows[0];
+        `INSERT INTO market_orders (seller_settlement_id, kind, resource, item_key, item_snapshot,
+                                    lot_size, lot_price, qty_total, qty_escrowed, expires_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8, NOW() + make_interval(hours => $9)) RETURNING *`,
+        [me.id, isItem ? 'item' : 'resource', body.resource, snapshot && snapshot.item_key,
+         snapshot && JSON.stringify(snapshot), body.lot_size, body.lot_price, body.qty_total, mods.expiryHours])).rows[0];
       for (const id of ids) {
         // UNIQUE(citizen_id) also guards a racing second listing.
         await client.query('INSERT INTO market_order_merchants (order_id, citizen_id) VALUES ($1,$2)', [o.id, id]);
       }
       await client.query("UPDATE citizens SET role = 'merchant' WHERE id = ANY($1::int[]) AND settlement_id = $2", [ids, me.id]);
-      o.remaining = paid.rows[0][col];
+      o.remaining = remaining;
       return o;
     });
     res.json({ ok: true, order });
@@ -338,11 +387,12 @@ router.post('/orders/:id/buy', requireAuth, async (req, res) => {
       const fee = market.feeFor(gold, sellerMods.feeRate);
 
       const trip = (await client.query(
-        `INSERT INTO market_trips (order_id, seller_settlement_id, buyer_settlement_id, citizen_id, resource, qty,
-                                   gold_paid, fee, distance, arrives_at, returns_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW() + make_interval(secs => $10), NOW() + make_interval(secs => $10 * 2))
+        `INSERT INTO market_trips (order_id, seller_settlement_id, buyer_settlement_id, citizen_id, kind, resource,
+                                   item_key, item_snapshot, qty, gold_paid, fee, distance, arrives_at, returns_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, NOW() + make_interval(secs => $13), NOW() + make_interval(secs => $13 * 2))
          RETURNING *`,
-        [o.id, o.seller_settlement_id, me.id, merchant.id, o.resource, qty, gold, fee, distance, leg])).rows[0];
+        [o.id, o.seller_settlement_id, me.id, merchant.id, o.kind, o.resource, o.item_key,
+         o.item_snapshot ? JSON.stringify(o.item_snapshot) : null, qty, gold, fee, distance, leg])).rows[0];
       const left = o.qty_escrowed - qty;
       await client.query('UPDATE market_orders SET qty_escrowed = $2 WHERE id = $1', [o.id, left]);
       if (left === 0) await market.closeOrder(client, { ...o, qty_escrowed: 0 }, 'sold_out');
@@ -352,12 +402,13 @@ router.post('/orders/:id/buy', requireAuth, async (req, res) => {
     eventBus.publish(result.trip.seller_settlement_id, {
       type: 'market_purchase', order_id: orderId, trip_id: result.trip.id,
       buyer: me.name, resource: result.trip.resource, qty: result.trip.qty, gold: result.trip.gold_paid,
-      sold_out: result.soldOut,
+      sold_out: result.soldOut, ...market.itemEventBits(result.trip),
     });
     res.json({
       ok: true, wealth: result.wealth, merchant: result.merchant, seller: result.seller.name,
       trip: {
-        id: result.trip.id, resource: result.trip.resource, qty: result.trip.qty, gold_paid: result.trip.gold_paid,
+        id: result.trip.id, kind: result.trip.kind, resource: result.trip.resource, item: result.trip.item_snapshot,
+        qty: result.trip.qty, gold_paid: result.trip.gold_paid,
         distance: result.trip.distance, departs_at: result.trip.departs_at, arrives_at: result.trip.arrives_at,
       },
     });

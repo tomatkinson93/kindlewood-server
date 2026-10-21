@@ -1061,18 +1061,44 @@ router.post('/items', requireAuth, requireAdmin, async (req, res) => {
     if (!d.item_key || !d.name) return res.status(400).json({ error: 'item_key and name required.' });
     const db = require('../db');
     const rarityOrder = { common:1, uncommon:2, rare:3, epic:4, legendary:5 }[d.rarity] || 1;
-    await db.query(`INSERT INTO item_templates
+    const ins = await db.query(`INSERT INTO item_templates
       (item_key,name,description,icon,category,rarity,rarity_order,quality,equip_slot,
        stat_bonuses,sell_value,food_value,fish_seasons,fish_difficulty,fish_weight,
-       fish_value,fish_flavour,armor_class,damage_dice,damage_bonus)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+       fish_value,fish_flavour,armor_class,damage_dice,damage_bonus,tradeable)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
       ON CONFLICT (item_key) DO NOTHING`,
     [d.item_key,d.name,d.description||'',d.icon||'📦',d.category||'misc',
      d.rarity||'common',rarityOrder,d.quality||'basic',d.equip_slot||null,
      JSON.stringify(d.stat_bonuses||{}),d.sell_value||0,d.food_value||0,
      d.fish_seasons?JSON.stringify(d.fish_seasons):null,
      d.fish_difficulty||null,d.fish_weight||null,d.fish_value||null,d.fish_flavour||null,
-     d.armor_class||null,d.damage_dice||null,d.damage_bonus||0]);
+     d.armor_class||null,d.damage_dice||null,d.damage_bonus||0, d.tradeable !== false]);
+    // Duplicate keys stay a no-op success (Seed All Items re-posts defaults).
+    res.json({ ok: true, created: ins.rowCount > 0 });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /api/game/items/:key — edit a template (Dev Tools ✏). Only the
+// fields sent are changed. tradeable=false stops every copy of the item
+// being listed at the Market or traded any other way.
+router.patch('/items/:key', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const d = req.body || {};
+    const jsonFields = ['stat_bonuses', 'metadata', 'fish_seasons', 'item_effects'];
+    const allowed = ['name', 'description', 'icon', 'category', 'rarity', 'quality', 'equip_slot',
+      'stat_bonuses', 'metadata', 'sell_value', 'food_value', 'fish_seasons', 'fish_difficulty',
+      'fish_weight', 'fish_value', 'fish_flavour', 'armor_class', 'damage_dice', 'damage_bonus', 'item_effects', 'tradeable'];
+    const sets = [], vals = [];
+    for (const f of allowed) {
+      if (d[f] === undefined) continue;
+      vals.push(jsonFields.includes(f) && d[f] !== null ? JSON.stringify(d[f]) : f === 'tradeable' ? d[f] !== false : d[f]);
+      sets.push(`${f}=$${vals.length}`);
+    }
+    if (d.rarity) { vals.push({ common:1, uncommon:2, rare:3, epic:4, legendary:5 }[d.rarity] || 1); sets.push(`rarity_order=$${vals.length}`); }
+    if (!sets.length) return res.status(400).json({ error: 'Nothing to update.' });
+    vals.push(req.params.key);
+    const r = await require('../db').query(`UPDATE item_templates SET ${sets.join(',')} WHERE item_key=$${vals.length}`, vals);
+    if (!r.rowCount) return res.status(404).json({ error: 'Item not found.' });
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
