@@ -63,4 +63,37 @@ CREATE TABLE IF NOT EXISTS shop_keepers (
   citizen_id     INTEGER NOT NULL UNIQUE REFERENCES citizens(id) ON DELETE CASCADE,
   PRIMARY KEY (settlement_id, venue)
 );
+
+-- Buy orders ("Wanted"): a town posts what it wants and the price; the
+-- gold is held. Sellers fill them by sending a porter with the goods
+-- (market_runs kind 'fill'), paid when the porter is home.
+--   per: how many units the price is for (1 for items, 100 for resources)
+--   qty_open: units nobody has promised yet
+CREATE TABLE IF NOT EXISTS market_wants (
+  id                   SERIAL PRIMARY KEY,
+  buyer_settlement_id  INTEGER NOT NULL REFERENCES settlements(id) ON DELETE CASCADE,
+  kind                 TEXT NOT NULL CHECK (kind IN ('item','resource')),
+  item_key             TEXT,
+  item_name            TEXT,
+  item_icon            TEXT,
+  item_cat             TEXT,
+  resource             TEXT,
+  qty_total            INTEGER NOT NULL CHECK (qty_total > 0),
+  qty_open             INTEGER NOT NULL CHECK (qty_open >= 0),
+  price                INTEGER NOT NULL CHECK (price > 0),
+  per                  INTEGER NOT NULL DEFAULT 1 CHECK (per > 0),
+  gold_held            INTEGER NOT NULL CHECK (gold_held >= 0),
+  status               TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','filled','cancelled','expired')),
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at           TIMESTAMPTZ NOT NULL,
+  closed_at            TIMESTAMPTZ,
+  CHECK ((kind = 'item' AND item_key IS NOT NULL) OR (kind = 'resource' AND resource IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS market_wants_active_idx ON market_wants (status, expires_at);
+CREATE INDEX IF NOT EXISTS market_wants_buyer_idx  ON market_wants (buyer_settlement_id, status);
+
+ALTER TABLE market_runs ADD COLUMN IF NOT EXISTS want_id INTEGER REFERENCES market_wants(id) ON DELETE SET NULL;
+ALTER TABLE market_runs ADD COLUMN IF NOT EXISTS resource TEXT;
+ALTER TABLE market_runs DROP CONSTRAINT IF EXISTS market_runs_kind_check;
+ALTER TABLE market_runs ADD CONSTRAINT market_runs_kind_check CHECK (kind IN ('ironhaven','pickup','fill'));
 COMMIT;

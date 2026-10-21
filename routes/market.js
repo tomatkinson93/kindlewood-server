@@ -5,7 +5,7 @@ const requireAuth = require('../middleware/auth');
 const { BUILDINGS } = require('../buildings');
 const market = require('../lib/market');
 const eventBus = require('../lib/event_bus');
-const { takeItem, snapshotOf, untradeableReason } = require('../lib/inventory');
+const { takeItem, takeItemsByKey, snapshotOf, untradeableReason } = require('../lib/inventory');
 
 const router = express.Router();
 
@@ -279,13 +279,19 @@ router.get('/mine', requireAuth, async (req, res) => {
       })),
       items,
       stalls: await market.stallState({ query }, me.id),
+      wants: (await query(
+        `SELECT * FROM market_wants WHERE buyer_settlement_id = $1
+            AND (status = 'active' OR closed_at > NOW() - INTERVAL '24 hours') ORDER BY (status = 'active') DESC, created_at DESC LIMIT 30`,
+        [me.id])).rows.map(w => wantView(w)),
       runs: (await query(
         `SELECT r.*, c.name AS citizen_name, s.name AS from_name FROM market_runs r
            LEFT JOIN citizens c ON c.id = r.citizen_id JOIN settlements s ON s.id = r.settlement_id
-          WHERE r.kind = 'pickup' AND (r.settlement_id = $1 OR (r.target_settlement_id = $1 AND r.status = 'outbound'))
+          WHERE r.kind IN ('pickup','fill') AND (r.settlement_id = $1 OR (r.target_settlement_id = $1 AND r.status = 'outbound'))
             AND (r.status <> 'done' OR r.returns_at > NOW() - INTERVAL '24 hours')
           ORDER BY r.departs_at DESC LIMIT 40`, [me.id])).rows.map(r => ({
-        id: r.id, direction: r.settlement_id === me.id ? 'collecting' : 'incoming', status: r.status, failed: r.failed,
+        id: r.id, kind: r.kind, resource: r.resource,
+        direction: r.settlement_id === me.id ? (r.kind === 'fill' ? 'delivering' : 'collecting') : (r.kind === 'fill' ? 'arriving' : 'incoming'),
+        status: r.status, failed: r.failed,
         qty: r.qty, gold: r.gold, fee: r.fee, item: r.item_snapshot, citizen_name: r.citizen_name,
         from_name: r.from_name, target_name: r.target_name, distance: r.distance,
         departs_at: r.departs_at, arrives_at: r.arrives_at, returns_at: r.returns_at,
@@ -593,6 +599,191 @@ router.patch('/shops/:venue/keeper', requireAuth, async (req, res) => {
     if (e && e.code === '23505') return res.status(409).json({ error: 'That citizen already minds another shop.' });
     sendError(res, e, 'Could not change the shopkeeper.');
   }
+});
+
+// ── Buy orders ("Wanted") ─────────────────────────────────────────────────
+
+function wantView(w, me) {
+  const per = w.per || 1;
+  return {
+    id: w.id, kind: w.kind, item_key: w.item_key, resource: w.resource,
+    item: w.kind === 'item' ? { name: w.item_name, icon: w.item_icon, cat: w.item_cat } : null,
+    qty_total: w.qty_total, qty_open: w.qty_open, price: w.price, per,
+    unit_price: Math.round((w.price / per) * 100) / 100,
+    total_open: market.wantGold(w.price, w.qty_open, per),
+    status: w.status, expires_at: w.expires_at, created_at: w.created_at,
+    buyer: w.buyer_name ? { id: w.buyer_settlement_id, name: w.buyer_name, username: w.buyer_username, species: w.buyer_species } : undefined,
+    distance: me && w.tile_q != null ? market.distanceBetween(me, w) : undefined,
+  };
+}
+
+// GET /api/market/wants?category=&item_key=&resource= — other towns' buy
+// orders you could fill (trade partners only).
+router.get('/wants', requireAuth, async (req, res) => {
+  try {
+    const me = await mySettlement(req.user.userId);
+    await settle(me.id);
+    if (me.tile_q == null) return res.json({ ok: true, wants: [] });
+    const params = [me.user_id, me.tile_q, me.tile_r, me.world_version, me.id];
+    let extra = '';
+    if (req.query.item_key) { params.push(String(req.query.item_key)); extra += ` AND w.item_key = $${params.length}`; }
+    else if (req.query.resource === 'resources') extra += ` AND w.kind = 'resource'`;
+    else if (market.isTradeable(req.query.resource)) { params.push(req.query.resource); extra += ` AND w.resource = $${params.length}`; }
+    else if (market.ITEM_CATEGORIES.includes(req.query.category)) { params.push(req.query.category); extra += ` AND w.item_cat = $${params.length}`; }
+    const rows = (await query(
+      `SELECT w.*, s.name AS buyer_name, s.tile_q, s.tile_r, u.username AS buyer_username, u.species AS buyer_species
+         FROM market_wants w JOIN settlements s ON s.id = w.buyer_settlement_id JOIN users u ON u.id = s.user_id
+        WHERE w.status = 'active' AND w.expires_at > NOW() AND w.qty_open > 0
+          AND ${market.tradePartnerSql('s', { userId: '$1', q: '$2', r: '$3', worldVersion: '$4', settlementId: '$5' })}
+          ${extra}
+        ORDER BY (w.price::float / w.per) DESC, w.created_at LIMIT 200`, params)).rows;
+    // What you hold that could fill each one.
+    const haveItems = Object.fromEntries((await query(
+      `SELECT item_key, SUM(quantity)::int AS n FROM inventory_items
+        WHERE settlement_id = $1 AND equipped_to IS NULL AND tradeable GROUP BY item_key`, [me.id])).rows.map(r => [r.item_key, r.n]));
+    const mods = await market.loadModifiers({ query }, me.id);
+    res.json({ ok: true, wants: rows.map(w => {
+      const v = wantView(w, me);
+      v.you_have = w.kind === 'item' ? (haveItems[w.item_key] || 0) : (me[w.resource] || 0);
+      v.carry_max = w.kind === 'item' ? market.porterMax({ category: w.item_cat === 'fish' || w.item_cat === 'food' ? w.item_cat : 'misc',
+        equip_slot: ['weapon', 'armour', 'tool', 'trinket'].includes(w.item_cat) ? w.item_cat : null }) : market.fillMaxResource(w.resource, mods);
+      return v;
+    }) });
+  } catch (e) { sendError(res, e, 'Could not load wanted orders.'); }
+});
+
+// POST /api/market/wants { kind, item_key | resource, qty, price }
+// price is per item, or per 100 units of a resource. The gold is held.
+router.post('/wants', requireAuth, async (req, res) => {
+  try {
+    const me = await mySettlement(req.user.userId);
+    await settle(me.id);
+    if (me.tile_q == null) throw new MarketError(400, 'Place your settlement on the map first.');
+    const mods = await market.loadModifiers({ query }, me.id);
+    if (!mods.marketLevel) throw new MarketError(403, 'Build a Market first.');
+    const kind = req.body.kind === 'resource' ? 'resource' : 'item';
+    const qty = toInt(req.body.qty), price = toInt(req.body.price);
+    if (!Number.isInteger(qty) || qty <= 0 || qty > 1000000) throw new MarketError(400, 'Invalid quantity.');
+    if (!Number.isInteger(price) || price <= 0 || price > 1000000) throw new MarketError(400, 'Set a price.');
+    let tpl = null, per = 1;
+    if (kind === 'item') {
+      tpl = (await query('SELECT * FROM item_templates WHERE item_key = $1', [String(req.body.item_key || '')])).rows[0];
+      if (!tpl) throw new MarketError(400, 'Pick an item from the list.');
+      if (tpl.tradeable === false) throw new MarketError(400, 'That item cannot be traded.');
+    } else {
+      if (!market.isTradeable(req.body.resource)) throw new MarketError(400, 'That resource cannot be traded.');
+      per = market.WANT_RESOURCE_PER;
+    }
+    const gold = market.wantGold(price, qty, per);
+    const want = await withTransaction(async (client) => {
+      await client.query('SELECT id FROM settlements WHERE id = $1 FOR UPDATE', [me.id]);
+      const n = (await client.query("SELECT COUNT(*)::int AS n FROM market_wants WHERE buyer_settlement_id = $1 AND status = 'active'", [me.id])).rows[0].n;
+      const cap = market.wantsMax(mods.marketLevel);
+      if (n >= cap) throw new MarketError(400, `Your Market can post ${cap} wanted orders at once.`);
+      const paid = await client.query('UPDATE settlements SET wealth = wealth - $2 WHERE id = $1 AND wealth >= $2', [me.id, gold]);
+      if (!paid.rowCount) throw new MarketError(400, `Not enough gold — this needs ${gold} held.`);
+      return (await client.query(
+        `INSERT INTO market_wants (buyer_settlement_id, kind, item_key, item_name, item_icon, item_cat, resource,
+                                   qty_total, qty_open, price, per, gold_held, expires_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8,$9,$10,$11, NOW() + make_interval(hours => $12)) RETURNING *`,
+        [me.id, kind, tpl && tpl.item_key, tpl && tpl.name, tpl && tpl.icon, tpl && market.categoryOf(tpl),
+         kind === 'resource' ? req.body.resource : null, qty, price, per, gold, mods.expiryHours])).rows[0];
+    });
+    res.json({ ok: true, want: wantView(want), gold_held: gold });
+  } catch (e) { sendError(res, e, 'Could not post that order.'); }
+});
+
+// POST /api/market/wants/:id/cancel — refunds the gold not yet promised.
+router.post('/wants/:id/cancel', requireAuth, async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Bad id.' });
+  try {
+    const me = await mySettlement(req.user.userId);
+    const refunded = await withTransaction(async (client) => {
+      const w = (await client.query(
+        "SELECT * FROM market_wants WHERE id = $1 AND buyer_settlement_id = $2 AND status = 'active' FOR UPDATE", [id, me.id])).rows[0];
+      if (!w) throw new MarketError(404, 'Order not found.');
+      return market.closeWant(client, w, 'cancelled');
+    });
+    res.json({ ok: true, refunded });
+  } catch (e) { sendError(res, e, 'Could not cancel that order.'); }
+});
+
+// POST /api/market/wants/:id/fill { qty, citizen_id, inventory_id? }
+// Your porter takes the goods to the buyer; you're paid when they're home.
+router.post('/wants/:id/fill', requireAuth, async (req, res) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Bad id.' });
+  try {
+    const me = await mySettlement(req.user.userId);
+    await settle(me.id);
+    if (me.tile_q == null) throw new MarketError(400, 'Place your settlement on the map first.');
+    const qty = toInt(req.body.qty), citizenId = parseId(req.body.citizen_id);
+    if (!Number.isInteger(qty) || qty <= 0) throw new MarketError(400, 'Invalid quantity.');
+    if (!citizenId) throw new MarketError(400, 'Choose a porter.');
+    const reasons = await unavailable(me.id, [citizenId]);
+    if (reasons[citizenId]) throw new MarketError(400, reasons[citizenId]);
+    const mods = await market.loadModifiers({ query }, me.id);
+
+    const result = await withTransaction(async (client) => {
+      const w = (await client.query('SELECT * FROM market_wants WHERE id = $1 FOR UPDATE', [id])).rows[0];
+      if (!w || w.status !== 'active' || new Date(w.expires_at) <= new Date()) throw new MarketError(404, 'That order is no longer open.');
+      if (w.buyer_settlement_id === me.id) throw new MarketError(400, 'You cannot fill your own order.');
+      if (qty > w.qty_open) throw new MarketError(409, w.qty_open ? `They only want ${w.qty_open} more.` : 'That order is already filled.');
+      if (!(await market.canTrade(client, me, w.buyer_settlement_id)))
+        throw new MarketError(403, 'You do not know that settlement well enough to trade.');
+
+      let snap = null;
+      if (w.kind === 'item') {
+        // Optional inventory_id: if given it must be the wanted item. The
+        // units come from all your matching stacks (equipment is one row
+        // per piece).
+        const invId = parseId(req.body.inventory_id);
+        if (invId) {
+          const row = (await client.query('SELECT item_key FROM inventory_items WHERE id = $1 AND settlement_id = $2', [invId, me.id])).rows[0];
+          if (!row) throw new MarketError(404, 'That item is not in your inventory.');
+          if (row.item_key !== w.item_key) throw new MarketError(400, `They want ${w.item_name}, exactly.`);
+        }
+        const tpl = (await client.query('SELECT item_key, category, equip_slot FROM item_templates WHERE item_key = $1', [w.item_key])).rows[0];
+        const max = market.porterMax(tpl || { category: w.item_cat });
+        if (qty > max) throw new MarketError(400, `A porter can carry at most ${max} ${w.item_name}.`);
+        try { snap = await takeItemsByKey(client, me.id, w.item_key, qty); }
+        catch (e) { throw new MarketError(e.status || 400, e.message); }
+      } else {
+        const max = market.fillMaxResource(w.resource, mods);
+        if (qty > max) throw new MarketError(400, `You can carry at most ${max} ${w.resource} per trip.`);
+        const col = w.resource;   // whitelisted at posting
+        const took = await client.query(`UPDATE settlements SET ${col} = ${col} - $2 WHERE id = $1 AND ${col} >= $2`, [me.id, qty]);
+        if (!took.rowCount) throw new MarketError(400, `Not enough ${col}.`);
+      }
+      const gold = Math.min(w.gold_held, market.wantGold(w.price, qty, w.per));
+      const left = w.qty_open - qty;
+      await client.query('UPDATE market_wants SET qty_open = $2, gold_held = gold_held - $3 WHERE id = $1', [w.id, left, gold]);
+      if (left === 0) {
+        // Fully promised: return any rounding remainder and close.
+        const after = (await client.query('SELECT * FROM market_wants WHERE id = $1', [w.id])).rows[0];
+        await market.closeWant(client, after, 'filled');
+      }
+      const buyer = (await client.query('SELECT id, name, tile_q, tile_r FROM settlements WHERE id = $1', [w.buyer_settlement_id])).rows[0];
+      const cit = (await client.query('SELECT * FROM citizens WHERE id = $1 AND settlement_id = $2', [citizenId, me.id])).rows[0];
+      const distance = market.distanceBetween(me, buyer) || 0;
+      const leg = market.legSeconds(distance, cit, mods);
+      const run = (await client.query(
+        `INSERT INTO market_runs (kind, settlement_id, citizen_id, want_id, target_settlement_id, target_name, target_q, target_r,
+                                  item_key, item_snapshot, resource, qty, gold, fee, distance, arrives_at, returns_at)
+         VALUES ('fill',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, NOW() + make_interval(secs => $15), NOW() + make_interval(secs => $15 * 2))
+         RETURNING *`,
+        [me.id, citizenId, w.id, buyer.id, buyer.name, buyer.tile_q, buyer.tile_r, snap && snap.item_key,
+         snap && JSON.stringify(snap), w.kind === 'resource' ? w.resource : null, qty, gold, market.feeFor(gold, mods.feeRate), distance, leg])).rows[0];
+      return { run, buyer, porter: cit.name, want: w };
+    });
+    eventBus.publish(result.buyer.id, {
+      type: 'market_want_filling', want_id: id, seller: me.name, qty, resource: result.want.resource,
+      ...(result.want.kind === 'item' ? { item: { name: result.want.item_name, icon: result.want.item_icon } } : {}),
+    });
+    res.json({ ok: true, porter: result.porter, buyer: result.buyer.name, gold: result.run.gold, fee: result.run.fee,
+      run: { id: result.run.id, qty: result.run.qty, arrives_at: result.run.arrives_at, returns_at: result.run.returns_at } });
+  } catch (e) { sendError(res, e, 'Could not fill that order.'); }
 });
 
 // ── POST /api/market/orders/:id/cancel ────────────────────────────────────
