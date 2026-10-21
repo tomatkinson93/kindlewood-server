@@ -53,6 +53,18 @@ function part1() {
   check(iv({}) === null && /one piece per order/.test(iv({ qty_total: 2, lot_size: 1 })), 'equipment: one piece per order');
   check(/at most 200 Trout/.test(market.validateOrder({ lot_size: 201, lot_price: 5, qty_total: 300 }, m1, { name: 'Trout', category: 'fish' })), 'stack lot over carry weight rejected');
 
+  console.log('Ironhaven & categories (pure)');
+  check(market.ironhavenUnitPrice(10, false) === 3 && market.ironhavenUnitPrice(10, true) === 6, 'Ironhaven pays 30%, wanted items 60%');
+  check(market.ironhavenUnitPrice(1, false) === 1 && market.ironhavenUnitPrice(0, false) === 1, 'Ironhaven pays at least 1 gold');
+  const tpls = Array.from({ length: 12 }, (_, i) => ({ item_key: 'k' + i, sell_value: 5, tradeable: i !== 3 }));
+  const w1 = market.ironhavenWants(tpls, 100), w1b = market.ironhavenWants(tpls, 100), w2 = market.ironhavenWants(tpls, 101);
+  check(w1.length === 3 && JSON.stringify(w1) === JSON.stringify(w1b) && JSON.stringify(w1) !== JSON.stringify(w2), 'weekly wants: 3 items, stable within a week, change weekly');
+  check(!market.ironhavenWants(tpls.map(t => ({ ...t, tradeable: false })), 100).length, 'untradeable items are never wanted');
+  check(market.categoryOf({ equip_slot: 'weapon', category: 'equipment' }) === 'weapon' && market.categoryOf({ category: 'fish' }) === 'fish' &&
+        market.categoryOf({ category: 'quest_item' }) === 'misc', 'categories: slot first, then category, else misc');
+  check(market.porterMax({ category: 'fish' }) === 40 && market.porterMax({ equip_slot: 'weapon' }) === 6 && market.porterMax({ equip_slot: 'armour' }) === 4,
+    'porter carries 20: 40 fish, 6 weapons, 4 armour');
+
   console.log('Travel');
   check(market.legSeconds(0, {}, m1) === market.MIN_LEG_SECONDS, 'minimum leg');
   check(market.legSeconds(10, {}, m1) === 450, '10 hexes at 45s = 450s');
@@ -79,7 +91,7 @@ async function part2() {
     const [tq, tr] = tiles[seq++];
     const u = (await q("INSERT INTO users (username, email, password_hash, species) VALUES ($1,$2,'x','Mice') RETURNING id",
       [username, `${username}@t.l`])).rows[0];
-    await q('DELETE FROM settlements WHERE tile_q=$1 AND tile_r=$2', [tq, tr]).catch(() => {});
+    await q('UPDATE settlements SET tile_q = NULL, tile_r = NULL WHERE tile_q=$1 AND tile_r=$2', [tq, tr]);   // earlier runs' towns
     const s = (await q(`INSERT INTO settlements (user_id, name, tile_q, tile_r, world_version, wealth, timber, last_tick)
                         VALUES ($1,$2,$3,$4,2,$5,$6,NOW()) RETURNING *`, [u.id, username, tq, tr, wealth, timber])).rows[0];
     if (lvl) await q("INSERT INTO buildings (settlement_id, type, level) VALUES ($1,'market',$2)", [s.id, lvl]);
@@ -330,6 +342,47 @@ async function part2() {
     check(r.status === 200 && row && row.tradeable === false, 'Dev Tools: new items can be created not tradeable');
     await api(admin, 'PATCH', `/api/game/items/${tradeKey}`, { tradeable: true });
   } else console.log('  (MARKET_TEST_ADMIN_ID not set — skipping Dev Tools checks)');
+
+  // ── Search & Ironhaven ─────────────────────────────────────────────────
+  console.log('Search & Ironhaven');
+  r = await api(isel, 'GET', '/api/market/catalog?q=Te');
+  check(r.status === 200 && r.body.items.length === 0, 'search needs 3+ characters');
+  r = await api(isel, 'GET', '/api/market/catalog?q=' + encodeURIComponent('Test Tro'));
+  check((r.body.items || []).some(i => i.item_key === tradeKey && i.cat === 'fish'), 'search finds "Test Trout" with its category');
+  r = await api(isel, 'GET', '/api/market/catalog?q=' + encodeURIComponent('Test Rel'));
+  check(!(r.body.items || []).some(i => i.item_key === lockedKey), 'untradeable items are not offered in search');
+  r = await api(isel, 'GET', '/api/market/catalog');
+  check(Array.isArray(r.body.categories) && r.body.categories.length === 9, 'category list with order counts');
+  r = await api(isel, 'POST', `/api/inventory/${trout}/sell`);
+  check(r.status === 410, 'instant selling is retired (410)');
+
+  let ih = (await q('SELECT id FROM npc_settlements WHERE is_kingdom LIMIT 1')).rows[0];
+  if (!ih) {
+    await q('DELETE FROM npc_settlements WHERE tile_q = 0 AND tile_r = 0');
+    ih = (await q("INSERT INTO npc_settlements (name, tile_q, tile_r, faction, is_kingdom) VALUES ('Ironhaven', 0, 0, 'kingdom', TRUE) RETURNING id")).rows[0];
+  }
+  r = await api(isel, 'GET', '/api/market/ironhaven');
+  check(r.status === 200 && r.body.ironhaven && r.body.wants.length <= 3 && r.body.porter_carry === 20, 'Ironhaven: location, weekly wants, porter carry');
+  const offer = (r.body.items || []).find(i => i.id === trout);
+  const wantedTrout = offer && offer.wanted;
+  check(offer && offer.unit_price === (wantedTrout ? 6 : 3) && offer.max_qty === 40, 'Ironhaven offers 30% (60% if wanted) and caps the porter at 40 fish');
+  check(((r.body.items || []).find(i => i.id === relic) || {}).tradeable === false, 'untradeable items flagged on the Ironhaven list');
+  const porter = await citizen(isel, 'Thistle', 3);
+  r = await api(isel, 'POST', '/api/market/ironhaven/sell', { inventory_id: relic, qty: 1, citizen_id: porter });
+  check(r.status === 400 && /cannot be traded/.test(r.body.error), 'Ironhaven refuses untradeable items');
+  r = await api(isel, 'POST', '/api/market/ironhaven/sell', { inventory_id: trout, qty: 41, citizen_id: porter });
+  check(r.status === 400 && /at most 40/.test(r.body.error), 'porter carry limit enforced');
+  const troutBefore = await qty(trout), goldBefore = await res(isel, 'wealth');
+  r = await api(isel, 'POST', '/api/market/ironhaven/sell', { inventory_id: trout, qty: 10, citizen_id: porter });
+  check(r.status === 200 && r.body.gold === (wantedTrout ? 60 : 30), 'porter sets off with 10 trout, priced now');
+  check(await qty(trout) === troutBefore - 10, 'the trout leave the inventory');
+  r = await api(isel, 'POST', '/api/market/ironhaven/sell', { inventory_id: trout, qty: 1, citizen_id: porter });
+  check(r.status === 400 && /busy/.test(r.body.error), 'a porter on the road cannot be sent again');
+  await q("UPDATE market_runs SET arrives_at = NOW() - INTERVAL '2 seconds', returns_at = NOW() - INTERVAL '1 second' WHERE citizen_id = $1", [porter]);
+  await market.resolveDue();
+  check(await res(isel, 'wealth') === goldBefore + (wantedTrout ? 60 : 30), 'gold credited when the porter is home');
+  r = await api(isel, 'GET', '/api/travel');
+  check(!(r.body.journeys || []).some(j => j.id && j.id.startsWith('run:')), 'finished run leaves the map');
 
   await pool.end();
 }

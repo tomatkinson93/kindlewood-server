@@ -46,7 +46,7 @@ async function unavailable(settlementId, ids) {
     else if (c.life_stage === 'deceased') out[id] = `${c.name} has passed away.`;
   }
   const mark = (rows, why) => rows.forEach(id => { if (!out[id]) out[id] = `${nameOf(id)} ${why}`; });
-  mark(await market.merchantCitizenIds(ids), 'is already a merchant.');
+  mark(await market.merchantCitizenIds(ids), 'is busy at the Market.');
   mark((await query("SELECT citizen_id FROM expeditions WHERE status = 'travelling' AND citizen_id = ANY($1::int[])", [ids]))
     .rows.map(r => r.citizen_id), 'is on an expedition.');
   const quests = (await query(
@@ -129,6 +129,12 @@ router.get('/orders', requireAuth, async (req, res) => {
     const params = [me.user_id, me.tile_q, me.tile_r, me.world_version, me.id];
     let extra = '';
     if (req.query.resource === 'items') extra += ` AND o.kind = 'item'`;
+    else if (req.query.resource === 'resources') extra += ` AND o.kind = 'resource'`;
+    if (req.query.item_key) { params.push(String(req.query.item_key)); extra += ` AND o.item_key = $${params.length}`; }
+    if (market.ITEM_CATEGORIES.includes(req.query.category)) {
+      params.push(req.query.category);
+      extra += ` AND o.kind = 'item' AND ${market.categorySql('o.item_snapshot', true)} = $${params.length}`;
+    }
     else if (req.query.resource && market.isTradeable(req.query.resource)) {
       params.push(req.query.resource); extra += ` AND o.resource = $${params.length}`;
     }
@@ -482,6 +488,144 @@ router.patch('/orders/:id/merchants', requireAuth, async (req, res) => {
     if (e && e.code === '23505') return res.status(409).json({ error: 'That citizen is already a merchant.' });
     sendError(res, e, 'Could not update merchants.');
   }
+});
+
+// ── GET /api/market/catalog?q=iro ─────────────────────────────────────────
+// Search box autocomplete: tradeable item names containing q (3+ chars).
+// Without q: the item categories with how many open orders each has.
+router.get('/catalog', requireAuth, async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length >= 3) {
+      const like = '%' + q.replace(/[\\%_]/g, m => '\\' + m) + '%';
+      const rows = (await query(
+        `SELECT item_key, name, icon, category, equip_slot, rarity FROM item_templates
+          WHERE tradeable AND name ILIKE $1
+          ORDER BY (lower(name) LIKE lower($2)) DESC, name LIMIT 8`, [like, q + '%'])).rows;
+      return res.json({ ok: true, items: rows.map(r => ({ ...r, cat: market.categoryOf(r) })) });
+    }
+    const counts = (await query(
+      `SELECT ${market.categorySql('o.item_snapshot', true)} AS cat, COUNT(*)::int AS n
+         FROM market_orders o WHERE o.status = 'active' AND o.kind = 'item' GROUP BY 1`)).rows;
+    res.json({ ok: true, items: [], categories: market.ITEM_CATEGORIES.map(c => ({ cat: c, n: (counts.find(x => x.cat === c) || {}).n || 0 })) });
+  } catch (e) { sendError(res, e, 'Search failed.'); }
+});
+
+// ── Ironhaven: sell items to the kingdom for little, by porter ────────────
+
+// Free adults who could carry for the Market (porters / merchants).
+async function freeAdults(settlementId) {
+  const adults = (await query(
+    `SELECT id, name, role, skills FROM citizens
+      WHERE settlement_id = $1 AND COALESCE(life_stage, 'adult') NOT IN ('child','deceased') ORDER BY name`, [settlementId])).rows;
+  const busy = adults.length ? await unavailable(settlementId, adults.map(c => c.id)) : {};
+  return adults.map(c => ({ id: c.id, name: c.name, role: c.role, scouting: Number(c.skills?.scouting) || 1, busy: busy[c.id] || null }));
+}
+
+async function ironhavenState(me) {
+  const ih = await market.ironhavenTile({ query });
+  const templates = (await query('SELECT item_key, name, icon, category, equip_slot, sell_value, tradeable FROM item_templates')).rows;
+  const wants = market.ironhavenWants(templates);
+  const tplBy = Object.fromEntries(templates.map(t => [t.item_key, t]));
+  const best = Object.fromEntries((await query(
+    `SELECT item_key, MIN(lot_price::float / lot_size) AS p FROM market_orders
+      WHERE status = 'active' AND kind = 'item' GROUP BY item_key`)).rows.map(r => [r.item_key, Math.round(r.p * 100) / 100]));
+  const inv = (await query(
+    `SELECT i.*, t.tradeable AS template_tradeable, t.sell_value AS template_sell
+       FROM inventory_items i LEFT JOIN item_templates t ON t.item_key = i.item_key
+      WHERE i.settlement_id = $1 ORDER BY i.category, i.name`, [me.id])).rows;
+  const distance = ih ? market.distanceBetween(me, ih) : null;
+  return {
+    ironhaven: ih ? { name: ih.name, q: ih.tile_q, r: ih.tile_r, distance, leg_seconds: market.legSeconds(distance, null, {}) } : null,
+    week_ends: market.weekEnds().toISOString(),
+    rate: market.IRONHAVEN_RATE, want_rate: market.IRONHAVEN_WANT_RATE, porter_carry: market.PORTER_CARRY,
+    wants: wants.map(k => {
+      const t = tplBy[k];
+      return { item_key: k, name: t.name, icon: t.icon, cat: market.categoryOf(t), unit_price: market.ironhavenUnitPrice(t.sell_value, true) };
+    }),
+    items: inv.map(r => {
+      const snap = snapshotOf(r);
+      const why = untradeableReason(r, r.template_tradeable == null ? null : { tradeable: r.template_tradeable });
+      const value = Number(r.template_sell) || Number(r.metadata && r.metadata.sell_value) || 1;
+      const wanted = wants.includes(r.item_key);
+      return {
+        id: r.id, ...snap, quantity: r.quantity, cat: market.categoryOf(snap),
+        tradeable: !why, reason: why, wanted,
+        unit_price: market.ironhavenUnitPrice(value, wanted),
+        player_price: best[r.item_key] || null,
+        max_qty: Math.min(r.quantity, market.porterMax(snap)),
+      };
+    }),
+  };
+}
+
+// GET /api/market/ironhaven — wants, offers per stack, porters, runs.
+router.get('/ironhaven', requireAuth, async (req, res) => {
+  try {
+    const me = await mySettlement(req.user.userId);
+    await settle(me.id);
+    const runs = (await query(
+      `SELECT r.*, c.name AS citizen_name FROM market_runs r LEFT JOIN citizens c ON c.id = r.citizen_id
+        WHERE r.settlement_id = $1 AND r.kind = 'ironhaven'
+          AND (r.status <> 'done' OR r.returns_at > NOW() - INTERVAL '24 hours')
+        ORDER BY r.departs_at DESC LIMIT 20`, [me.id])).rows;
+    res.json({
+      ok: true, now: new Date().toISOString(), ...(await ironhavenState(me)),
+      candidates: await freeAdults(me.id),
+      runs: runs.map(r => ({
+        id: r.id, status: r.status, qty: r.qty, gold: r.gold, item: r.item_snapshot, citizen_name: r.citizen_name,
+        departs_at: r.departs_at, arrives_at: r.arrives_at, returns_at: r.returns_at, distance: r.distance,
+      })),
+    });
+  } catch (e) { sendError(res, e, 'Could not reach Ironhaven.'); }
+});
+
+// POST /api/market/ironhaven/sell { inventory_id, qty, citizen_id }
+// The porter takes the items now; the gold (priced now) arrives with them.
+router.post('/ironhaven/sell', requireAuth, async (req, res) => {
+  try {
+    const me = await mySettlement(req.user.userId);
+    await settle(me.id);
+    if (me.tile_q == null) throw new MarketError(400, 'Place your settlement on the map first.');
+    const invId = parseId(req.body.inventory_id), citizenId = parseId(req.body.citizen_id);
+    const qty = toInt(req.body.qty);
+    if (!invId) throw new MarketError(400, 'Choose an item to sell.');
+    if (!citizenId) throw new MarketError(400, 'Choose a porter.');
+    if (!Number.isInteger(qty) || qty <= 0) throw new MarketError(400, 'Invalid quantity.');
+    const ih = await market.ironhavenTile({ query });
+    if (!ih) throw new MarketError(503, 'Ironhaven cannot be reached right now.');
+    const reasons = await unavailable(me.id, [citizenId]);
+    if (reasons[citizenId]) throw new MarketError(400, reasons[citizenId]);
+
+    const result = await withTransaction(async (client) => {
+      const row = (await client.query('SELECT * FROM inventory_items WHERE id = $1 AND settlement_id = $2', [invId, me.id])).rows[0];
+      if (!row) throw new MarketError(404, 'That item is not in your inventory.');
+      const max = market.porterMax(snapshotOf(row));
+      if (qty > max) throw new MarketError(400, `A porter can carry at most ${max} ${row.name}.`);
+      let snap;
+      try { snap = await takeItem(client, me.id, invId, qty); }
+      catch (e) { throw new MarketError(e.status || 400, e.message); }
+      const tpl = (await client.query('SELECT item_key, sell_value, tradeable FROM item_templates')).rows;
+      const wanted = market.ironhavenWants(tpl).includes(snap.item_key);
+      const t = tpl.find(x => x.item_key === snap.item_key);
+      const value = (t && Number(t.sell_value)) || Number(snap.metadata && snap.metadata.sell_value) || 1;
+      const gold = market.ironhavenUnitPrice(value, wanted) * qty;
+      const cit = (await client.query('SELECT * FROM citizens WHERE id = $1 AND settlement_id = $2', [citizenId, me.id])).rows[0];
+      const distance = market.distanceBetween(me, ih) || 0;
+      const leg = market.legSeconds(distance, cit, {});
+      const run = (await client.query(
+        `INSERT INTO market_runs (kind, settlement_id, citizen_id, target_name, target_q, target_r, item_key, item_snapshot,
+                                  qty, gold, distance, arrives_at, returns_at)
+         VALUES ('ironhaven',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10, NOW() + make_interval(secs => $11), NOW() + make_interval(secs => $11 * 2))
+         RETURNING *`,
+        [me.id, citizenId, ih.name, ih.tile_q, ih.tile_r, snap.item_key, JSON.stringify(snap), qty, gold, distance, leg])).rows[0];
+      return { run, citizen: cit.name, wanted };
+    });
+    res.json({
+      ok: true, gold: result.run.gold, wanted: result.wanted, porter: result.citizen,
+      run: { id: result.run.id, qty: result.run.qty, item: result.run.item_snapshot, arrives_at: result.run.arrives_at, returns_at: result.run.returns_at },
+    });
+  } catch (e) { sendError(res, e, 'Could not send the porter.'); }
 });
 
 module.exports = router;
