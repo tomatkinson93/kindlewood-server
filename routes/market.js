@@ -160,6 +160,7 @@ router.get('/orders', requireAuth, async (req, res) => {
          JOIN settlements s ON s.id = o.seller_settlement_id
          JOIN users u ON u.id = s.user_id
         WHERE o.status = 'active' AND o.expires_at > NOW() AND o.qty_escrowed > 0
+          AND (o.kind <> 'item' OR ${market.venueOpenSql('o')})
           AND ${market.tradePartnerSql('s', { userId: '$1', q: '$2', r: '$3', worldVersion: '$4', settlementId: '$5' })}
           ${extra}
         LIMIT 500`, params)).rows;
@@ -315,6 +316,8 @@ async function listItemStall(me, item, invId, b) {
     throw new MarketError(any ? 400 : 403, any ? 'All your stalls are full — wait for a sale or cancel a listing.' : 'Build a Market first.');
   }
   const v = stalls[venue];
+  if (!v.slots) throw new MarketError(400, `Build a ${v.label} first.`);
+  if (!v.open) throw new MarketError(400, `Your ${v.label} needs a shopkeeper before it can sell.`);
   if (v.sells && !v.sells.includes(cat)) throw new MarketError(400, `Your ${v.label} doesn't sell ${cat} items.`);
   const mods = await market.loadModifiers({ query }, me.id);
 
@@ -511,6 +514,8 @@ router.post('/orders/:id/pickup', requireAuth, async (req, res) => {
       const o = (await client.query('SELECT * FROM market_orders WHERE id = $1 FOR UPDATE', [orderId])).rows[0];
       if (!o || o.kind !== 'item' || o.status !== 'active' || new Date(o.expires_at) <= new Date())
         throw new MarketError(404, 'That listing is no longer available.');
+      const open = (await client.query(`SELECT ${market.venueOpenSql('o')} AS open FROM market_orders o WHERE o.id = $1`, [o.id])).rows[0].open;
+      if (!open) throw new MarketError(409, 'That shop is closed — nobody is minding it right now.');
       if (o.seller_settlement_id === me.id) throw new MarketError(400, 'You cannot buy your own goods.');
       const available = o.qty_escrowed - o.qty_reserved;
       if (available < qty) throw new MarketError(409, available > 0 ? `Only ${available} left on that stall.` : 'That stall is sold out.');
@@ -548,6 +553,46 @@ router.post('/orders/:id/pickup', requireAuth, async (req, res) => {
              arrives_at: result.run.arrives_at, returns_at: result.run.returns_at, distance: result.run.distance },
     });
   } catch (e) { sendError(res, e, 'Could not send the porter.'); }
+});
+
+// ── Shops: who minds each one ──────────────────────────────────────────────
+
+// GET /api/market/shops — your stall venues, their keepers, and who could keep them.
+router.get('/shops', requireAuth, async (req, res) => {
+  try {
+    const me = await mySettlement(req.user.userId);
+    res.json({ ok: true, stalls: await market.stallState({ query }, me.id), candidates: await freeAdults(me.id) });
+  } catch (e) { sendError(res, e, 'Could not load your shops.'); }
+});
+
+// PATCH /api/market/shops/:venue/keeper { citizen_id | null }
+router.patch('/shops/:venue/keeper', requireAuth, async (req, res) => {
+  try {
+    const me = await mySettlement(req.user.userId);
+    const venue = req.params.venue;
+    const def = market.VENUES[venue];
+    if (!def || !def.keeper) throw new MarketError(400, 'That building has no shopkeeper.');
+    const built = (await query('SELECT 1 FROM buildings WHERE settlement_id = $1 AND type = $2', [me.id, def.building])).rowCount;
+    if (!built) throw new MarketError(400, `Build a ${def.label} first.`);
+    const citizenId = req.body.citizen_id == null ? null : parseId(req.body.citizen_id);
+    if (req.body.citizen_id != null && !citizenId) throw new MarketError(400, 'Bad citizen id.');
+    if (citizenId) {
+      const reasons = await unavailable(me.id, [citizenId]);
+      if (reasons[citizenId]) throw new MarketError(400, reasons[citizenId]);
+    }
+    await withTransaction(async (client) => {
+      const prev = (await client.query('DELETE FROM shop_keepers WHERE settlement_id = $1 AND venue = $2 RETURNING citizen_id', [me.id, venue])).rows[0];
+      if (prev) await client.query("UPDATE citizens SET role = 'idle' WHERE id = $1 AND role = 'shopkeeper'", [prev.citizen_id]);
+      if (citizenId) {
+        await client.query('INSERT INTO shop_keepers (settlement_id, venue, citizen_id) VALUES ($1,$2,$3)', [me.id, venue, citizenId]);
+        await client.query("UPDATE citizens SET role = 'shopkeeper' WHERE id = $1 AND settlement_id = $2", [citizenId, me.id]);
+      }
+    });
+    res.json({ ok: true, stalls: await market.stallState({ query }, me.id) });
+  } catch (e) {
+    if (e && e.code === '23505') return res.status(409).json({ error: 'That citizen already minds another shop.' });
+    sendError(res, e, 'Could not change the shopkeeper.');
+  }
 });
 
 // ── POST /api/market/orders/:id/cancel ────────────────────────────────────

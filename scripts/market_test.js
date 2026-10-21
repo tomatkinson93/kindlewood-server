@@ -384,6 +384,47 @@ async function part2() {
     await api(admin, 'PATCH', `/api/game/items/${tradeKey}`, { tradeable: true });
   } else console.log('  (MARKET_TEST_ADMIN_ID not set — skipping Dev Tools checks)');
 
+  // ── Shops ──────────────────────────────────────────────────────────────
+  console.log('Shops');
+  r = await api(isel, 'POST', '/api/buildings/build', { buildingId: 'smithy' });
+  check(r.status === 400 && /Village/.test(r.body.error), 'Smithy needs a Village');
+  r = await api(isel, 'POST', '/api/buildings/build', { buildingId: 'jeweller' });
+  check(r.status === 400 && /Town/.test(r.body.error), 'Jeweller needs a Town');
+  await q("INSERT INTO buildings (settlement_id, type, level) VALUES ($1,'smithy',1), ($1,'fishing_post',2)", [isel.sid]);
+  const sword = await inv(isel, 'mt_sword_' + RUN, { name: 'Shop Sword', icon: '🗡', category: 'equipment', equip_slot: 'weapon' });
+  r = await itemOrder(sword, { qty_total: 1, unit_price: 50, venue: 'smithy' });
+  check(r.status === 400 && /needs a shopkeeper/.test(r.body.error), 'a shop without a shopkeeper can\'t sell');
+  r = await api(isel, 'GET', '/api/market/shops');
+  check(r.body.stalls.smithy.slots === 4 && r.body.stalls.smithy.open === false && r.body.stalls.fishing_post.slots === 4, 'Smithy L1: 4 stalls (closed); Fishing Post L2: 4');
+  const smith = await citizen(isel, 'Anvil'), fishwife = await citizen(isel, 'Marsh');
+  r = await api(isel, 'PATCH', '/api/market/shops/smithy/keeper', { citizen_id: smith });
+  check(r.status === 200 && r.body.stalls.smithy.open && r.body.stalls.smithy.keeper.id === smith && await role(smith) === 'shopkeeper', 'shopkeeper assigned; the Smithy opens');
+  r = await api(isel, 'PATCH', '/api/market/shops/fishing_post/keeper', { citizen_id: smith });
+  check(r.status === 400 && /busy/.test(r.body.error), 'one citizen minds one shop');
+  await api(isel, 'PATCH', '/api/market/shops/fishing_post/keeper', { citizen_id: fishwife });
+  r = await itemOrder(sword, { qty_total: 1, unit_price: 50 });
+  check(r.status === 200 && r.body.order.venue === 'smithy', 'weapons go to the Smithy by default');
+  const swordOrder = r.body.order.id;
+  r = await itemOrder(trout, { qty_total: 5, unit_price: 3 });
+  check(r.status === 200 && r.body.order.venue === 'fishing_post', 'fish go to the Fishing Post stall');
+  const fishStall = r.body.order.id;
+  r = await itemOrder(trout, { qty_total: 1, unit_price: 3, venue: 'smithy' });
+  check(r.status === 400 && /doesn't sell fish/.test(r.body.error), 'a shop only sells its own kinds of item');
+  r = await api(ibuy, 'GET', '/api/market/orders?category=weapon');
+  const swordRow = (r.body.orders || []).find(o => o.id === swordOrder);
+  check(swordRow && swordRow.venue_label === 'Smithy', 'buyers see it at the Smithy');
+  r = await api(isel, 'PATCH', `/api/citizens/${smith}/role`, { role: 'farmer' });
+  check(r.status === 200 && (await q('SELECT 1 FROM shop_keepers WHERE citizen_id=$1', [smith])).rowCount === 0, 'reassigning the shopkeeper closes the shop');
+  r = await api(ibuy, 'GET', '/api/market/orders?category=weapon');
+  check(!(r.body.orders || []).some(o => o.id === swordOrder), 'closed shop: its stalls are hidden');
+  r = await api(ibuy, 'POST', `/api/market/orders/${swordOrder}/pickup`, { qty: 1, citizen_id: bp1 });
+  check(r.status === 409 && /closed/.test(r.body.error), 'and nobody can collect from it');
+  await api(isel, 'PATCH', '/api/market/shops/smithy/keeper', { citizen_id: smith });
+  r = await api(ibuy, 'POST', `/api/market/orders/${swordOrder}/pickup`, { qty: 1, citizen_id: bp1 });
+  check(r.status === 200, 'shop reopened: the sword can be collected');
+  await landRuns();
+  await api(isel, 'POST', `/api/market/orders/${fishStall}/cancel`);
+
   // ── Search & Ironhaven ─────────────────────────────────────────────────
   console.log('Search & Ironhaven');
   r = await api(isel, 'GET', '/api/market/catalog?q=Te');

@@ -89,6 +89,15 @@ router.get('/', requireAuth, async (req, res) => {
         };
       });
     } catch (e) { /* pre-migration */ }
+    // Shopkeepers mind a shop (Market v2): busy, but at home.
+    try {
+      const keepRes = await query('SELECT citizen_id, venue FROM shop_keepers WHERE settlement_id = $1', [settlement.id]);
+      keepRes.rows.forEach(k => { if (!tradeByCitizen[k.citizen_id]) tradeByCitizen[k.citizen_id] = { shop: k.venue, on_road: false }; });
+      const runRes = await query(
+        `SELECT citizen_id, kind, status, CASE WHEN status = 'outbound' THEN arrives_at ELSE returns_at END AS completes_at
+           FROM market_runs WHERE settlement_id = $1 AND status IN ('outbound','returning')`, [settlement.id]);
+      runRes.rows.forEach(r => { tradeByCitizen[r.citizen_id] = { porter: r.kind, on_road: true, status: r.status, completes_at: r.completes_at }; });
+    } catch (e) { /* pre-migration */ }
 
     // Build lookup maps for happiness context
     const season = getCurrentSeason();
@@ -272,6 +281,10 @@ router.patch('/:id/role', requireAuth, async (req, res) => {
     await query(
       `DELETE FROM market_order_merchants m USING citizens c
         WHERE m.citizen_id = c.id AND c.id = $1 AND c.settlement_id = $2`, [req.params.id, settlement.id]
+    ).catch(() => {});
+    await query(
+      `DELETE FROM shop_keepers k USING citizens c
+        WHERE k.citizen_id = c.id AND c.id = $1 AND c.settlement_id = $2`, [req.params.id, settlement.id]
     ).catch(() => {});
 
     await query(

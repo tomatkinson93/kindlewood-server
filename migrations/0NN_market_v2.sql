@@ -54,4 +54,13 @@ DELETE FROM market_order_merchants m USING market_orders o WHERE o.id = m.order_
 UPDATE market_orders SET lot_price = GREATEST(1, CEIL(lot_price::numeric / lot_size)), lot_size = 1
  WHERE kind = 'item' AND lot_size > 1;
 UPDATE market_orders SET venue = 'market' WHERE kind = 'item' AND venue IS NULL;
+
+-- Shopkeepers: the citizen minding each shop (smithy, jeweller,
+-- fishing_post). A shop's stalls only sell while it has one.
+CREATE TABLE IF NOT EXISTS shop_keepers (
+  settlement_id  INTEGER NOT NULL REFERENCES settlements(id) ON DELETE CASCADE,
+  venue          TEXT    NOT NULL,
+  citizen_id     INTEGER NOT NULL UNIQUE REFERENCES citizens(id) ON DELETE CASCADE,
+  PRIMARY KEY (settlement_id, venue)
+);
 COMMIT;
