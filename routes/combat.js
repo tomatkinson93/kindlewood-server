@@ -880,7 +880,7 @@ router.get('/citizen/:id/events', requireAuth, async (req, res) => {
     const events = await query(
       `SELECT id, event_type, severity, body_part, narrative, source_battle_id, occurred_at
        FROM citizen_events
-       WHERE citizen_id=$1
+       WHERE citizen_id=$1 AND event_type IN ('injury','death')   -- career history lives in the Career tab
        ORDER BY occurred_at DESC`,
       [citId]
     );
