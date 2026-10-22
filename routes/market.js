@@ -6,6 +6,7 @@ const { BUILDINGS } = require('../buildings');
 const market = require('../lib/market');
 const eventBus = require('../lib/event_bus');
 const { takeItem, takeItemsByKey, snapshotOf, untradeableReason } = require('../lib/inventory');
+const npcTrade = require('../lib/npc_trade');
 
 const router = express.Router();
 
@@ -134,8 +135,9 @@ router.get('/orders', requireAuth, async (req, res) => {
     else if (req.query.resource === 'resources') extra += ` AND o.kind = 'resource'`;
     if (req.query.item_key) { params.push(String(req.query.item_key)); extra += ` AND o.item_key = $${params.length}`; }
     if (market.ITEM_CATEGORIES.includes(req.query.category)) {
-      params.push(req.query.category);
-      extra += ` AND o.kind = 'item' AND ${market.categorySql('o.item_snapshot', true)} = $${params.length}`;
+      // The Misc button covers trophies too (there's no Trophies button).
+      params.push(req.query.category === 'misc' ? ['misc', 'trophy'] : [req.query.category]);
+      extra += ` AND o.kind = 'item' AND ${market.categorySql('o.item_snapshot', true)} = ANY($${params.length}::text[])`;
     }
     else if (req.query.resource && market.isTradeable(req.query.resource)) {
       params.push(req.query.resource); extra += ` AND o.resource = $${params.length}`;
@@ -201,9 +203,13 @@ router.get('/orders', requireAuth, async (req, res) => {
       };
     });
 
+    // Friendly villages' sell orders show alongside players' (?npc=0 hides them).
+    if (req.query.npc !== '0' && !sellerId) orders.push(...(await npcRows(me, 'sell', req.query)));
+
     const sortKey = SORTS[req.query.sort] ? req.query.sort : 'distance';
     const dir = req.query.dir === 'desc' ? -1 : 1;
-    orders.sort((a, b) => (SORTS[sortKey](a) - SORTS[sortKey](b)) * dir || a.unit_price - b.unit_price || a.id - b.id);
+    const tie = (a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
+    orders.sort((a, b) => (SORTS[sortKey](a) - SORTS[sortKey](b)) * dir || a.unit_price - b.unit_price || tie(a, b));
     res.json({ ok: true, sort: sortKey, dir: dir === 1 ? 'asc' : 'desc', orders: orders.slice(0, 200) });
   } catch (e) { sendError(res, e, 'Could not load orders.'); }
 });
@@ -286,11 +292,11 @@ router.get('/mine', requireAuth, async (req, res) => {
       runs: (await query(
         `SELECT r.*, c.name AS citizen_name, s.name AS from_name FROM market_runs r
            LEFT JOIN citizens c ON c.id = r.citizen_id JOIN settlements s ON s.id = r.settlement_id
-          WHERE r.kind IN ('pickup','fill') AND (r.settlement_id = $1 OR (r.target_settlement_id = $1 AND r.status = 'outbound'))
+          WHERE r.kind IN ('pickup','fill','npc') AND (r.settlement_id = $1 OR (r.target_settlement_id = $1 AND r.status = 'outbound'))
             AND (r.status <> 'done' OR r.returns_at > NOW() - INTERVAL '24 hours')
           ORDER BY r.departs_at DESC LIMIT 40`, [me.id])).rows.map(r => ({
-        id: r.id, kind: r.kind, resource: r.resource,
-        direction: r.settlement_id === me.id ? (r.kind === 'fill' ? 'delivering' : 'collecting') : (r.kind === 'fill' ? 'arriving' : 'incoming'),
+        id: r.id, kind: r.kind, resource: r.resource, side: r.side || null,
+        direction: r.kind === 'npc' ? 'npc' : r.settlement_id === me.id ? (r.kind === 'fill' ? 'delivering' : 'collecting') : (r.kind === 'fill' ? 'arriving' : 'incoming'),
         status: r.status, failed: r.failed,
         qty: r.qty, gold: r.gold, fee: r.fee, item: r.item_snapshot, citizen_name: r.citizen_name,
         from_name: r.from_name, target_name: r.target_name, distance: r.distance,
@@ -617,6 +623,122 @@ function wantView(w, me) {
   };
 }
 
+// ── NPC village traders (lib/npc_trade.js) ────────────────────────────────
+
+// Rows for villages' orders on one side ('sell' = they sell, for the Buy
+// tab; 'buy' = they buy, for Wanted), shaped like player rows plus `npc`.
+// Filters as the player lists: resource / item_key / category.
+async function npcRows(me, side, f) {
+  if (me.tile_q == null) return [];
+  const mods = await market.loadModifiers({ query }, me.id);
+  if (!mods.marketLevel) return [];
+  const traders = await npcTrade.npcTradersFor({ query }, me);
+  const out = [];
+  for (const t of traders) {
+    const distance = market.distanceBetween(me, t.npc) || 0;
+    for (const o of t.orders) {
+      if (o.side !== side || o.remaining <= 0) continue;
+      if (f.item_key && !(o.kind === 'item' && o.item.item_key === f.item_key)) continue;
+      if (f.resource === 'items' && o.kind !== 'item') continue;
+      if (f.resource === 'resources' && o.kind !== 'resource') continue;
+      if (market.isTradeable(f.resource) && o.resource !== f.resource) continue;
+      if (market.ITEM_CATEGORIES.includes(f.category)) {
+        const cats = f.category === 'misc' ? ['misc', 'trophy'] : [f.category];
+        if (o.kind !== 'item' || !cats.includes(o.item.cat)) continue;
+      }
+      const carry = o.kind === 'item' ? Math.floor(mods.carryWeight / market.itemWeight(o.item)) : market.maxLotUnits(o.resource, mods.carryWeight);
+      const row = {
+        id: `npc:${t.npc.id}:${o.key}`, npc_order: true, order_key: o.key,
+        npc: { id: t.npc.id, name: t.npc.name, species: t.npc.species, trust: t.trust, tier: t.tier.label },
+        kind: o.kind, resource: o.resource || null, item: o.item || null, item_key: o.item ? o.item.item_key : null,
+        price: o.price, per: o.per, unit_price: Math.round((o.price / o.per) * 100) / 100,
+        qty_available: o.remaining, qty_total: o.qty, qty_open: o.remaining, carry_max: Math.min(o.remaining, carry),
+        distance, eta_seconds: 2 * market.legSeconds(distance, null, {}), expires_at: t.ends_at,
+        merchants: 0, paused: false, next_free_at: null,
+      };
+      if (side === 'sell') row.seller = { id: null, name: t.npc.name, username: 'village', species: t.npc.species };
+      else row.buyer = { id: null, name: t.npc.name, username: 'village', species: t.npc.species };
+      out.push(row);
+    }
+  }
+  return out;
+}
+
+// POST /api/market/npc/:npcId/:orderKey { qty, citizen_id }
+// Trade with a village: your porter walks there and back. Buying — gold is
+// held now, goods arrive with the porter. Selling — goods leave now, gold
+// arrives with the porter. Counts against today's allowance at dispatch.
+router.post('/npc/:npcId/:orderKey', requireAuth, async (req, res) => {
+  try {
+    const npcId = parseId(req.params.npcId);
+    const key = String(req.params.orderKey || '');
+    if (!npcId || !/^[sb]\d$/.test(key)) throw new MarketError(400, 'Bad order.');
+    const me = await mySettlement(req.user.userId);
+    await settle(me.id);
+    if (me.tile_q == null) throw new MarketError(400, 'Place your settlement on the map first.');
+    const mods = await market.loadModifiers({ query }, me.id);
+    if (!mods.marketLevel) throw new MarketError(403, 'Build a Market first.');
+    const qty = toInt(req.body.qty), citizenId = parseId(req.body.citizen_id);
+    if (!Number.isInteger(qty) || qty <= 0) throw new MarketError(400, 'Invalid quantity.');
+    if (!citizenId) throw new MarketError(400, 'Choose a porter.');
+    const reasons = await unavailable(me.id, [citizenId]);
+    if (reasons[citizenId]) throw new MarketError(400, reasons[citizenId]);
+
+    const result = await withTransaction(async (client) => {
+      await client.query('SELECT id FROM settlements WHERE id = $1 FOR UPDATE', [me.id]);
+      const trader = (await npcTrade.npcTradersFor(client, me)).find(t => t.npc.id === npcId);
+      if (!trader) throw new MarketError(403, 'That village doesn\'t trade with you (yet) — you need to be Familiar.');
+      const o = trader.orders.find(x => x.key === key);
+      if (!o) throw new MarketError(404, 'That order is gone — villages post new ones every day.');
+      if (qty > o.remaining) throw new MarketError(409, o.remaining ? `Only ${o.remaining} left for you today.` : 'You\'ve used this order up for today.');
+      const carry = o.kind === 'item' ? Math.floor(mods.carryWeight / market.itemWeight(o.item)) : market.maxLotUnits(o.resource, mods.carryWeight);
+      if (qty > carry) throw new MarketError(400, `One trip carries at most ${carry}.`);
+      const gold = npcTrade.dealGold(o, qty);
+      const playerSide = o.side === 'sell' ? 'buy' : 'sell';
+      let snap = null;
+      if (o.kind === 'item') {
+        const tpl = (await client.query('SELECT * FROM item_templates WHERE item_key = $1', [o.item.item_key])).rows[0];
+        if (!tpl) throw new MarketError(404, 'That item no longer exists.');
+        snap = {
+          item_key: tpl.item_key, name: tpl.name, description: tpl.description || '', icon: tpl.icon || '📦',
+          category: tpl.category || 'misc', rarity: tpl.rarity || 'common', equip_slot: tpl.equip_slot || null,
+          stat_bonuses: tpl.stat_bonuses || {},
+          metadata: { sell_value: tpl.sell_value, food_value: tpl.food_value, armor_class: tpl.armor_class, damage_dice: tpl.damage_dice },
+        };
+      }
+      if (playerSide === 'buy') {
+        const paid = await client.query('UPDATE settlements SET wealth = wealth - $2 WHERE id = $1 AND wealth >= $2', [me.id, gold]);
+        if (!paid.rowCount) throw new MarketError(400, `Not enough gold — that costs ${gold}.`);
+      } else if (o.kind === 'item') {
+        try { await takeItemsByKey(client, me.id, o.item.item_key, qty); }
+        catch (e) { throw new MarketError(e.status || 400, e.message); }
+      } else {
+        const col = o.resource;   // from SPECIES_TRADE, a tradeable resource
+        if (!market.isTradeable(col)) throw new MarketError(400, 'Bad order.');
+        const took = await client.query(`UPDATE settlements SET ${col} = ${col} - $2 WHERE id = $1 AND ${col} >= $2`, [me.id, qty]);
+        if (!took.rowCount) throw new MarketError(400, `Not enough ${col}.`);
+      }
+      await client.query(
+        `INSERT INTO npc_trade_usage (settlement_id, npc_id, day, order_key, qty) VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (settlement_id, npc_id, day, order_key) DO UPDATE SET qty = npc_trade_usage.qty + $5`,
+        [me.id, npcId, trader.day, key, qty]);
+      const cit = (await client.query('SELECT * FROM citizens WHERE id = $1 AND settlement_id = $2', [citizenId, me.id])).rows[0];
+      const distance = market.distanceBetween(me, trader.npc) || 0;
+      const leg = market.legSeconds(distance, cit, {});
+      const run = (await client.query(
+        `INSERT INTO market_runs (kind, side, npc_id, order_key, trade_day, settlement_id, citizen_id, target_name, target_q, target_r,
+                                  item_key, item_snapshot, resource, qty, gold, distance, arrives_at, returns_at)
+         VALUES ('npc',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, NOW() + make_interval(secs => $16), NOW() + make_interval(secs => $16 * 2))
+         RETURNING *`,
+        [playerSide, npcId, key, trader.day, me.id, citizenId, trader.npc.name, trader.npc.tile_q, trader.npc.tile_r,
+         snap && snap.item_key, snap && JSON.stringify(snap), o.kind === 'resource' ? o.resource : null, qty, gold, distance, leg])).rows[0];
+      return { run, porter: cit.name, village: trader.npc.name, side: playerSide };
+    });
+    res.json({ ok: true, porter: result.porter, village: result.village, side: result.side, gold: result.run.gold,
+      run: { id: result.run.id, qty: result.run.qty, arrives_at: result.run.arrives_at, returns_at: result.run.returns_at } });
+  } catch (e) { sendError(res, e, 'Could not trade with that village.'); }
+});
+
 // GET /api/market/wants?category=&item_key=&resource= — other towns' buy
 // orders you could fill (trade partners only).
 router.get('/wants', requireAuth, async (req, res) => {
@@ -629,7 +751,10 @@ router.get('/wants', requireAuth, async (req, res) => {
     if (req.query.item_key) { params.push(String(req.query.item_key)); extra += ` AND w.item_key = $${params.length}`; }
     else if (req.query.resource === 'resources') extra += ` AND w.kind = 'resource'`;
     else if (market.isTradeable(req.query.resource)) { params.push(req.query.resource); extra += ` AND w.resource = $${params.length}`; }
-    else if (market.ITEM_CATEGORIES.includes(req.query.category)) { params.push(req.query.category); extra += ` AND w.item_cat = $${params.length}`; }
+    else if (market.ITEM_CATEGORIES.includes(req.query.category)) {
+      params.push(req.query.category === 'misc' ? ['misc', 'trophy'] : [req.query.category]);
+      extra += ` AND w.item_cat = ANY($${params.length}::text[])`;
+    }
     const rows = (await query(
       `SELECT w.*, s.name AS buyer_name, s.tile_q, s.tile_r, u.username AS buyer_username, u.species AS buyer_species
          FROM market_wants w JOIN settlements s ON s.id = w.buyer_settlement_id JOIN users u ON u.id = s.user_id
@@ -642,13 +767,21 @@ router.get('/wants', requireAuth, async (req, res) => {
       `SELECT item_key, SUM(quantity)::int AS n FROM inventory_items
         WHERE settlement_id = $1 AND equipped_to IS NULL AND tradeable GROUP BY item_key`, [me.id])).rows.map(r => [r.item_key, r.n]));
     const mods = await market.loadModifiers({ query }, me.id);
-    res.json({ ok: true, wants: rows.map(w => {
+    const wants = rows.map(w => {
       const v = wantView(w, me);
       v.you_have = w.kind === 'item' ? (haveItems[w.item_key] || 0) : (me[w.resource] || 0);
       v.carry_max = w.kind === 'item' ? market.porterMax({ category: w.item_cat === 'fish' || w.item_cat === 'food' ? w.item_cat : 'misc',
         equip_slot: ['weapon', 'armour', 'tool', 'trinket'].includes(w.item_cat) ? w.item_cat : null }) : market.fillMaxResource(w.resource, mods);
       return v;
-    }) });
+    });
+    // Friendly villages' buy orders too (?npc=0 hides them).
+    if (req.query.npc !== '0') {
+      for (const r of await npcRows(me, 'buy', req.query)) {
+        r.you_have = r.kind === 'item' ? (haveItems[r.item.item_key] || 0) : (me[r.resource] || 0);
+        wants.push(r);
+      }
+    }
+    res.json({ ok: true, wants });
   } catch (e) { sendError(res, e, 'Could not load wanted orders.'); }
 });
 

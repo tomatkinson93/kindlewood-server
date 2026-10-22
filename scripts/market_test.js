@@ -65,6 +65,30 @@ function part1() {
   check(market.porterMax({ category: 'fish' }) === 40 && market.porterMax({ equip_slot: 'weapon' }) === 6 && market.porterMax({ equip_slot: 'armour' }) === 4,
     'porter carries 20: 40 fish, 6 weapons, 4 armour');
 
+  console.log('NPC traders (pure)');
+  const npcT = require('../lib/npc_trade');
+  const tpls2 = [
+    { item_key: 'f1', name: 'Perch', icon: '🐠', category: 'fish', rarity: 'common', sell_value: 5 },
+    { item_key: 't1', name: 'Hammer', icon: '🔨', category: 'equipment', equip_slot: 'tool', rarity: 'common', sell_value: 20 },
+    { item_key: 'x1', name: 'Crown', icon: '👑', category: 'trophy', rarity: 'legendary', sell_value: 500 },
+  ];
+  const vill = { id: 7, species: 'mice' };
+  const d1 = npcT.npcOrdersFor(vill, '2026-10-22', tpls2), d1b = npcT.npcOrdersFor(vill, '2026-10-22', tpls2), d2 = npcT.npcOrdersFor(vill, '2026-10-23', tpls2);
+  check(JSON.stringify(d1) === JSON.stringify(d1b) && JSON.stringify(d1) !== JSON.stringify(d2), 'village orders: same all day, new the next');
+  const sells = d1.filter(o => o.side === 'sell'), buys = d1.filter(o => o.side === 'buy');
+  check(sells.length >= 1 && sells.length <= 3 && buys.length >= 1 && buys.length <= 2, 'mix: up to 3 sell and 1–2 buy orders');
+  check(d1.every(o => (o.side === 'sell' ? ['food', 'fish'] : ['timber', 'tool']).includes(o.kind === 'item' ? o.item.cat : o.resource)), 'mice sell food/fish and buy timber/tools');
+  check(d1.filter(o => o.kind === 'resource').every(o => o.qty >= 100 && o.qty <= 300 && o.per === 100 &&
+    o.price >= Math.floor(market.REFERENCE_PRICE[o.resource] * (o.side === 'sell' ? 95 : 85)) && o.price <= Math.ceil(market.REFERENCE_PRICE[o.resource] * (o.side === 'sell' ? 115 : 100))),
+    'resource amounts 100–300 at standard prices');
+  check(!d1.some(o => o.item && o.item.item_key === 'x1'), 'no rare or legendary items');
+  const fr = npcT.tierFor(50), al = npcT.tierFor(80);
+  const base = { side: 'sell', kind: 'resource', qty: 200, price: 70, per: 100 };
+  check(npcT.applyTier(base, fr).qty === 300 && npcT.applyTier(base, fr).price === 67 && npcT.applyTier(base, al).qty === 400 && npcT.applyTier(base, al).price === 63,
+    'Friendly: 1.5× amount, 5% cheaper; Allied: 2×, 10% cheaper');
+  check(npcT.applyTier({ ...base, side: 'buy' }, al).price === 77, 'Allied villages also pay you 10% more');
+  check(npcT.tierFor(20) === null && npcT.tierFor(21).key === 'familiar', 'trading opens at Familiar (21)');
+
   console.log('Travel');
   check(market.legSeconds(0, {}, m1) === market.MIN_LEG_SECONDS, 'minimum leg');
   check(market.legSeconds(10, {}, m1) === 450, '10 hexes at 45s = 450s');
@@ -84,7 +108,7 @@ async function part2() {
   const q = (t, p) => pool.query(t, p);
   let seq = 0;
   // Spread towns out; each gets its own tile.
-  const tiles = [[2, 2], [8, 2], [14, 2], [20, 2], [26, 2], [2, 20], [8, 20], [14, 20]];
+  const tiles = [[2, 2], [8, 2], [14, 2], [20, 2], [26, 2], [2, 20], [8, 20], [14, 20], [30, 30], [36, 30]];
 
   async function user(name, { market: lvl = 1, wealth = 1000, timber = 1000 } = {}) {
     const username = `${name}_${RUN}_${seq}`;
@@ -483,6 +507,75 @@ async function part2() {
   await market.tick();
   check((await q('SELECT status FROM market_wants WHERE id=$1', [stale])).rows[0].status === 'expired' && await res(ibuy, 'wealth') === bGold + 6,
     'expired want refunds its gold');
+
+  // ── NPC village traders ───────────────────────────────────────────────
+  console.log('NPC traders');
+  await q('DELETE FROM npc_settlements WHERE tile_q = 33 AND tile_r = 33');
+  const villa = (await q("INSERT INTO npc_settlements (name, tile_q, tile_r, faction, species, disposition) VALUES ($1, 33, 33, 'neutral', 'badger', 'friendly') RETURNING id", ['Testholt ' + RUN])).rows[0];
+  const npcBuyer = await user('npcbuyer', { market: 2, wealth: 5000, timber: 2000 });
+  const npcOther = await user('npcother', { market: 1 });
+  const npcPorter = await citizen(npcBuyer, 'Hob', 2);
+  await q("INSERT INTO diplomacy_relations (settlement_id, npc_id, status, trust) VALUES ($1,$2,'contacted',15), ($3,$2,'familiar',25)", [npcBuyer.sid, villa.id, npcOther.sid]);
+  await q('INSERT INTO fog_of_war (user_id, tile_q, tile_r) VALUES ($1,33,33), ($2,33,33) ON CONFLICT DO NOTHING', [npcBuyer.id, npcOther.id]);
+  const npcSells = async p => ((await api(p, 'GET', '/api/market/orders?resource=resources')).body.orders || []).filter(o => o.npc && o.npc.id === villa.id);
+  check((await npcSells(npcBuyer)).length === 0, 'trust 15: the village doesn\'t trade yet');
+  await q('UPDATE diplomacy_relations SET trust = 45, status = \'friendly\' WHERE settlement_id = $1 AND npc_id = $2', [npcBuyer.sid, villa.id]);
+  const rows1 = await npcSells(npcBuyer);
+  check(rows1.length >= 1 && rows1.every(o => ['stone', 'metal'].includes(o.resource) && o.npc.tier === 'Friendly'), 'Friendly: badger village sells stone/metal at the Market');
+  r = await api(npcBuyer, 'GET', '/api/market/orders?resource=resources&npc=0');
+  check(!(r.body.orders || []).some(o => o.npc), '?npc=0 hides NPC traders');
+  r = await api(npcBuyer, 'GET', '/api/market/wants?resource=resources');
+  const vb = (r.body.wants || []).find(w => w.npc && w.npc.id === villa.id);
+  check(vb && ['food', 'timber'].includes(vb.resource) && typeof vb.you_have === 'number', 'its buy orders show under Wanted');
+  const ob = (await npcSells(npcOther))[0], o1 = rows1.find(x => x.order_key === ob.order_key) || rows1[0];
+  check(ob && o1.qty_available > ob.qty_available, 'Friendly gets more than Familiar (1.5×)');
+
+  // Buy from the village.
+  const res0 = await res(npcBuyer, o1.resource), g0 = await res(npcBuyer, 'wealth');
+  const want = Math.min(50, o1.qty_available);
+  r = await api(npcBuyer, 'POST', `/api/market/npc/${villa.id}/${o1.order_key}`, { qty: o1.qty_available + 10, citizen_id: npcPorter });
+  check(r.status === 409, 'cannot go past your allowance');
+  r = await api(npcBuyer, 'POST', `/api/market/npc/${villa.id}/${o1.order_key}`, { qty: want, citizen_id: npcPorter });
+  const cost = Math.ceil(o1.price * want / o1.per);
+  check(r.status === 200 && r.body.side === 'buy' && r.body.gold === cost && await res(npcBuyer, 'wealth') === g0 - cost, 'buying: gold held at dispatch');
+  check(((await npcSells(npcBuyer)).find(x => x.order_key === o1.order_key) || { qty_available: 0 }).qty_available === o1.qty_available - want, 'allowance drops by what you sent for');
+  check(((await npcSells(npcOther)).find(x => x.order_key === ob.order_key) || {}).qty_available === ob.qty_available, 'another player\'s allowance is untouched');
+  r = await api(npcBuyer, 'GET', '/api/travel');
+  check((r.body.journeys || []).some(j => /Buying .* from Testholt/.test(j.title)), 'the trip shows on the map');
+  const trust0 = (await q('SELECT trust FROM diplomacy_relations WHERE settlement_id=$1 AND npc_id=$2', [npcBuyer.sid, villa.id])).rows[0].trust;
+  const landNpc = async () => {
+    await q("UPDATE market_runs SET arrives_at = NOW() - INTERVAL '2 seconds', returns_at = NOW() - INTERVAL '1 second' WHERE settlement_id = $1 AND status <> 'done'", [npcBuyer.sid]);
+    await market.resolveDue(); await market.resolveDue();
+  };
+  await landNpc();
+  check(await res(npcBuyer, o1.resource) === res0 + want, 'goods arrive when the porter is home');
+  const trust1 = (await q('SELECT trust FROM diplomacy_relations WHERE settlement_id=$1 AND npc_id=$2', [npcBuyer.sid, villa.id])).rows[0].trust;
+  check(trust1 === trust0 + 1, 'a completed trade adds 1 trust');
+
+  // Sell to the village (its buy order), twice more: trust caps at +2/day.
+  const sellRow = vb;
+  const have0 = await res(npcBuyer, sellRow.resource), g1 = await res(npcBuyer, 'wealth');
+  const sq = Math.min(20, sellRow.qty_open);
+  r = await api(npcBuyer, 'POST', `/api/market/npc/${villa.id}/${sellRow.order_key}`, { qty: sq, citizen_id: npcPorter });
+  check(r.status === 200 && r.body.side === 'sell' && await res(npcBuyer, sellRow.resource) === have0 - sq, 'selling: goods leave at dispatch');
+  await landNpc();
+  check(await res(npcBuyer, 'wealth') === g1 + Math.ceil(sellRow.price * sq / sellRow.per), 'gold arrives when the porter is home');
+  r = await api(npcBuyer, 'POST', `/api/market/npc/${villa.id}/${sellRow.order_key}`, { qty: 1, citizen_id: npcPorter });
+  await landNpc();
+  const trust2 = (await q('SELECT trust FROM diplomacy_relations WHERE settlement_id=$1 AND npc_id=$2', [npcBuyer.sid, villa.id])).rows[0].trust;
+  check(trust2 === trust0 + 2, 'trust from trading caps at +2 a day');
+  await q('UPDATE fog_of_war SET tile_q = 34 WHERE user_id = $1 AND tile_q = 33 AND tile_r = 33', [npcOther.id]);
+  check((await npcSells(npcOther)).length === 0, 'unrevealed villages don\'t trade');
+
+  // Misc covers trophies.
+  const trophyKey = 'mt_cup_' + RUN;
+  await q("INSERT INTO item_templates (item_key, name, category, sell_value) VALUES ($1,'Test Cup','trophy',30)", [trophyKey]);
+  const cup = await inv(isel, trophyKey, { name: 'Test Cup', icon: '🏆', category: 'trophy' });
+  r = await itemOrder(cup, { qty_total: 1, unit_price: 40, venue: 'market' });
+  const cupOrder = r.body.order && r.body.order.id;
+  r = await api(ibuy, 'GET', '/api/market/orders?category=misc');
+  check(cupOrder && (r.body.orders || []).some(o => o.id === cupOrder), 'the Misc filter includes trophies');
+  await api(isel, 'POST', `/api/market/orders/${cupOrder}/cancel`);
 
   // ── Search & Ironhaven ─────────────────────────────────────────────────
   console.log('Search & Ironhaven');

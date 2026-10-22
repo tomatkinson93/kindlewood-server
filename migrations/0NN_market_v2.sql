@@ -95,5 +95,6 @@ CREATE INDEX IF NOT EXISTS market_wants_buyer_idx  ON market_wants (buyer_settle
 ALTER TABLE market_runs ADD COLUMN IF NOT EXISTS want_id INTEGER REFERENCES market_wants(id) ON DELETE SET NULL;
 ALTER TABLE market_runs ADD COLUMN IF NOT EXISTS resource TEXT;
 ALTER TABLE market_runs DROP CONSTRAINT IF EXISTS market_runs_kind_check;
-ALTER TABLE market_runs ADD CONSTRAINT market_runs_kind_check CHECK (kind IN ('ironhaven','pickup','fill'));
+-- Full list (0NN_market_npc.sql adds 'npc'; both re-run every boot).
+ALTER TABLE market_runs ADD CONSTRAINT market_runs_kind_check CHECK (kind IN ('ironhaven','pickup','fill','npc'));
 COMMIT;
