@@ -35,6 +35,9 @@ const DEFAULT_ITEMS = [
   { item_key:'rare_sap', name:'Rare Sap', icon:'🫙', category:'material', rarity:'uncommon', sell_value:20 },
   { item_key:'ancient_heartwood', name:'Ancient Heartwood', icon:'🪵', category:'material', rarity:'rare', sell_value:45 },
   { item_key:'gemstone', name:'Gemstone', icon:'💎', category:'material', rarity:'rare', sell_value:50 },
+  { item_key:'hide', name:'Hide', icon:'🟫', category:'material', rarity:'common', sell_value:6, description:'A cured animal hide. Tanners will want it.' },
+  { item_key:'wool', name:'Wool', icon:'🧶', category:'material', rarity:'common', sell_value:6, description:'A fleece of soft wool, ready for spinning.' },
+  { item_key:'prize_ram', name:'Prize Ram Rosette', icon:'🏆', category:'trophy', rarity:'rare', sell_value:60, description:'Won by the finest ram in the valley.' },
   // Quest items
   { item_key:'luminous_scale', name:'Luminous Scale', icon:'✨', category:'quest_item', rarity:'rare', sell_value:40 },
   { item_key:'ancient_blueprint', name:'Ancient Blueprint', icon:'📜', category:'quest_item', rarity:'epic', sell_value:80 },

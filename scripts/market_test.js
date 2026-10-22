@@ -276,7 +276,7 @@ async function part2() {
   check(await role(a1) === 'idle', 'merchant freed on expiry');
   r = await api(seller, 'POST', '/api/market/orders', { resource: 'timber', lot_size: 50, lot_price: 30, qty_total: 100, citizen_ids: [a1] });
   const o4 = r.body.order.id;
-  r = await api(seller, 'PATCH', `/api/citizens/${a1}/role`, { role: 'farmer' });
+  r = await api(seller, 'PATCH', `/api/citizens/${a1}/role`, { role: 'forager' });
   check(r.status === 200 && (await q('SELECT 1 FROM market_order_merchants WHERE citizen_id=$1', [a1])).rowCount === 0,
     'reassigning a merchant at home takes them off the order');
   await api(seller, 'POST', `/api/market/orders/${o4}/cancel`);
@@ -437,7 +437,7 @@ async function part2() {
   r = await api(ibuy, 'GET', '/api/market/orders?category=weapon');
   const swordRow = (r.body.orders || []).find(o => o.id === swordOrder);
   check(swordRow && swordRow.venue_label === 'Smithy', 'buyers see it at the Smithy');
-  r = await api(isel, 'PATCH', `/api/citizens/${smith}/role`, { role: 'farmer' });
+  r = await api(isel, 'PATCH', `/api/citizens/${smith}/role`, { role: 'forager' });
   check(r.status === 200 && (await q('SELECT 1 FROM shop_keepers WHERE citizen_id=$1', [smith])).rowCount === 0, 'reassigning the shopkeeper closes the shop');
   r = await api(ibuy, 'GET', '/api/market/orders?category=weapon');
   check(!(r.body.orders || []).some(o => o.id === swordOrder), 'closed shop: its stalls are hidden');
@@ -542,6 +542,15 @@ async function part2() {
   check(((await npcSells(npcOther)).find(x => x.order_key === ob.order_key) || {}).qty_available === ob.qty_available, 'another player\'s allowance is untouched');
   r = await api(npcBuyer, 'GET', '/api/travel');
   check((r.body.journeys || []).some(j => /Buying .* from Testholt/.test(j.title)), 'the trip shows on the map');
+  const npcRunNow = async () => (await q(
+    "SELECT status, EXTRACT(EPOCH FROM arrives_at - NOW()) AS a, EXTRACT(EPOCH FROM returns_at - NOW()) AS b FROM market_runs WHERE settlement_id = $1 AND kind = 'npc' AND status <> 'done' ORDER BY id DESC LIMIT 1",
+    [npcBuyer.sid])).rows[0];
+  const nr0 = await npcRunNow();
+  check(nr0 && nr0.status === 'outbound' && Number(nr0.a) >= 115 && Number(nr0.b) >= 235, 'village porter is on the road: arrives in 2+ min, home in 4+ min');
+  for (const p of ['/api/market/orders', '/api/market/wants', '/api/market/mine', '/api/market/status']) await api(npcBuyer, 'GET', p);
+  await market.resolveDue();
+  const nr1 = await npcRunNow();
+  check(nr1 && nr1.status === 'outbound' && await res(npcBuyer, o1.resource) === res0, 'reading the Market (and the worker) doesn\'t complete the trade early');
   const trust0 = (await q('SELECT trust FROM diplomacy_relations WHERE settlement_id=$1 AND npc_id=$2', [npcBuyer.sid, villa.id])).rows[0].trust;
   const landNpc = async () => {
     await q("UPDATE market_runs SET arrives_at = NOW() - INTERVAL '2 seconds', returns_at = NOW() - INTERVAL '1 second' WHERE settlement_id = $1 AND status <> 'done'", [npcBuyer.sid]);

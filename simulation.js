@@ -224,6 +224,7 @@ function _hourBreeding(sim, ctx) {
       id_a: a.id, name_a: a.name, id_b: b.id, name_b: b.name,
       gen_a: a.generation, gen_b: b.generation,
       traits_a: a.visible_traits, traits_b: b.visible_traits,
+      hidden_a: a.hidden_traits, hidden_b: b.hidden_traits,
       stats_a: a.stats, stats_b: b.stats, skills_a: a.skills, skills_b: b.skills,
       house_a: a.house_id,
     } });
@@ -311,6 +312,13 @@ async function _createChild(settlementId, pair, atMs = null, houseNameKnown = nu
     if (!inheritedTraits.includes(mutant.id)) inheritedTraits.push(mutant.id);
   }
 
+  // Careers: a parent's talent passes on 30% of the time (hidden, like theirs);
+  // otherwise the usual roll for talents and aversions.
+  const CT = require('./lib/careers/traits');
+  const parentApts = [...(pair.hidden_a || []), ...(pair.hidden_b || [])].filter(t => CT.APTITUDES[t]);
+  const inheritedApt = parentApts.filter(() => Math.random() < 0.3);
+  const hiddenTraits = CT.rollCareerTraits(Object.keys(require('./lib/careers/classes').CLASSES), Math.random, inheritedApt.slice(0, 1));
+
   const life = {
     age: 0,
     health: 80 + Math.round(Math.random() * 15),
@@ -337,13 +345,16 @@ async function _createChild(settlementId, pair, atMs = null, houseNameKnown = nu
       JSON.stringify(life),
       JSON.stringify({ fertility: 50, genetic_quality: 60, compatibility: 50 }),
       JSON.stringify(inheritedTraits),
-      JSON.stringify([]),
+      JSON.stringify(hiddenTraits),
       pair.house_a,
       JSON.stringify([pair.id_a, pair.id_b]),
     ]
   );
 
   const childId = result.rows[0]?.id;
+  // A first child reveals a hidden 'fertile' trait in either parent.
+  const careers = require('./lib/careers');
+  for (const pid of [pair.id_a, pair.id_b]) careers.revealOnEvent(settlementId, pid, 'child').catch(() => {});
 
   // House name for the event
   let houseName = houseNameKnown;

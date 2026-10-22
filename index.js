@@ -84,6 +84,7 @@ app.use('/api/chat', require('./routes/chat'));
 app.use('/api/clan-quests', require('./routes/clan_quests'));
 app.use('/api/market', require('./routes/market'));
 app.use('/api/travel', require('./routes/travel'));
+app.use('/api/careers', require('./routes/careers'));
 app.use((err, req, res, next) => {
   console.error(err.message);
   res.status(500).json({ error: 'Internal server error.' });
@@ -103,6 +104,8 @@ initDB().then(() => {
   // Clan prestige listens to gameplay events (spec 016 §8). Registered
   // before the worker starts so no early quest resolution is missed.
   require('./lib/clan_subscriber').register();
+  // Careers: completed quests, battles, porter runs… pay class XP.
+  require('./lib/career_subscriber').register();
   // Built-in clan quests into quest_definitions (quest_source = 'clan') the
   // first time; after that they're edited in the Dev Tools quest admin.
   require('./lib/clan_quests').seedDefinitions({ onlyIfEmpty: true })

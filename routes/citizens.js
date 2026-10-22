@@ -1,5 +1,5 @@
 const express = require('express');
-const { query } = require('../db');
+const { query, withTransaction } = require('../db');
 const requireAuth = require('../middleware/auth');
 const { VISIBLE_TRAITS, HIDDEN_TRAITS } = require('../citizens');
 const { calculateHappinessFactors } = require('../happiness');
@@ -22,6 +22,13 @@ router.get('/', requireAuth, async (req, res) => {
     );
     const settlement = settlementRes.rows[0];
     if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+
+    // Careers: credit passive XP first (gated, cheap when nothing's due).
+    const careers = require('../lib/careers');
+    await careers.settle(settlement.id);
+    let careerInfo = new Map();
+    try { careerInfo = careers.summaries(await careers.loadState(null, settlement.id)); }
+    catch (e) { console.error('[careers] summaries failed:', e.message); }
 
     const citizensRes = await query(
       `SELECT * FROM citizens WHERE settlement_id=$1 ORDER BY born_at ASC`,
@@ -133,6 +140,7 @@ router.get('/', requireAuth, async (req, res) => {
         partnerHouseId: c.partner_id ? partnerHouseMap[c.partner_id] : null,
         houseChildCount: houseChildCount[c.house_id] || 0,
         happeningHappiness: hMods.happiness || 0,
+        jobMood: (careerInfo.get(c.id) || {}).job_mood || 0,
       };
       const { factors, base, delta, computed } = calculateHappinessFactors(c, context);
       // Breeding status — only for partnered adults
@@ -193,6 +201,7 @@ router.get('/', requireAuth, async (req, res) => {
         life: c.life || {},
         visible_traits: c.visible_traits || [],
         revealed_hidden_traits: [],
+        ...(careerInfo.get(c.id) || {}),
         born_at: c.born_at,
         house_id: c.house_id || null,
         partner_id: c.partner_id || null,
@@ -237,7 +246,7 @@ router.get('/:id', requireAuth, async (req, res) => {
         role: c.role, stats: c.stats || {}, skills: c.skills || {},
         life: c.life || {}, repro: c.repro || {},
         visible_traits: c.visible_traits || [],
-        revealed_hidden_traits: [],
+        revealed_hidden_traits: c.revealed_traits || [],
         born_at: c.born_at,
         hunger_state: hungerStateOf(c),
       }
@@ -247,52 +256,52 @@ router.get('/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Update citizen role
+// Update citizen role (careers: time so far is credited to the old job; a
+// job needs its building — lib/careers/classes.js).
 router.patch('/:id/role', requireAuth, async (req, res) => {
   try {
     const { role } = req.body;
-    const VALID_ROLES = ['farmer','woodcutter','fisher','miner','crafter','scout','soldier','idle','tavernkeep'];
-    if (!VALID_ROLES.includes(role)) return res.status(400).json({ error: 'Invalid role.' });
+    const careers = require('../lib/careers');
+    const C = require('../lib/careers/classes');
+    if (!C.VALID_ROLES.includes(role) || (C.CLASSES[role] && C.CLASSES[role].assignedBy))
+      return res.status(400).json({ error: 'Invalid role.' });
 
     const settlementRes = await query(
       'SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]
     );
     const settlement = settlementRes.rows[0];
+    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+    const cRes = await query('SELECT id, name, life_stage FROM citizens WHERE id=$1 AND settlement_id=$2', [req.params.id, settlement.id]);
+    const cit = cRes.rows[0];
+    if (!cit) return res.status(404).json({ error: 'Citizen not found.' });
+    if ((cit.life_stage || 'adult') !== 'adult') return res.status(400).json({ error: `${cit.name} can't take a job.` });
 
-    // Block if on active expedition
-    const expedition = await query(
-      "SELECT id, target_q, target_r FROM expeditions WHERE citizen_id=$1 AND status='travelling'",
-      [req.params.id]
-    );
-    if (expedition.rows.length) {
-      const exp = expedition.rows[0];
-      return res.status(400).json({
-        error: `This citizen is currently scouting (${exp.target_q}, ${exp.target_r}) and cannot be reassigned.`
-      });
-    }
+    // Away on something: can't be reassigned until they're home.
+    const away = (await careers.awayMap(null, settlement.id)).get(cit.id);
+    const AWAY_MSG = {
+      expedition: 'is out scouting', quest: 'is on a quest', clan_quest: 'is on a clan quest',
+      porter: 'is out carrying goods', trade: 'is on a trade run', envoy: 'is away as an envoy',
+    };
+    if (away) return res.status(400).json({ error: `${cit.name} ${AWAY_MSG[away] || 'is away'} and can't be reassigned until they return.` });
 
-    // Merchants (role set only by the Market): one on the road can't be
-    // reassigned; one at home leaves their order.
-    const onRoad = await query(
-      "SELECT id FROM market_trips WHERE citizen_id=$1 AND status IN ('outbound','returning')", [req.params.id]
-    ).catch(() => ({ rows: [] }));
-    if (onRoad.rows.length)
-      return res.status(400).json({ error: 'This citizen is on a trade run and cannot be reassigned until they return.' });
-    await query(
-      `DELETE FROM market_order_merchants m USING citizens c
-        WHERE m.citizen_id = c.id AND c.id = $1 AND c.settlement_id = $2`, [req.params.id, settlement.id]
-    ).catch(() => {});
-    await query(
-      `DELETE FROM shop_keepers k USING citizens c
-        WHERE k.citizen_id = c.id AND c.id = $1 AND c.settlement_id = $2`, [req.params.id, settlement.id]
-    ).catch(() => {});
-
-    await query(
-      'UPDATE citizens SET role=$1 WHERE id=$2 AND settlement_id=$3',
-      [role, req.params.id, settlement.id]
-    );
+    const events = [];
+    await withTransaction(async client => {
+      // Merchants (set by the Market) at home leave their order; keepers their shop.
+      await client.query(
+        `DELETE FROM market_order_merchants m USING citizens c
+          WHERE m.citizen_id = c.id AND c.id = $1 AND c.settlement_id = $2`, [cit.id, settlement.id]
+      ).catch(() => {});
+      await client.query(
+        `DELETE FROM shop_keepers k USING citizens c
+          WHERE k.citizen_id = c.id AND c.id = $1 AND c.settlement_id = $2`, [cit.id, settlement.id]
+      ).catch(() => {});
+      await careers.setRole(client, settlement.id, [cit.id], role, events);
+    });
+    careers.publish(settlement.id, events);
     res.json({ ok: true, role });
   } catch (err) {
+    if (err && err.status) return res.status(err.status).json({ error: err.message });
+    console.error(err);
     res.status(500).json({ error: 'Failed to update role.' });
   }
 });

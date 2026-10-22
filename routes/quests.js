@@ -823,7 +823,10 @@ async function processCombatTriggers(settlementId) {
       if (!encounter.length) encounter = await _pickFallbackEnemy(ownerUserId);
       // Happening combat modifiers at the owner's gameplay clock, frozen for
       // this battle (stored on the run; every replay reuses them).
-      const combatMods = combatResolver.combatModsOf(await questMods(ownerUserId));
+      // Careers: the party's perks and gear, frozen with the Happening mods.
+      const fightIds = ((run.quest_type === 'party' && Array.isArray(run.party_ids)) ? run.party_ids : [run.citizen_id]).filter(Boolean).map(Number);
+      const combatMods = combatResolver.withParty(combatResolver.combatModsOf(await questMods(ownerUserId)),
+        await require('../lib/careers').combatDeltas(settlementId, fightIds).catch(() => ({})));
 
       if (run.auto_resolve_combat) {
         const partyIds = (run.quest_type === 'party' && Array.isArray(run.party_ids))
@@ -877,7 +880,7 @@ async function processCombatTriggers(settlementId) {
             quest_run_id: run.id,
             outcome: 'victory',
           });
-          pendingGameEvents.push(['battle_won', { settlementId, enemyCount: encounter.length }]);
+          pendingGameEvents.push(['battle_won', { settlementId, enemyCount: encounter.length, citizenIds: partyIds.filter(Boolean).map(Number) }]);
         } else {
           const stateJson = JSON.stringify(
             combatResolver.serializeBattle(battleResult.battle)
@@ -1002,8 +1005,17 @@ async function resolveCompletedQuests(settlementId) {
       _resolveMods = await questMods(o.rows.length ? o.rows[0].user_id : null);
       return _resolveMods;
     };
+    // Careers: effective skills (perks, gear) and quest-success perks.
+    let _profiles = null;
+    const profiles = async () => {
+      if (!_profiles) _profiles = await require('../lib/careers').profilesFor(client, settlementId).catch(() => new Map());
+      return _profiles;
+    };
+    const skillOf = (prof, member, key) => (prof ? prof.skills[key] : null) ?? (member && member.skills ? member.skills[key] : null) ?? 1;
+    const questPerk = (prof, key) => (prof ? (prof.effects['quest:' + key] || 0) : 0);
     for (const run of dueRes.rows) {
       const isParty = run.quest_type === 'party';
+      let questCitizens = [], questSkills = [];
       // Look up def: hardcoded pool first, then DB. NPC quests live only in DB.
       let quest = isParty
         ? PARTY_QUEST_POOL.find(q => q.id === run.quest_id)
@@ -1022,19 +1034,27 @@ async function resolveCompletedQuests(settlementId) {
 
       if (isParty) {
         const partyIds = run.party_ids || [];
-        let totalSkill = 0, count = 0;
+        let totalSkill = 0, totalPerk = 0, count = 0;
         if (partyIds.length > 0) {
-          const pRes = await client.query('SELECT skills FROM citizens WHERE id = ANY($1)', [partyIds]);
+          // party_ids[i] fills quest.requires[i] — match by id, ANY() has no order.
+          const pRes = await client.query('SELECT id, skills FROM citizens WHERE id = ANY($1)', [partyIds]);
+          const byId = new Map(pRes.rows.map(r => [Number(r.id), r]));
+          const profs = await profiles();
           quest.requires.forEach((req, i) => {
-            const member = pRes.rows[i];
+            const id = Number(partyIds[i]);
+            const member = byId.get(id);
             if (member) {
-              totalSkill += (member.skills?.[req.skill_key] ?? 1);
+              const prof = profs.get(id);
+              totalSkill += skillOf(prof, member, req.skill_key);
+              totalPerk += questPerk(prof, req.skill_key);
+              questCitizens.push(id); questSkills.push(req.skill_key);
               count++;
             }
           });
         }
         const avgSkill = count > 0 ? totalSkill / count : 1;
-        successChance = moddedSuccess(Math.min(0.95, quest.base_success + (avgSkill - 1) * 0.04), await resolveMods());
+        const avgPerk = count > 0 ? totalPerk / count : 0;
+        successChance = moddedSuccess(Math.min(0.95, quest.base_success + (avgSkill - 1) * 0.04 + avgPerk), await resolveMods());
         roll = Math.random();
         outcome = roll < successChance ? 'completed' : 'failed';
 
@@ -1066,9 +1086,10 @@ async function resolveCompletedQuests(settlementId) {
         );
 
       } else {
-        const skills = run.citizen_skills || {};
-        const skillVal = skills[quest.skill_key] ?? 1;
-        successChance = moddedSuccess(Math.min(0.95, quest.base_success + (skillVal - 1) * 0.04), await resolveMods());
+        const prof = run.citizen_id ? (await profiles()).get(Number(run.citizen_id)) : null;
+        const skillVal = skillOf(prof, { skills: run.citizen_skills || {} }, quest.skill_key);
+        successChance = moddedSuccess(Math.min(0.95, quest.base_success + (skillVal - 1) * 0.04 + questPerk(prof, quest.skill_key)), await resolveMods());
+        if (run.citizen_id) { questCitizens = [Number(run.citizen_id)]; questSkills = [quest.skill_key]; }
         roll = Math.random();
         outcome = roll < successChance ? 'completed' : 'failed';
       }
@@ -1087,6 +1108,7 @@ async function resolveCompletedQuests(settlementId) {
       pendingGameEvents.push(['quest_completed', {
         settlementId, questRunId: run.id,
         durationS: Number(quest.duration_s) || 0, success: outcome === 'completed',
+        citizenIds: questCitizens, skillKeys: questSkills,
       }]);
     }
 

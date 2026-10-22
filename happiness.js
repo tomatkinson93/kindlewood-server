@@ -89,6 +89,11 @@ function calculateHappinessFactors(citizen, context = {}) {
   if (season === 'winter') factors.push(HAPPINESS_FACTORS.season_winter);
 
   // Happenings (spec 021) — the summed happiness modifier of every running
+  // Careers: how they feel about their job (aversions, quirks).
+  if (context.jobMood) {
+    factors.push({ label: context.jobMood > 0 ? 'Loves the work' : 'Hates this job', value: context.jobMood, icon: context.jobMood > 0 ? '😊' : '😣' });
+  }
+
   // Happening, as one factor (context.happeningHappiness, real clock).
   if (context.happeningHappiness) {
     factors.push({ label: 'Happenings', value: context.happeningHappiness, icon: '🏮' });

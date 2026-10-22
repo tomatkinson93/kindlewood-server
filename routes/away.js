@@ -78,7 +78,7 @@ async function buildReport(s, since, now) {
 
   // ── Resources: ledger totals, split over who produced / ate them ──
   const ledger = s.away_ledger || {};
-  const base = calculateRatesBreakdown(bRes.rows, cRes.rows.filter(c => c.life_stage !== 'deceased'), s.species, oRes.rows);
+  const base = calculateRatesBreakdown(bRes.rows, cRes.rows.filter(c => c.life_stage !== 'deceased' && c.life_stage !== 'child'), s.species, oRes.rows);
   const defs = await happenings.loadLive();
   const effHours = A.effectiveProductionHours(defs, since, now);
   const awayHours = (now - since) / 3600000;

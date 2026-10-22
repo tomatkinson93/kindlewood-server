@@ -758,6 +758,7 @@ router.post('/resolve', requireAuth, async (req, res) => {
       if (victoryRecorded) {
         gameEvents.emit('battle_won', {
           settlementId: sett.id, userId: req.user.userId, enemyCount: (resolvedEncounter || []).length,
+          citizenIds: skillBumpIds,
         });
       }
 
