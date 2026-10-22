@@ -1,9 +1,10 @@
-const { getCurrentSeason, applySeasonModifiers } = require('../seasons');
+const { getCurrentSeason, applySeasonModifiers, seasonSegments } = require('../seasons');
 const { runSimulation } = require('../simulation');
 const { applyConsumption, getFamineSummary, buildUpkeepBreakdownSource } = require('../famine');
 const { generateCitizen } = require('../citizens');
 const express = require('express');
-const { calculateRates, calculateRatesBreakdown, applyBreakdownSeasonModifiers, TIER_ORDER } = require('../buildings');
+const { calculateRates, calculateRatesBreakdown, applyBreakdownSeasonModifiers, citizenContributions, TIER_ORDER } = require('../buildings');
+const careers = require('../lib/careers');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/admin');
@@ -58,38 +59,76 @@ async function addToAwayLedger(settlementId, amounts) {
   ).catch(e => console.error('[away] ledger update failed:', e.message));
 }
 
-async function applyTick(settlement, species) {
+// The settlement's working adults with their career profiles (production
+// reads them). Falls back to plain roles if careers can't load.
+async function loadWorkforce(settlementId) {
+  try { return await careers.loadWorkforce(null, settlementId); }
+  catch (e) {
+    console.error('[careers] workforce load failed:', e.message);
+    const r = await query(
+      "SELECT id, name, role FROM citizens WHERE settlement_id=$1 AND COALESCE(life_stage, 'adult') = 'adult'", [settlementId]);
+    const out = r.rows; out.town = null; return out;
+  }
+}
+
+// Season know-how (careers): extra output during one season, on top of the
+// season multiplier. Over [fromMs, toMs) → { res: amount }.
+function seasonalExtra(buildings, workforce, fromMs, toMs) {
+  const per = citizenContributions(buildings, workforce).seasonal;
+  const out = {};
+  if (!Object.keys(per).length) return out;
+  for (const seg of seasonSegments(fromMs, toMs)) {
+    const h = (seg.toMs - seg.fromMs) / 3600000;
+    for (const [res, v] of Object.entries(per[seg.season.id] || {})) out[res] = (out[res] || 0) + v * h;
+  }
+  return out;
+}
+
+async function applyTick(settlement, species, workforce) {
   const now = Date.now();
   const lastTick = new Date(settlement.last_tick).getTime();
   const hoursElapsed = (now - lastTick) / (1000 * 60 * 60);
   if (hoursElapsed < 0.005) return settlement;
 
-  const [bRes, cRes, oRes] = await Promise.all([
+  const [bRes, oRes] = await Promise.all([
     query('SELECT type, level FROM buildings WHERE settlement_id=$1', [settlement.id]),
-    query('SELECT role FROM citizens WHERE settlement_id=$1', [settlement.id]),
     // Outposts (010) — yields ride this same last_tick accrual; no separate
     // clock. .catch → [] so pre-migration DBs keep ticking.
     query('SELECT id, tile_q, tile_r, terrain, level FROM outposts WHERE settlement_id=$1', [settlement.id]).catch(() => ({ rows: [] })),
   ]);
-  const baseRates = calculateRates(bRes.rows, cRes.rows, species, oRes.rows);
+  const wf = workforce || await loadWorkforce(settlement.id);
+  const baseRates = calculateRates(bRes.rows, wf, species, oRes.rows);
   // Effective production hours per resource over exactly [last_tick, now]:
   // each season multiplier applies only to the hours it covered (seasons are
   // 7h, so a long absence spans several), and Happening modifiers are
   // time-weighted inside each season segment (lib/away_report).
   const effHours = awayReport.effectiveProductionHours(await happenings.loadLive(), lastTick, now);
-  const updated = {};
-  for (const res of HFX.RESOURCES) updated[res] = Math.floor(settlement[res] + (baseRates[res] || 0) * effHours[res]);
+  const extra = seasonalExtra(bRes.rows, wf, lastTick, now);
+  const updated = {}, delta = {};
+  for (const res of HFX.RESOURCES) {
+    updated[res] = Math.floor(settlement[res] + (baseRates[res] || 0) * effHours[res] + (extra[res] || 0));
+    delta[res] = updated[res] - settlement[res];
+  }
 
-  await query(`
+  // Deltas, not absolutes, and only if nobody ticked since we read: a spend
+  // landing between our read and this write (market escrow, crafting) is
+  // never undone, and two page loads can't both credit the same hours.
+  const w = await query(`
     UPDATE settlements
-    SET food=$1, timber=$2, stone=$3, metal=$4, wealth=$5, last_tick=NOW()
-    WHERE id=$6
-  `, [updated.food, updated.timber, updated.stone, updated.metal, updated.wealth, settlement.id]);
+    SET food=food+$1, timber=timber+$2, stone=stone+$3, metal=metal+$4, wealth=wealth+$5, last_tick=NOW()
+    WHERE id=$6 AND date_trunc('milliseconds', last_tick) = date_trunc('milliseconds', $7::timestamptz)
+    RETURNING food, timber, stone, metal, wealth, last_tick
+  `, [delta.food, delta.timber, delta.stone, delta.metal, delta.wealth, settlement.id, new Date(lastTick).toISOString()]);
+  if (!w.rowCount) {
+    const fresh = (await query('SELECT * FROM settlements WHERE id=$1', [settlement.id])).rows[0];
+    return fresh || settlement;
+  }
+  Object.assign(updated, w.rows[0]);
   // away_ledger (the "Since you were gone…" splash) adds up what was
   // produced since the player was last seen online. Separate statement so a
   // ledger problem can never block production.
   await addToAwayLedger(settlement.id, Object.fromEntries(
-    HFX.RESOURCES.map(res => ['produced_' + res, Math.max(0, updated[res] - settlement[res])])));
+    HFX.RESOURCES.map(res => ['produced_' + res, Math.max(0, delta[res])])));
 
   // ── Consumption & famine tick ──
   // MUST run AFTER the production write above: applyConsumption deducts food
@@ -127,6 +166,9 @@ async function applyTick(settlement, species) {
     console.error('Simulation tick error:', simErr.message);
   }
 
+  // Careers: passive XP for the hours worked (gated; cheap when nothing's due).
+  await careers.settle(settlement.id);
+
   return { ...settlement, ...updated };
 }
 
@@ -141,14 +183,11 @@ router.get('/settlement', requireAuth, async (req, res) => {
     let settlement = settlementResult.rows[0];
     if (!settlement) return res.status(404).json({ error: 'No settlement found.' });
 
-    settlement = await applyTick(settlement, user.species);
+    const workforce = await loadWorkforce(settlement.id);
+    settlement = await applyTick(settlement, user.species, workforce);
 
     const buildingsResult = await query(
       'SELECT type, level FROM buildings WHERE settlement_id=$1',
-      [settlement.id]
-    );
-    const citizensResult = await query(
-      'SELECT role FROM citizens WHERE settlement_id=$1',
       [settlement.id]
     );
     // Outposts (010) — same rows feed the rate calc so the topbar +N/hr
@@ -158,8 +197,12 @@ router.get('/settlement', requireAuth, async (req, res) => {
       [settlement.id]
     ).catch(() => ({ rows: [] }));
     const season = getCurrentSeason();
-    const baseRates = calculateRates(buildingsResult.rows, citizensResult.rows, user.species, outpostsResult.rows);
+    const baseRates = calculateRates(buildingsResult.rows, workforce, user.species, outpostsResult.rows);
     const rates = applyHappeningRates(applySeasonModifiers(baseRates, season), await happeningModsNow());
+    // Season know-how (careers) on top, this season only.
+    const know = citizenContributions(buildingsResult.rows, workforce).seasonal[season.id] || {};
+    for (const [res, v] of Object.entries(know)) if (typeof rates[res] === 'number') rates[res] = Math.round(rates[res] + v);
+    for (const res of Object.keys(baseRates)) baseRates[res] = Math.round(baseRates[res] * 10) / 10;
 
     // Famine status for the warning banner (spec Q5). rates.food is the
     // post-season production side of hours-to-empty; upkeep is computed
@@ -192,10 +235,10 @@ router.get('/settlement', requireAuth, async (req, res) => {
         population: settlement.population,
         population_cap: settlement.population_cap,
         happiness: (() => {
-          // Base happiness + 10% per tavernkeep
-          const tavernkeepCount = citizensResult.rows.filter(c => c.role === 'tavernkeep').length;
+          // Base happiness + 10 per tavernkeep + careers (warm hearths, vigils…)
+          const tavernkeepCount = workforce.filter(c => c.role === 'tavernkeep').length;
           const base = typeof settlement.happiness === 'number' ? settlement.happiness : 70;
-          return Math.min(100, base + tavernkeepCount * 10);
+          return Math.min(100, base + tavernkeepCount * 10 + ((workforce.town && workforce.town.happiness) || 0));
         })(),
         last_tick: settlement.last_tick,
         famine,
@@ -251,10 +294,7 @@ router.get('/resource-breakdown', requireAuth, async (req, res) => {
       'SELECT id, type, level FROM buildings WHERE settlement_id=$1',
       [settlement.id]
     );
-    const citizensResult = await query(
-      'SELECT id, name, role FROM citizens WHERE settlement_id=$1',
-      [settlement.id]
-    );
+    const workforce = await loadWorkforce(settlement.id);
 
     // Outposts (010) — one source row per outpost in the modal.
     const outpostsResult = await query(
@@ -263,8 +303,15 @@ router.get('/resource-breakdown', requireAuth, async (req, res) => {
     ).catch(() => ({ rows: [] }));
 
     const season = getCurrentSeason();
-    const base = calculateRatesBreakdown(buildingsResult.rows, citizensResult.rows, user.species, outpostsResult.rows);
+    const base = calculateRatesBreakdown(buildingsResult.rows, workforce, user.species, outpostsResult.rows);
     const breakdown = applyBreakdownSeasonModifiers(applyBreakdownSeasonModifiers(base, season), happeningPseudoSeason(await happeningModsNow()));
+    // Season know-how (careers): after the multipliers — it isn't scaled.
+    const know = citizenContributions(buildingsResult.rows, workforce).seasonal[season.id] || {};
+    for (const [res, v] of Object.entries(know)) {
+      if (!breakdown[res] || !v) continue;
+      breakdown[res].sources.push({ kind: 'career_season', label: `${season.emoji || ''} ${season.name} know-how`.trim(), value: Math.round(v * 10) / 10 });
+      breakdown[res].total = Math.round((breakdown[res].total + v) * 10) / 10;
+    }
 
     // Citizen food upkeep — negative source row (🍽 in the modal, "Upkeep"
     // in the tooltip). Pushed AFTER the season multiplier on purpose: the
@@ -1118,13 +1165,13 @@ router.post('/items/:key/spawn', requireAuth, requireAdmin, async (req, res) => 
     if (!sett) return res.status(404).json({ error: 'No settlement.' });
     const t = (await db.query('SELECT * FROM item_templates WHERE item_key=$1', [req.params.key])).rows[0];
     if (!t) return res.status(404).json({ error: 'Item not found.' });
-    await db.query(`INSERT INTO inventory_items
-      (settlement_id,item_key,name,description,icon,category,rarity,quantity,equip_slot,stat_bonuses,source,metadata)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'admin',$11) ON CONFLICT DO NOTHING`,
-      [sett.id,t.item_key,t.name,t.description,t.icon,t.category,t.rarity,
-       parseInt(req.body.quantity)||1,t.equip_slot,JSON.stringify(t.stat_bonuses||{}),
-       JSON.stringify({sell_value:t.sell_value,food_value:t.food_value,
-                       armor_class:t.armor_class,damage_dice:t.damage_dice})]);
+    // grantItem: stacks materials, one row per piece of equipment.
+    await require('../lib/inventory').grantItem((t2, p2) => db.query(t2, p2), sett.id, {
+      item_key: t.item_key, name: t.name, description: t.description, icon: t.icon, category: t.category, rarity: t.rarity,
+      quantity: Math.max(1, Math.min(100, parseInt(req.body.quantity) || 1)), equip_slot: t.equip_slot, stat_bonuses: t.stat_bonuses || {},
+      source: 'admin', tradeable: t.tradeable !== false,
+      metadata: { sell_value: t.sell_value, food_value: t.food_value, armor_class: t.armor_class, damage_dice: t.damage_dice },
+    });
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

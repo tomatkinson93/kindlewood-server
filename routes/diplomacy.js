@@ -270,9 +270,10 @@ router.post('/:npcId/contact', requireAuth, async (req, res) => {
 
     // Calculate travel time
     const path = hexLinePath(sett.tile_q, sett.tile_r, npc.tile_q, npc.tile_r);
-    const scouting = cit.skills?.scouting || 1;
+    const envoy = await require('../lib/careers').envoySpeed(sett.id, cit);   // careers: travel perks
+    const scouting = envoy.scouting;
     let seconds = path.length * SECONDS_PER_TILE;
-    seconds = Math.round(seconds / (1 + (scouting - 1) * 0.06));
+    seconds = Math.round(seconds / ((1 + (scouting - 1) * 0.06) * envoy.mult));
     seconds = Math.max(15, seconds);
     const arrivesAt = new Date(Date.now() + seconds * 1000);
 
@@ -338,9 +339,10 @@ router.post('/:npcId/goodwill', requireAuth, async (req, res) => {
 
     // Travel time — same formula as contact, scouting helps a little.
     const path = hexLinePath(sett.tile_q, sett.tile_r, npc.tile_q, npc.tile_r);
-    const scouting = cit.skills?.scouting || 1;
+    const envoy = await require('../lib/careers').envoySpeed(sett.id, cit);   // careers: travel perks
+    const scouting = envoy.scouting;
     let seconds = path.length * SECONDS_PER_TILE;
-    seconds = Math.round(seconds / (1 + (scouting - 1) * 0.06));
+    seconds = Math.round(seconds / ((1 + (scouting - 1) * 0.06) * envoy.mult));
     seconds = Math.max(15, seconds);
     const arrivesAt = new Date(Date.now() + seconds * 1000);
 
@@ -428,9 +430,10 @@ router.post('/:npcId/gift', requireAuth, async (req, res) => {
 
     // Travel time — couriers don't get a charisma bonus, but scouting still helps.
     const path = hexLinePath(sett.tile_q, sett.tile_r, npc.tile_q, npc.tile_r);
-    const scouting = cit.skills?.scouting || 1;
+    const envoy = await require('../lib/careers').envoySpeed(sett.id, cit);   // careers: travel perks
+    const scouting = envoy.scouting;
     let seconds = path.length * SECONDS_PER_TILE;
-    seconds = Math.round(seconds / (1 + (scouting - 1) * 0.06));
+    seconds = Math.round(seconds / ((1 + (scouting - 1) * 0.06) * envoy.mult));
     seconds = Math.max(15, seconds);
     const arrivesAt = new Date(Date.now() + seconds * 1000);
 

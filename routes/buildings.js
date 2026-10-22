@@ -282,11 +282,12 @@ router.post('/remove', requireAuth, async (req, res) => {
       .filter(([, buildings]) => buildings.includes(buildingId))
       .map(([role]) => role);
 
+    // Careers: anyone whose job needed this building goes foraging (their
+    // time so far is credited to the old job first).
     if (rolesForBuilding.length) {
-      await query(
-        `UPDATE citizens SET role='idle' WHERE settlement_id=$1 AND role=ANY($2::text[])`,
-        [settlement.id, rolesForBuilding]
-      );
+      const careers = require('../lib/careers');
+      await careers.settle(settlement.id, { force: true });
+      await careers.fixRoles(settlement.id);
     }
 
     res.json({ ok: true, refund });

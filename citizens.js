@@ -133,6 +133,12 @@ function generateCitizen(generation = 1) {
     hiddenTraits.push(pickRandom(HIDDEN_TRAITS).id);
   }
 
+  // Careers: hidden talents and aversions, found out by working.
+  const CT = require('./lib/careers/traits');
+  for (const t of CT.rollCareerTraits(Object.keys(require('./lib/careers/classes').CLASSES))) {
+    if (!hiddenTraits.includes(t)) hiddenTraits.push(t);
+  }
+
   // Starting role based on highest skill
   const topSkill = Object.entries(skills).sort((a,b) => b[1]-a[1])[0][0];
   const roleMap = {

@@ -70,6 +70,7 @@ router.post('/send', requireAuth, async (req, res) => {
     // Validate citizen if provided
     let citizenName = 'Unknown Scout';
     let citizenSkillBonus = 1.0;
+    let revealBonus = 0;
     if (citizen_id) {
       const citizenRes = await query(
         "SELECT * FROM citizens WHERE id=$1 AND settlement_id=$2",
@@ -88,8 +89,11 @@ router.post('/send', requireAuth, async (req, res) => {
         return res.status(400).json({ error: `${citizen.name} is on a clan quest.` });
       }
       citizenName = citizen.name;
-      const scoutSkill = (citizen.skills?.scouting || 1);
-      citizenSkillBonus = 1 + (scoutSkill - 1) * 0.04; // each skill point = 4% faster
+      // Careers: effective scouting (perks, gear) and travel perks.
+      const prof = (await require('../lib/careers').profilesFor(null, settlement.id)).get(citizen.id);
+      const scoutSkill = prof ? prof.skills.scouting : (citizen.skills?.scouting || 1);
+      citizenSkillBonus = (1 + (scoutSkill - 1) * 0.04) * (1 + (prof ? (prof.effects.travel || 0) : 0)); // each skill point = 4% faster
+      revealBonus = prof ? Math.round(prof.effects.reveal || 0) : 0;
     }
 
     // Check no active expedition to same tile
@@ -126,9 +130,9 @@ router.post('/send', requireAuth, async (req, res) => {
     const completesAt = new Date(Date.now() + seconds * 1000);
 
     const result = await query(
-      `INSERT INTO expeditions (settlement_id, user_id, target_q, target_r, completes_at, path, citizen_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [settlement.id, req.user.userId, target_q, target_r, completesAt, JSON.stringify(path), citizen_id || null]
+      `INSERT INTO expeditions (settlement_id, user_id, target_q, target_r, completes_at, path, citizen_id, reveal_bonus)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [settlement.id, req.user.userId, target_q, target_r, completesAt, JSON.stringify(path), citizen_id || null, revealBonus]
     );
 
     res.json({
@@ -172,9 +176,11 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // Complete finished expeditions and reveal tiles
+// Each expedition is claimed first (status → complete), so the lazy read
+// and the worker can't both finish it.
 async function completeExpeditions(settlementId, userId) {
   const done = await query(
-    `SELECT * FROM expeditions WHERE settlement_id=$1 AND status='travelling' AND completes_at <= NOW()`,
+    `UPDATE expeditions SET status='complete' WHERE settlement_id=$1 AND status='travelling' AND completes_at <= NOW() RETURNING *`,
     [settlementId]
   );
 
@@ -190,16 +196,27 @@ async function completeExpeditions(settlementId, userId) {
     // Also reveal a small radius around destination
     // Reveal hex disk around destination
     const { hexDisk } = require('../mapgen');
-    const destDisk = hexDisk(exp.target_q, exp.target_r, 2);
+    const destDisk = hexDisk(exp.target_q, exp.target_r, 2 + (Number(exp.reveal_bonus) || 0));
     for (const { q: tq, r: tr } of destDisk) {
       await query(
         'INSERT INTO fog_of_war (user_id, tile_q, tile_r) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
         [userId, tq, tr]
       );
     }
-    await query("UPDATE expeditions SET status='complete' WHERE id=$1", [exp.id]);
     // citizen is now free (tracked by expedition status)
+    if (exp.citizen_id) {
+      require('../lib/game_events').emit('expedition_returned', { settlementId, citizenId: exp.citizen_id, hexes: path.length });
+    }
   }
+}
+
+// Worker: finish due expeditions everywhere (not only when someone looks).
+async function completeDueExpeditions() {
+  try {
+    const due = (await query(
+      `SELECT DISTINCT settlement_id, user_id FROM expeditions WHERE status='travelling' AND completes_at <= NOW() LIMIT 10`)).rows;
+    for (const d of due) await completeExpeditions(d.settlement_id, d.user_id);
+  } catch (e) { console.error('[expeditions] worker completion failed:', e.message); }
 }
 
 // Cheat — reveal all fog
@@ -243,3 +260,5 @@ router.post('/reset-fog', requireAuth, requireAdmin, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.completeExpeditions = completeExpeditions;
+module.exports.completeDueExpeditions = completeDueExpeditions;

@@ -13,15 +13,15 @@ const writes = [];
 const citizens = { 7: 20, 8: 99 };   // citizen id → settlement id
 async function q(sql, params = []) {
   if (/FROM settlements WHERE user_id/.test(sql)) return { rows: [{ id: params[0] * 10 }] };
-  if (/FROM citizens WHERE id=\$1 AND settlement_id=\$2/.test(sql)) return { rows: citizens[params[0]] === params[1] ? [{ id: params[0] }] : [] };
+  if (/FROM citizens WHERE id=\$1 AND settlement_id=\$2/.test(sql)) return { rows: citizens[params[0]] === params[1] ? [{ id: params[0], name: 'C' + params[0], life_stage: 'adult' }] : [] };
   if (/SELECT id, quantity FROM inventory_items/.test(sql)) return { rows: [] };
   if (/INSERT INTO inventory_items/.test(sql)) { writes.push(params); return { rows: [{ id: writes.length, item_key: params[1] }] }; }
-  if (/FROM inventory_items WHERE id=\$1 AND settlement_id=\$2/.test(sql)) return { rows: [{ id: params[0], quantity: 1 }] };
+  if (/FROM inventory_items WHERE id=\$1 AND settlement_id=\$2/.test(sql)) return { rows: [{ id: params[0], quantity: 1, equip_slot: 'weapon' }] };
   if (/UPDATE inventory_items/.test(sql)) { writes.push(['UPDATE', sql, params]); return { rows: [] }; }
   return { rows: [] };
 }
 require.cache[require.resolve('../db')] = { id: 'db', filename: require.resolve('../db'), loaded: true,
-  exports: { query: q, pool: { connect: async () => ({ query: q, release() {} }) } } };
+  exports: { query: q, withTransaction: fn => fn({ query: q }), pool: { connect: async () => ({ query: q, release() {} }) } } };
 
 const F = require('../lib/fishing');
 const clock = require('../lib/server_clock');

@@ -8,6 +8,7 @@ const eventBus = require('../lib/event_bus');
 const { takeItem, takeItemsByKey, snapshotOf, untradeableReason } = require('../lib/inventory');
 const npcTrade = require('../lib/npc_trade');
 
+const careers = require('../lib/careers');
 const router = express.Router();
 
 class MarketError extends Error {
@@ -127,6 +128,7 @@ router.get('/orders', requireAuth, async (req, res) => {
   try {
     const me = await mySettlement(req.user.userId);
     await settle(me.id);
+    const bestCarry = (await careers.townBonuses(null, me.id).catch(() => ({ porterCarry: 1 }))).porterCarry;   // best Porter's carry perks
     if (me.tile_q == null) return res.json({ ok: true, orders: [] });
 
     const params = [me.user_id, me.tile_q, me.tile_r, me.world_version, me.id];
@@ -177,7 +179,7 @@ router.get('/orders', requireAuth, async (req, res) => {
         return {
           id: o.id, kind: 'item', item: o.item_snapshot, item_key: o.item_key, venue: o.venue || 'market', venue_label: venue.label,
           unit_price: o.lot_price, lot_size: 1, lot_price: o.lot_price, next_lot_qty: 1, next_lot_price: o.lot_price,
-          qty_available: available, qty_total: o.qty_total, porter_max: Math.min(available, market.porterMax(o.item_snapshot)),
+          qty_available: available, qty_total: o.qty_total, porter_max: Math.min(available, market.porterMax(o.item_snapshot, bestCarry)),
           expires_at: o.expires_at,
           seller: { id: o.seller_id, name: o.seller_name, username: o.seller_username, species: o.seller_species, tier: o.seller_tier },
           distance, merchants: 0, paused: false, next_free_at: null,
@@ -204,7 +206,7 @@ router.get('/orders', requireAuth, async (req, res) => {
     });
 
     // Friendly villages' sell orders show alongside players' (?npc=0 hides them).
-    if (req.query.npc !== '0' && !sellerId) orders.push(...(await npcRows(me, 'sell', req.query)));
+    if (req.query.npc !== '0' && !sellerId) orders.push(...(await npcRows(me, 'sell', { ...req.query, bestCarry })));
 
     const sortKey = SORTS[req.query.sort] ? req.query.sort : 'distance';
     const dir = req.query.dir === 'desc' ? -1 : 1;
@@ -425,6 +427,7 @@ router.post('/orders', requireAuth, async (req, res) => {
         // UNIQUE(citizen_id) also guards a racing second listing.
         await client.query('INSERT INTO market_order_merchants (order_id, citizen_id) VALUES ($1,$2)', [o.id, id]);
       }
+      await careers.beforeRoleChange(client, me.id, ids, []);
       await client.query("UPDATE citizens SET role = 'merchant' WHERE id = ANY($1::int[]) AND settlement_id = $2", [ids, me.id]);
       o.remaining = remaining;
       return o;
@@ -521,6 +524,8 @@ router.post('/orders/:id/pickup', requireAuth, async (req, res) => {
     if (!citizenId) throw new MarketError(400, 'Choose a porter.');
     const reasons = await unavailable(me.id, [citizenId]);
     if (reasons[citizenId]) throw new MarketError(400, reasons[citizenId]);
+    // Careers: a Porter's carry perks.
+    const porterCarry = 1 + (((await careers.travelCitizen(me.id, { id: citizenId })) || {}).carry || 0);
 
     const result = await withTransaction(async (client) => {
       const o = (await client.query('SELECT * FROM market_orders WHERE id = $1 FOR UPDATE', [orderId])).rows[0];
@@ -531,7 +536,7 @@ router.post('/orders/:id/pickup', requireAuth, async (req, res) => {
       if (o.seller_settlement_id === me.id) throw new MarketError(400, 'You cannot buy your own goods.');
       const available = o.qty_escrowed - o.qty_reserved;
       if (available < qty) throw new MarketError(409, available > 0 ? `Only ${available} left on that stall.` : 'That stall is sold out.');
-      const max = market.porterMax(o.item_snapshot);
+      const max = market.porterMax(o.item_snapshot, porterCarry);
       if (qty > max) throw new MarketError(400, `A porter can carry at most ${max} ${o.item_snapshot.name}.`);
       if (!(await market.canTrade(client, me, o.seller_settlement_id)))
         throw new MarketError(403, 'You do not know that settlement well enough to trade.');
@@ -544,14 +549,14 @@ router.post('/orders/:id/pickup', requireAuth, async (req, res) => {
       const sellerMods = await market.loadModifiers(client, o.seller_settlement_id);
       const cit = (await client.query('SELECT * FROM citizens WHERE id = $1 AND settlement_id = $2', [citizenId, me.id])).rows[0];
       const distance = market.distanceBetween(me, seller) || 0;
-      const leg = market.legSeconds(distance, cit, {});
+      const leg = market.legSeconds(distance, await careers.travelCitizen(me.id, cit), {});
       const run = (await client.query(
         `INSERT INTO market_runs (kind, settlement_id, citizen_id, order_id, target_settlement_id, target_name, target_q, target_r,
                                   item_key, item_snapshot, qty, gold, fee, distance, arrives_at, returns_at)
          VALUES ('pickup',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, NOW() + make_interval(secs => $14), NOW() + make_interval(secs => $14 * 2))
          RETURNING *`,
         [me.id, citizenId, o.id, seller.id, seller.name, seller.tile_q, seller.tile_r, o.item_key, JSON.stringify(o.item_snapshot),
-         qty, gold, market.feeFor(gold, sellerMods.feeRate), distance, leg])).rows[0];
+         qty, gold, market.feeFor(gold, market.FEE_RATE * (1 + (((await careers.townBonuses(null, o.seller_settlement_id)).shops[o.venue || 'market'] || {}).fee || 0))), distance, leg])).rows[0];
       await client.query('UPDATE market_orders SET qty_reserved = qty_reserved + $2 WHERE id = $1', [o.id, qty]);
       return { run, wealth: paid.rows[0].wealth, porter: cit.name, seller };
     });
@@ -595,6 +600,8 @@ router.patch('/shops/:venue/keeper', requireAuth, async (req, res) => {
     }
     await withTransaction(async (client) => {
       const prev = (await client.query('DELETE FROM shop_keepers WHERE settlement_id = $1 AND venue = $2 RETURNING citizen_id', [me.id, venue])).rows[0];
+      const touched = [prev && prev.citizen_id, citizenId].filter(Boolean);
+      if (touched.length) await careers.beforeRoleChange(client, me.id, touched, []);
       if (prev) await client.query("UPDATE citizens SET role = 'idle' WHERE id = $1 AND role = 'shopkeeper'", [prev.citizen_id]);
       if (citizenId) {
         await client.query('INSERT INTO shop_keepers (settlement_id, venue, citizen_id) VALUES ($1,$2,$3)', [me.id, venue, citizenId]);
@@ -647,7 +654,8 @@ async function npcRows(me, side, f) {
         const cats = f.category === 'misc' ? ['misc', 'trophy'] : [f.category];
         if (o.kind !== 'item' || !cats.includes(o.item.cat)) continue;
       }
-      const carry = o.kind === 'item' ? Math.floor(mods.carryWeight / market.itemWeight(o.item)) : market.maxLotUnits(o.resource, mods.carryWeight);
+      const npcCarry = Math.floor(mods.carryWeight * (f.bestCarry || 1));
+      const carry = o.kind === 'item' ? Math.floor(npcCarry / market.itemWeight(o.item)) : market.maxLotUnits(o.resource, npcCarry);
       const row = {
         id: `npc:${t.npc.id}:${o.key}`, npc_order: true, order_key: o.key,
         npc: { id: t.npc.id, name: t.npc.name, species: t.npc.species, trust: t.trust, tier: t.tier.label },
@@ -684,6 +692,8 @@ router.post('/npc/:npcId/:orderKey', requireAuth, async (req, res) => {
     if (!citizenId) throw new MarketError(400, 'Choose a porter.');
     const reasons = await unavailable(me.id, [citizenId]);
     if (reasons[citizenId]) throw new MarketError(400, reasons[citizenId]);
+    // Careers: a Porter's carry perks.
+    const porterCarry = 1 + (((await careers.travelCitizen(me.id, { id: citizenId })) || {}).carry || 0);
 
     const result = await withTransaction(async (client) => {
       await client.query('SELECT id FROM settlements WHERE id = $1 FOR UPDATE', [me.id]);
@@ -692,7 +702,8 @@ router.post('/npc/:npcId/:orderKey', requireAuth, async (req, res) => {
       const o = trader.orders.find(x => x.key === key);
       if (!o) throw new MarketError(404, 'That order is gone — villages post new ones every day.');
       if (qty > o.remaining) throw new MarketError(409, o.remaining ? `Only ${o.remaining} left for you today.` : 'You\'ve used this order up for today.');
-      const carry = o.kind === 'item' ? Math.floor(mods.carryWeight / market.itemWeight(o.item)) : market.maxLotUnits(o.resource, mods.carryWeight);
+      const npcCarry = Math.floor(mods.carryWeight * porterCarry);
+      const carry = o.kind === 'item' ? Math.floor(npcCarry / market.itemWeight(o.item)) : market.maxLotUnits(o.resource, npcCarry);
       if (qty > carry) throw new MarketError(400, `One trip carries at most ${carry}.`);
       const gold = npcTrade.dealGold(o, qty);
       const playerSide = o.side === 'sell' ? 'buy' : 'sell';
@@ -725,7 +736,7 @@ router.post('/npc/:npcId/:orderKey', requireAuth, async (req, res) => {
         [me.id, npcId, trader.day, key, qty]);
       const cit = (await client.query('SELECT * FROM citizens WHERE id = $1 AND settlement_id = $2', [citizenId, me.id])).rows[0];
       const distance = market.distanceBetween(me, trader.npc) || 0;
-      const leg = market.legSeconds(distance, cit, {});
+      const leg = market.legSeconds(distance, await careers.travelCitizen(me.id, cit), {});
       const run = (await client.query(
         `INSERT INTO market_runs (kind, side, npc_id, order_key, trade_day, settlement_id, citizen_id, target_name, target_q, target_r,
                                   item_key, item_snapshot, resource, qty, gold, distance, arrives_at, returns_at)
@@ -747,6 +758,7 @@ router.get('/wants', requireAuth, async (req, res) => {
   try {
     const me = await mySettlement(req.user.userId);
     await settle(me.id);
+    const bestCarry = (await careers.townBonuses(null, me.id).catch(() => ({ porterCarry: 1 }))).porterCarry;   // best Porter's carry perks
     if (me.tile_q == null) return res.json({ ok: true, wants: [] });
     const params = [me.user_id, me.tile_q, me.tile_r, me.world_version, me.id];
     let extra = '';
@@ -773,12 +785,12 @@ router.get('/wants', requireAuth, async (req, res) => {
       const v = wantView(w, me);
       v.you_have = w.kind === 'item' ? (haveItems[w.item_key] || 0) : (me[w.resource] || 0);
       v.carry_max = w.kind === 'item' ? market.porterMax({ category: w.item_cat === 'fish' || w.item_cat === 'food' ? w.item_cat : 'misc',
-        equip_slot: ['weapon', 'armour', 'tool', 'trinket'].includes(w.item_cat) ? w.item_cat : null }) : market.fillMaxResource(w.resource, mods);
+        equip_slot: ['weapon', 'armour', 'tool', 'trinket'].includes(w.item_cat) ? w.item_cat : null }, bestCarry) : market.fillMaxResource(w.resource, mods);
       return v;
     });
     // Friendly villages' buy orders too (?npc=0 hides them).
     if (req.query.npc !== '0') {
-      for (const r of await npcRows(me, 'buy', req.query)) {
+      for (const r of await npcRows(me, 'buy', { ...req.query, bestCarry })) {
         r.you_have = r.kind === 'item' ? (haveItems[r.item.item_key] || 0) : (me[r.resource] || 0);
         wants.push(r);
       }
@@ -858,6 +870,8 @@ router.post('/wants/:id/fill', requireAuth, async (req, res) => {
     if (!citizenId) throw new MarketError(400, 'Choose a porter.');
     const reasons = await unavailable(me.id, [citizenId]);
     if (reasons[citizenId]) throw new MarketError(400, reasons[citizenId]);
+    // Careers: a Porter's carry perks.
+    const porterCarry = 1 + (((await careers.travelCitizen(me.id, { id: citizenId })) || {}).carry || 0);
     const mods = await market.loadModifiers({ query }, me.id);
 
     const result = await withTransaction(async (client) => {
@@ -880,7 +894,7 @@ router.post('/wants/:id/fill', requireAuth, async (req, res) => {
           if (row.item_key !== w.item_key) throw new MarketError(400, `They want ${w.item_name}, exactly.`);
         }
         const tpl = (await client.query('SELECT item_key, category, equip_slot FROM item_templates WHERE item_key = $1', [w.item_key])).rows[0];
-        const max = market.porterMax(tpl || { category: w.item_cat });
+        const max = market.porterMax(tpl || { category: w.item_cat }, porterCarry);
         if (qty > max) throw new MarketError(400, `A porter can carry at most ${max} ${w.item_name}.`);
         try { snap = await takeItemsByKey(client, me.id, w.item_key, qty); }
         catch (e) { throw new MarketError(e.status || 400, e.message); }
@@ -902,7 +916,7 @@ router.post('/wants/:id/fill', requireAuth, async (req, res) => {
       const buyer = (await client.query('SELECT id, name, tile_q, tile_r FROM settlements WHERE id = $1', [w.buyer_settlement_id])).rows[0];
       const cit = (await client.query('SELECT * FROM citizens WHERE id = $1 AND settlement_id = $2', [citizenId, me.id])).rows[0];
       const distance = market.distanceBetween(me, buyer) || 0;
-      const leg = market.legSeconds(distance, cit, mods);
+      const leg = market.legSeconds(distance, await careers.travelCitizen(me.id, cit), mods);
       const run = (await client.query(
         `INSERT INTO market_runs (kind, settlement_id, citizen_id, want_id, target_settlement_id, target_name, target_q, target_r,
                                   item_key, item_snapshot, resource, qty, gold, fee, distance, arrives_at, returns_at)
@@ -969,6 +983,7 @@ router.patch('/orders/:id/merchants', requireAuth, async (req, res) => {
           `SELECT c.name FROM citizens c WHERE c.id = ANY($1::int[]) AND ${market.ON_ROAD}`, [remove])).rows;
         if (onRoad.length) throw new MarketError(400, `${onRoad[0].name} is on the road — wait until they return.`);
         await client.query('DELETE FROM market_order_merchants WHERE order_id = $1 AND citizen_id = ANY($2::int[])', [o.id, remove]);
+        await careers.beforeRoleChange(client, me.id, remove, []);
         await client.query("UPDATE citizens SET role = 'idle' WHERE id = ANY($1::int[]) AND settlement_id = $2 AND role = 'merchant'", [remove, me.id]);
       }
       if (add.length) {
@@ -979,6 +994,7 @@ router.patch('/orders/:id/merchants', requireAuth, async (req, res) => {
           throw new MarketError(400, `Your Market has room for ${mods.merchants} merchant${mods.merchants === 1 ? '' : 's'}.`);
         for (const id of add)
           await client.query('INSERT INTO market_order_merchants (order_id, citizen_id) VALUES ($1,$2)', [o.id, id]);
+        await careers.beforeRoleChange(client, me.id, add, []);
         await client.query("UPDATE citizens SET role = 'merchant' WHERE id = ANY($1::int[]) AND settlement_id = $2", [add, me.id]);
       }
       const left = (await client.query('SELECT COUNT(*)::int AS n FROM market_order_merchants WHERE order_id = $1', [o.id])).rows[0].n;
@@ -1023,7 +1039,7 @@ async function freeAdults(settlementId) {
   return adults.map(c => ({ id: c.id, name: c.name, role: c.role, scouting: Number(c.skills?.scouting) || 1, busy: busy[c.id] || null }));
 }
 
-async function ironhavenState(me) {
+async function ironhavenState(me, bestCarry = 1) {
   const ih = await market.ironhavenTile({ query });
   const templates = (await query('SELECT item_key, name, icon, category, equip_slot, sell_value, tradeable FROM item_templates')).rows;
   const wants = market.ironhavenWants(templates);
@@ -1054,7 +1070,7 @@ async function ironhavenState(me) {
         tradeable: !why, reason: why, wanted,
         unit_price: market.ironhavenUnitPrice(value, wanted),
         player_price: best[r.item_key] || null,
-        max_qty: Math.min(r.quantity, market.porterMax(snap)),
+        max_qty: Math.min(r.quantity, market.porterMax(snap, bestCarry)),
       };
     }),
   };
@@ -1065,13 +1081,14 @@ router.get('/ironhaven', requireAuth, async (req, res) => {
   try {
     const me = await mySettlement(req.user.userId);
     await settle(me.id);
+    const bestCarry = (await careers.townBonuses(null, me.id).catch(() => ({ porterCarry: 1 }))).porterCarry;   // best Porter's carry perks
     const runs = (await query(
       `SELECT r.*, c.name AS citizen_name FROM market_runs r LEFT JOIN citizens c ON c.id = r.citizen_id
         WHERE r.settlement_id = $1 AND r.kind = 'ironhaven'
           AND (r.status <> 'done' OR r.returns_at > NOW() - INTERVAL '24 hours')
         ORDER BY r.departs_at DESC LIMIT 20`, [me.id])).rows;
     res.json({
-      ok: true, now: new Date().toISOString(), ...(await ironhavenState(me)),
+      ok: true, now: new Date().toISOString(), ...(await ironhavenState(me, bestCarry)),
       candidates: await freeAdults(me.id),
       runs: runs.map(r => ({
         id: r.id, status: r.status, qty: r.qty, gold: r.gold, item: r.item_snapshot, citizen_name: r.citizen_name,
@@ -1097,11 +1114,13 @@ router.post('/ironhaven/sell', requireAuth, async (req, res) => {
     if (!ih) throw new MarketError(503, 'Ironhaven cannot be reached right now.');
     const reasons = await unavailable(me.id, [citizenId]);
     if (reasons[citizenId]) throw new MarketError(400, reasons[citizenId]);
+    // Careers: a Porter's carry perks.
+    const porterCarry = 1 + (((await careers.travelCitizen(me.id, { id: citizenId })) || {}).carry || 0);
 
     const result = await withTransaction(async (client) => {
       const row = (await client.query('SELECT * FROM inventory_items WHERE id = $1 AND settlement_id = $2', [invId, me.id])).rows[0];
       if (!row) throw new MarketError(404, 'That item is not in your inventory.');
-      const max = market.porterMax(snapshotOf(row));
+      const max = market.porterMax(snapshotOf(row), porterCarry);
       if (qty > max) throw new MarketError(400, `A porter can carry at most ${max} ${row.name}.`);
       let snap;
       try { snap = await takeItem(client, me.id, invId, qty); }
@@ -1113,7 +1132,7 @@ router.post('/ironhaven/sell', requireAuth, async (req, res) => {
       const gold = market.ironhavenUnitPrice(value, wanted) * qty;
       const cit = (await client.query('SELECT * FROM citizens WHERE id = $1 AND settlement_id = $2', [citizenId, me.id])).rows[0];
       const distance = market.distanceBetween(me, ih) || 0;
-      const leg = market.legSeconds(distance, cit, {});
+      const leg = market.legSeconds(distance, await careers.travelCitizen(me.id, cit), {});
       const run = (await client.query(
         `INSERT INTO market_runs (kind, settlement_id, citizen_id, target_name, target_q, target_r, item_key, item_snapshot,
                                   qty, gold, distance, arrives_at, returns_at)

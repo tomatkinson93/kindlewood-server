@@ -113,6 +113,7 @@ function upkeepPerHour(citizen, season = null) {
   const traits = citizen.visible_traits || [];
   if (traits.includes('greedy')) u *= GREEDY_MULT;
   if (season && season.foodConsumption) u *= season.foodConsumption;
+  if (citizen.upkeep_mult) u *= citizen.upkeep_mult;   // careers (Light Eater…)
   return u;
 }
 
@@ -284,6 +285,7 @@ async function applyConsumption(settlementId) {
       WHERE settlement_id=$1 AND life_stage != 'deceased'`,
     [settlementId]
   );
+  await require('./lib/careers').attachUpkeep(settlementId, cRes.rows);
 
   // Outposts (010) — count for season-flat upkeep. .catch → 0 pre-migration.
   const oCountRes = await query(
@@ -407,6 +409,7 @@ async function getFamineSummary(settlementId, foodProductionPerHour = 0) {
        FROM citizens WHERE settlement_id=$1 AND life_stage != 'deceased'`,
     [settlementId]
   );
+  await require('./lib/careers').attachUpkeep(settlementId, cRes.rows);
   const season = seasonWithUpkeep(seasonAt(Date.now()), await require('./lib/happenings').loadLive(), Date.now());
   let upkeep = 0, unfed = 0, starving = 0;
   for (const c of cRes.rows) {
@@ -453,6 +456,7 @@ async function buildUpkeepBreakdownSource(settlementId) {
        FROM citizens WHERE settlement_id=$1 AND life_stage != 'deceased'`,
     [settlementId]
   );
+  await require('./lib/careers').attachUpkeep(settlementId, cRes.rows);
   const season = seasonWithUpkeep(seasonAt(Date.now()), await require('./lib/happenings').loadLive(), Date.now());
   let total = 0;
   const citizens = cRes.rows.map(c => {

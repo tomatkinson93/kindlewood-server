@@ -139,6 +139,19 @@ const BUILDINGS = {
     requires: [],
     minTier: 'town',             // enforced in routes/buildings.js
   },
+  // Miners' workplace (careers): miners need one. Badger quarries and Mole
+  // starter mines are this building.
+  mine: {
+    id: 'mine',
+    label: 'Mine',
+    desc: 'Shafts into the hillside. Miners dig stone and ore here — they need a Mine to work.',
+    icon: '⛏️',
+    cost: { timber: 60, food: 30 },
+    maxLevel: 3,
+    effect: (level) => ({ stone: level * 4, metal: level * 2 }),
+    citizenSlots: (level) => level * 2,
+    requires: [],
+  },
   // Shops (Market v2): item stalls run by a shopkeeper citizen. Storefronts
   // for now — crafting arrives with advanced jobs on these same buildings.
   smithy: {
@@ -170,17 +183,24 @@ const BUILDINGS = {
 };
 
 // Citizen role → building it contributes to
+// (Careers: lib/careers/classes.js `needs` is the source of truth — a
+// class whose building is gone falls back to Forager.)
 const ROLE_BUILDING_MAP = {
-  farmer:      ['farm', 'granary', 'forager_hut'],
+  farmer:      ['farm'],
   woodcutter:  ['lumber_camp'],
   scout:       ['scout_post'],
-  miner:       [],
+  miner:       ['mine'],
   crafter:     [],
-  fisher:      ['forager_hut', 'fishing_post'],
+  fisher:      ['fishing_post'],
   soldier:     [],
   idle:        [],
   tavernkeep:   ['tavern'],
 };
+
+// Per-citizen production (careers). Lazy require: profiles → classes, no cycle.
+function citizenContributions(buildings, citizens) {
+  return require('./lib/careers/profiles').citizenContributions(buildings, citizens, BUILDINGS);
+}
 
 // Calculate total resource rates for a settlement
 // `outposts` (010): [{ terrain, level }, ...] — optional 4th param so the
@@ -208,37 +228,16 @@ function calculateRates(buildings, citizens, species, outposts = []) {
     }
   }
 
-  // Citizen role bonuses — each assigned citizen in a relevant role adds a small boost
-  const CITIZEN_ROLE_BONUS = {
-    farmer:     { food: 3 },
-    woodcutter: { timber: 4 },
-    fisher:     { food: 2 },
-    miner:      { stone: 3, metal: 2 },
-    crafter:    { wealth: 2 },
-    scout:      {},
-    soldier:    {},
-    idle:       {},
-  };
-
-  // Fishing Post passive bonus — scales per level, applied as % multiplier to fisher citizen food
-  const FISHING_POST_BONUS = [0, 0.10, 0.20, 0.35, 0.50, 0.70];
-  const fishingPost = buildings.find(b => b.type === 'fishing_post');
-  const fishingPostLevel = fishingPost ? Math.min(fishingPost.level, 5) : 0;
-  const fishingBonus = FISHING_POST_BONUS[fishingPostLevel] || 0;
-
-  for (const c of citizens) {
-    const bonus = CITIZEN_ROLE_BONUS[c.role] || {};
-    for (const [res, val] of Object.entries(bonus)) {
-      if (rates[res] !== undefined) {
-        // Apply fishing post multiplier to fisher food output
-        if (c.role === 'fisher' && res === 'food' && fishingBonus > 0) {
-          rates[res] += Math.round(val * (1 + fishingBonus));
-        } else {
-          rates[res] += val;
-        }
-      }
+  // Citizens at work (careers: per-citizen output from stats, perks, traits
+  // and gear — lib/careers/profiles.js; no profile = the flat role bonus).
+  const contrib = citizenContributions(buildings, citizens);
+  for (const out of contrib.perCitizen.values()) {
+    for (const [res, val] of Object.entries(out)) {
+      const r = res.startsWith('crew_') ? res.slice(5) : res;
+      if (rates[r] !== undefined) rates[r] += val;
     }
   }
+  for (const r of Object.keys(rates)) rates[r] = Math.round(rates[r] * 100) / 100;
 
   // Outpost yields (010) — primary × level per outpost (secondaries are a
   // config flip in outposts_config.js, no change needed here).
@@ -283,22 +282,6 @@ function calculateRatesBreakdown(buildings, citizens, species, outposts = []) {
     Hares:   { food:16, timber:12, stone:6,  metal:5,  wealth:8  },
   };
   const baseSpeciesRates = BASE_RATES[species] || BASE_RATES.Mice;
-
-  const CITIZEN_ROLE_BONUS = {
-    farmer:     { food: 3 },
-    woodcutter: { timber: 4 },
-    fisher:     { food: 2 },
-    miner:      { stone: 3, metal: 2 },
-    crafter:    { wealth: 2 },
-    scout:      {},
-    soldier:    {},
-    idle:       {},
-  };
-
-  const FISHING_POST_BONUS = [0, 0.10, 0.20, 0.35, 0.50, 0.70];
-  const fishingPost = buildings.find(b => b.type === 'fishing_post');
-  const fishingPostLevel = fishingPost ? Math.min(fishingPost.level, 5) : 0;
-  const fishingBonus = FISHING_POST_BONUS[fishingPostLevel] || 0;
 
   // Initialise the per-resource buckets with the species base as the first
   // source. Every resource always has at least this one row, so the modal
@@ -358,39 +341,47 @@ function calculateRatesBreakdown(buildings, citizens, species, outposts = []) {
     breakdown[g.res].total += g.total;
   }
 
-  // Citizen role contributions. Group by role (one row per role per resource)
-  // and attach the contributing citizens. The Fishing-Post bonus is folded
-  // into the fisher row's value and surfaced in the label so the player can
-  // see why fishers are producing more than the base 2 food.
-  const citizensByRole = new Map();
-  for (const c of citizens) {
-    if (!citizensByRole.has(c.role)) citizensByRole.set(c.role, []);
-    citizensByRole.get(c.role).push(c);
-  }
-  for (const [role, members] of citizensByRole) {
-    const bonus = CITIZEN_ROLE_BONUS[role];
-    if (!bonus) continue;
-    for (const [res, val] of Object.entries(bonus)) {
-      if (breakdown[res] === undefined) continue;
-      let perCitizen = val;
-      let labelExtra = '';
-      if (role === 'fisher' && res === 'food' && fishingBonus > 0) {
-        perCitizen = Math.round(val * (1 + fishingBonus));
-        labelExtra = `, with Fishing Post +${Math.round(fishingBonus * 100)}%`;
+  // Citizen contributions, one row per role per resource with the citizens
+  // who made it (each citizen's own share rides along). Careers make shares
+  // differ: stats, perks, traits and gear. "Skilled crews" is the extra a
+  // better-than-average crew gets out of its building.
+  const contrib = citizenContributions(buildings, citizens);
+  const ROLE_LABEL = { soldier: 'Guard', crafter: 'Artisan' };
+  for (const [role, members] of contrib.byRole) {
+    const totals = {};
+    for (const m of members) {
+      for (const [res, val] of Object.entries(contrib.perCitizen.get(m.id) || {})) {
+        if (res.startsWith('crew_')) continue;
+        (totals[res] = totals[res] || []).push({ m, val });
       }
-      const total = perCitizen * members.length;
+    }
+    for (const [res, rows] of Object.entries(totals)) {
+      if (breakdown[res] === undefined) continue;
+      const total = Math.round(rows.reduce((a, r) => a + r.val, 0) * 100) / 100;
+      let labelExtra = '';
+      if (role === 'fisher' && res === 'food' && contrib.fishingBonus > 0) labelExtra = `, with Fishing Post +${Math.round(contrib.fishingBonus * 100)}%`;
+      if (role === 'forager' && contrib.hutBonus > 0) labelExtra = `, with Forager Hut +${Math.round(contrib.hutBonus * 100)}%`;
+      const name = ROLE_LABEL[role] || (role.charAt(0).toUpperCase() + role.slice(1));
       breakdown[res].sources.push({
         kind: 'citizen_role',
         role,
-        label: `${role.charAt(0).toUpperCase() + role.slice(1)}s (×${members.length}${labelExtra})`,
-        per_citizen: perCitizen,
+        label: `${name}s (×${members.length}${labelExtra})`,
+        per_citizen: Math.round(total / members.length * 100) / 100,
         count: members.length,
         value: total,
-        citizens: members.map(m => ({ id: m.id, name: m.name })),
+        citizens: rows.map(r => ({ id: r.m.id, name: r.m.name, value: r.val })),
       });
       breakdown[res].total += total;
     }
   }
+  for (const [res, val] of Object.entries(contrib.crew)) {
+    if (breakdown[res] === undefined || !val) continue;
+    const cits = [];
+    for (const m of citizens) { const v = (contrib.perCitizen.get(m.id) || {})['crew_' + res]; if (v) cits.push({ id: m.id, name: m.name, value: Math.round(v * 100) / 100 }); }
+    breakdown[res].sources.push({ kind: 'citizen_crew', label: val > 0 ? 'Skilled crews' : 'Unskilled crews', value: val, citizens: cits });
+    breakdown[res].total += val;
+  }
+  for (const res of Object.keys(breakdown)) breakdown[res].total = Math.round(breakdown[res].total * 100) / 100;
 
   // Outpost contributions (010). One row per outpost per resource so the
   // player sees exactly what each stands for — "Farmstead (12·30): +6".
@@ -458,4 +449,4 @@ function applyBreakdownSeasonModifiers(breakdown, season) {
   return out;
 }
 
-module.exports = { BUILDINGS, TIER_ORDER, ROLE_BUILDING_MAP, calculateRates, calculateRatesBreakdown, applyBreakdownSeasonModifiers };
+module.exports = { BUILDINGS, TIER_ORDER, ROLE_BUILDING_MAP, calculateRates, calculateRatesBreakdown, applyBreakdownSeasonModifiers, citizenContributions };

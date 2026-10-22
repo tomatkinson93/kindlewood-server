@@ -33,6 +33,8 @@ async function writeDeathEvent({
     `UPDATE citizens SET life_stage='deceased' WHERE id=$1`,
     [citizenId]
   );
+  // Their gear goes back to the stores.
+  await query('UPDATE inventory_items SET equipped_to = NULL WHERE equipped_to = $1', [citizenId]).catch(() => {});
   const ev = await query(
     `INSERT INTO citizen_events
        (citizen_id, settlement_id, event_type, severity, body_part, narrative, source_battle_id, cause)

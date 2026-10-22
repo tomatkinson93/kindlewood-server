@@ -276,7 +276,7 @@ async function part2() {
   check(await role(a1) === 'idle', 'merchant freed on expiry');
   r = await api(seller, 'POST', '/api/market/orders', { resource: 'timber', lot_size: 50, lot_price: 30, qty_total: 100, citizen_ids: [a1] });
   const o4 = r.body.order.id;
-  r = await api(seller, 'PATCH', `/api/citizens/${a1}/role`, { role: 'farmer' });
+  r = await api(seller, 'PATCH', `/api/citizens/${a1}/role`, { role: 'forager' });
   check(r.status === 200 && (await q('SELECT 1 FROM market_order_merchants WHERE citizen_id=$1', [a1])).rowCount === 0,
     'reassigning a merchant at home takes them off the order');
   await api(seller, 'POST', `/api/market/orders/${o4}/cancel`);
@@ -437,7 +437,7 @@ async function part2() {
   r = await api(ibuy, 'GET', '/api/market/orders?category=weapon');
   const swordRow = (r.body.orders || []).find(o => o.id === swordOrder);
   check(swordRow && swordRow.venue_label === 'Smithy', 'buyers see it at the Smithy');
-  r = await api(isel, 'PATCH', `/api/citizens/${smith}/role`, { role: 'farmer' });
+  r = await api(isel, 'PATCH', `/api/citizens/${smith}/role`, { role: 'forager' });
   check(r.status === 200 && (await q('SELECT 1 FROM shop_keepers WHERE citizen_id=$1', [smith])).rowCount === 0, 'reassigning the shopkeeper closes the shop');
   r = await api(ibuy, 'GET', '/api/market/orders?category=weapon');
   check(!(r.body.orders || []).some(o => o.id === swordOrder), 'closed shop: its stalls are hidden');
