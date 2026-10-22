@@ -559,6 +559,7 @@ router.post('/orders/:id/pickup', requireAuth, async (req, res) => {
       type: 'market_pickup_coming', run_id: result.run.id, buyer: me.name, qty: result.run.qty,
       ...market.itemEventBits({ kind: 'item', item_snapshot: result.run.item_snapshot }),
     });
+    eventBus.publish(me.id, { type: 'market_run_update', run_id: result.run.id });
     res.json({
       ok: true, wealth: result.wealth, porter: result.porter, seller: result.seller.name,
       run: { id: result.run.id, qty: result.run.qty, gold: result.run.gold, item: result.run.item_snapshot,
@@ -734,6 +735,7 @@ router.post('/npc/:npcId/:orderKey', requireAuth, async (req, res) => {
          snap && snap.item_key, snap && JSON.stringify(snap), o.kind === 'resource' ? o.resource : null, qty, gold, distance, leg])).rows[0];
       return { run, porter: cit.name, village: trader.npc.name, side: playerSide };
     });
+    eventBus.publish(me.id, { type: 'market_run_update', run_id: result.run.id });
     res.json({ ok: true, porter: result.porter, village: result.village, side: result.side, gold: result.run.gold,
       run: { id: result.run.id, qty: result.run.qty, arrives_at: result.run.arrives_at, returns_at: result.run.returns_at } });
   } catch (e) { sendError(res, e, 'Could not trade with that village.'); }
@@ -914,6 +916,7 @@ router.post('/wants/:id/fill', requireAuth, async (req, res) => {
       type: 'market_want_filling', want_id: id, seller: me.name, qty, resource: result.want.resource,
       ...(result.want.kind === 'item' ? { item: { name: result.want.item_name, icon: result.want.item_icon } } : {}),
     });
+    eventBus.publish(me.id, { type: 'market_run_update', run_id: result.run.id });
     res.json({ ok: true, porter: result.porter, buyer: result.buyer.name, gold: result.run.gold, fee: result.run.fee,
       run: { id: result.run.id, qty: result.run.qty, arrives_at: result.run.arrives_at, returns_at: result.run.returns_at } });
   } catch (e) { sendError(res, e, 'Could not fill that order.'); }
@@ -1119,6 +1122,7 @@ router.post('/ironhaven/sell', requireAuth, async (req, res) => {
         [me.id, citizenId, ih.name, ih.tile_q, ih.tile_r, snap.item_key, JSON.stringify(snap), qty, gold, distance, leg])).rows[0];
       return { run, citizen: cit.name, wanted };
     });
+    eventBus.publish(me.id, { type: 'market_run_update', run_id: result.run.id });
     res.json({
       ok: true, gold: result.run.gold, wanted: result.wanted, porter: result.citizen,
       run: { id: result.run.id, qty: result.run.qty, item: result.run.item_snapshot, arrives_at: result.run.arrives_at, returns_at: result.run.returns_at },
