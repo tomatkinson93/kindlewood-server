@@ -9,13 +9,14 @@ const { takeItem, takeItemsByKey, snapshotOf, untradeableReason } = require('../
 const npcTrade = require('../lib/npc_trade');
 
 const careers = require('../lib/careers');
+const ledger = require('../lib/market_ledger');
 const router = express.Router();
 
 class MarketError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 function sendError(res, e, fallback) {
-  if (e instanceof MarketError) return res.status(e.status).json({ error: e.message });
+  if (e instanceof MarketError || e instanceof ledger.LedgerError) return res.status(e.status).json({ error: e.message });
   console.error('[market]', e);
   res.status(500).json({ error: fallback });
 }
@@ -100,6 +101,8 @@ router.get('/status', requireAuth, async (req, res) => {
       porterCarry: market.PORTER_CARRY,
       itemCategoryWeight: market.ITEM_CATEGORY_WEIGHT,
       referencePrice: market.REFERENCE_PRICE,
+      // Recent player trades (7-day average) where there are enough, else the reference.
+      guide: await ledger.resourceGuides(market.TRADEABLE),
       secondsPerHex: market.SECONDS_PER_HEX,
       minLegSeconds: market.MIN_LEG_SECONDS,
       levelCaps: market.LEVEL_CAPS,
@@ -113,6 +116,33 @@ router.get('/status', requireAuth, async (req, res) => {
       resources: { food: s.food, timber: s.timber, stone: s.stone, metal: s.metal, wealth: s.wealth },
     });
   } catch (e) { sendError(res, e, 'Could not load the market.'); }
+});
+
+// ── Price history & the Ledger (lib/market_ledger) ────────────────────────
+
+// GET /api/market/prices?goods=resource:timber,item:iron_sword:fine&days=14
+router.get('/prices', requireAuth, async (req, res) => {
+  try {
+    const goods = ledger.parseGoods(req.query.goods);
+    res.json({ ok: true, guide_min_trades: ledger.GUIDE_MIN_TRADES, prices: await ledger.priceHistory(goods, Number(req.query.days) || 14) });
+  } catch (e) { sendError(res, e, 'Could not load prices.'); }
+});
+
+// GET /api/market/prices/movers — goods traded this week, busiest first.
+router.get('/prices/movers', requireAuth, async (req, res) => {
+  try {
+    res.json({ ok: true, goods: await ledger.movers(7) });
+  } catch (e) { sendError(res, e, 'Could not load prices.'); }
+});
+
+// GET /api/market/ledger?weeks=8&before=<id>&side=sold|bought — your receipts.
+router.get('/ledger', requireAuth, async (req, res) => {
+  try {
+    const me = await mySettlement(req.user.userId);
+    await settle(me.id);
+    const side = ['sold', 'bought'].includes(req.query.side) ? req.query.side : null;
+    res.json({ ok: true, ...(await ledger.ledger(me.id, { weeks: Number(req.query.weeks) || 8, before: parseId(req.query.before), side })) });
+  } catch (e) { sendError(res, e, 'Could not load the ledger.'); }
 });
 
 // ── GET /api/market/orders ────────────────────────────────────────────────
@@ -485,6 +515,9 @@ router.post('/orders/:id/buy', requireAuth, async (req, res) => {
          RETURNING *`,
         [o.id, o.seller_settlement_id, me.id, merchant.id, o.kind, o.resource, o.item_key,
          o.item_snapshot ? JSON.stringify(o.item_snapshot) : null, qty, gold, fee, distance, leg])).rows[0];
+      await ledger.record(client, { kind: 'lot', source: 'trip', source_id: trip.id, resource: o.resource, item_snapshot: o.kind === 'item' ? o.item_snapshot : null,
+        qty, gold, fee, seller_id: seller.id, buyer_id: me.id, seller_name: seller.name, buyer_name: me.name,
+        citizen_name: merchant.name, citizen_side: 'seller' });
       const left = o.qty_escrowed - qty;
       await client.query('UPDATE market_orders SET qty_escrowed = $2 WHERE id = $1', [o.id, left]);
       if (left === 0) await market.closeOrder(client, { ...o, qty_escrowed: 0 }, 'sold_out');
@@ -558,6 +591,8 @@ router.post('/orders/:id/pickup', requireAuth, async (req, res) => {
         [me.id, citizenId, o.id, seller.id, seller.name, seller.tile_q, seller.tile_r, o.item_key, JSON.stringify(o.item_snapshot),
          qty, gold, market.feeFor(gold, market.FEE_RATE * (1 + (((await careers.townBonuses(null, o.seller_settlement_id)).shops[o.venue || 'market'] || {}).fee || 0))), distance, leg])).rows[0];
       await client.query('UPDATE market_orders SET qty_reserved = qty_reserved + $2 WHERE id = $1', [o.id, qty]);
+      await ledger.record(client, { kind: 'pickup', source: 'run', source_id: run.id, item_snapshot: o.item_snapshot, qty, gold, fee: run.fee,
+        seller_id: seller.id, buyer_id: me.id, seller_name: seller.name, buyer_name: me.name, citizen_name: cit.name, citizen_side: 'buyer' });
       return { run, wealth: paid.rows[0].wealth, porter: cit.name, seller };
     });
     eventBus.publish(result.seller.id, {
@@ -744,6 +779,10 @@ router.post('/npc/:npcId/:orderKey', requireAuth, async (req, res) => {
          RETURNING *`,
         [playerSide, npcId, key, trader.day, me.id, citizenId, trader.npc.name, trader.npc.tile_q, trader.npc.tile_r,
          snap && snap.item_key, snap && JSON.stringify(snap), o.kind === 'resource' ? o.resource : null, qty, gold, distance, leg])).rows[0];
+      await ledger.record(client, { kind: 'npc', source: 'run', source_id: run.id, resource: o.kind === 'resource' ? o.resource : null, item_snapshot: snap,
+        qty, gold, fee: 0, seller_id: playerSide === 'sell' ? me.id : null, buyer_id: playerSide === 'buy' ? me.id : null,
+        seller_name: playerSide === 'sell' ? me.name : trader.npc.name, buyer_name: playerSide === 'buy' ? me.name : trader.npc.name,
+        citizen_name: cit.name, citizen_side: playerSide === 'sell' ? 'seller' : 'buyer' });
       return { run, porter: cit.name, village: trader.npc.name, side: playerSide };
     });
     eventBus.publish(me.id, { type: 'market_run_update', run_id: result.run.id });
@@ -924,6 +963,9 @@ router.post('/wants/:id/fill', requireAuth, async (req, res) => {
          RETURNING *`,
         [me.id, citizenId, w.id, buyer.id, buyer.name, buyer.tile_q, buyer.tile_r, snap && snap.item_key,
          snap && JSON.stringify(snap), w.kind === 'resource' ? w.resource : null, qty, gold, market.feeFor(gold, mods.feeRate), distance, leg])).rows[0];
+      await ledger.record(client, { kind: 'fill', source: 'run', source_id: run.id, resource: w.kind === 'resource' ? w.resource : null, item_snapshot: snap,
+        qty, gold, fee: run.fee, seller_id: me.id, buyer_id: buyer.id, seller_name: me.name, buyer_name: buyer.name,
+        citizen_name: cit.name, citizen_side: 'seller' });
       return { run, buyer, porter: cit.name, want: w };
     });
     eventBus.publish(result.buyer.id, {
@@ -1139,6 +1181,8 @@ router.post('/ironhaven/sell', requireAuth, async (req, res) => {
          VALUES ('ironhaven',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10, NOW() + make_interval(secs => $11), NOW() + make_interval(secs => $11 * 2))
          RETURNING *`,
         [me.id, citizenId, ih.name, ih.tile_q, ih.tile_r, snap.item_key, JSON.stringify(snap), qty, gold, distance, leg])).rows[0];
+      await ledger.record(client, { kind: 'ironhaven', source: 'run', source_id: run.id, item_snapshot: snap, qty, gold, fee: 0,
+        seller_id: me.id, seller_name: me.name, buyer_name: ih.name, citizen_name: cit.name, citizen_side: 'seller' });
       return { run, citizen: cit.name, wanted };
     });
     eventBus.publish(me.id, { type: 'market_run_update', run_id: result.run.id });
