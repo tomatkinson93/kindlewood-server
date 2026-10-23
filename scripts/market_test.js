@@ -628,6 +628,86 @@ async function part2() {
   r = await api(isel, 'GET', '/api/travel');
   check(!(r.body.journeys || []).some(j => j.id && j.id.startsWith('run:')), 'finished run leaves the map');
 
+  console.log('Ledger & price history');
+  const ledger = require('../lib/market_ledger');
+  const mySids = [seller, buyer, stranger, clanmate, nomarket].map(p => p.sid);
+  // Every trip and run this test made has exactly one trade record that matches it.
+  const tripRows = (await q(`SELECT t.*, m.id AS mid, m.gold AS mgold, m.fee AS mfee, m.qty AS mqty, m.seller_settlement_id AS ms, m.buyer_settlement_id AS mb,
+                                    m.delivered_at, m.paid_at, m.price_signal
+                               FROM market_trips t LEFT JOIN market_trades m ON m.source = 'trip' AND m.source_id = t.id
+                              WHERE t.seller_settlement_id = ANY($1::int[]) OR t.buyer_settlement_id = ANY($1::int[])`, [mySids])).rows;
+  check(tripRows.length > 0 && tripRows.every(t => t.mid && t.mgold === t.gold_paid && t.mfee === t.fee && t.mqty === t.qty
+    && t.ms === t.seller_settlement_id && t.mb === t.buyer_settlement_id && t.price_signal), `every caravan lot is recorded once (${tripRows.length})`);
+  check(tripRows.every(t => (t.status === 'outbound') === !t.delivered_at && (t.status === 'done') === !!t.paid_at),
+    'lots: delivered on arrival, paid when the merchant is home');
+  const runRows = (await q(
+    `SELECT r.*, m.id AS mid, m.kind AS mkind, m.gold AS mgold, m.fee AS mfee, m.price_signal, m.failed AS mfailed,
+            m.seller_settlement_id AS ms, m.buyer_settlement_id AS mb, m.paid_at, m.delivered_at
+       FROM market_runs r LEFT JOIN market_trades m ON m.source = 'run' AND m.source_id = r.id
+      WHERE r.settlement_id IN (SELECT id FROM settlements WHERE name LIKE $1)`, ['%\\_' + RUN + '\\_%'])).rows;
+  const kinds = new Set(runRows.map(r => r.kind));
+  check(runRows.length > 0 && runRows.every(r => r.mid && r.mkind === r.kind && r.mgold === r.gold && r.mfee === r.fee),
+    `every porter run is recorded once (${runRows.length}: ${[...kinds].join(', ')})`);
+  check(runRows.every(r => r.price_signal === ['pickup', 'fill'].includes(r.kind)), 'only player deals carry the price signal (not Ironhaven or villages)');
+  check(runRows.filter(r => r.kind === 'pickup').every(r => r.mb === r.settlement_id && r.ms === r.target_settlement_id)
+    && runRows.filter(r => r.kind === 'fill').every(r => r.ms === r.settlement_id && r.mb === r.target_settlement_id),
+    'pickups: the porter\'s town buys; fills: the porter\'s town sells');
+  check(runRows.filter(r => r.failed).every(r => r.mfailed && !r.paid_at), 'a pickup that found the stall empty is marked failed, never paid');
+  check(runRows.filter(r => r.status === 'done' && !r.failed).every(r => r.paid_at && r.delivered_at), 'finished runs are settled both ways');
+
+  r = await api(seller, 'GET', '/api/market/ledger');
+  const sold = (r.body.entries || []).filter(e => e.side === 'sold' && e.kind === 'lot');
+  check(r.status === 200 && sold.length > 0 && sold.every(e => e.net === e.gross - e.fee && e.counterparty && e.citizen_name), 'seller\'s Ledger: lots with net after fee, buyer and merchant');
+  check(r.body.weeks.length === 8 && r.body.weeks[7].in >= sold.filter(e => e.status !== 'returned').reduce((a, e) => a + e.net, 0) - 1, '8 weeks of totals, this week\'s income adds up');
+  r = await api(buyer, 'GET', '/api/market/ledger?side=bought');
+  check(r.body.entries.length > 0 && r.body.entries.every(e => e.side === 'bought' && e.net === -e.gross && e.fee === 0), 'buyer\'s Ledger: purchases cost the full price, no fee');
+  r = await api(seller, 'GET', '/api/market/ledger?limit=1');
+  const pg1 = await api(seller, 'GET', '/api/market/ledger?before=' + (r.body.entries[0] ? r.body.entries[0].id : 1));
+  check(!pg1.body.entries.some(e => e.id >= r.body.entries[0].id), 'paging with before');
+
+  // Price maths on goods nobody else trades.
+  const res1 = 'tst' + RUN, item1 = 'tsti' + RUN;
+  const rec = (o) => ledger.record({ query: q }, { kind: 'lot', source: 'trip', source_id: 900000000 + Math.floor(Math.random() * 99999999), resource: res1,
+    seller_id: seller.sid, buyer_id: buyer.sid, fee: 0, ...o });
+  await rec({ qty: 100, gold: 70 });
+  await rec({ qty: 50, gold: 50 });
+  await ledger.record({ query: q }, { kind: 'npc', source: 'run', source_id: 900000000 + Math.floor(Math.random() * 99999999), resource: res1, qty: 10, gold: 1000, buyer_id: buyer.sid });
+  let ph = (await ledger.priceHistory(ledger.parseGoods('resource:' + res1)))['resource:' + res1];
+  check(ph.week.avg === 0.8 && ph.week.n === 2 && ph.week.low === 0.7 && ph.week.high === 1, 'volume-weighted 7-day average (120 gold / 150 = 0.8); village deals ignored');
+  check(ph.guide === null && ph.guide_source === null, 'under 3 trades and no reference: no guide');
+  await rec({ qty: 50, gold: 30 });
+  ph = (await ledger.priceHistory(ledger.parseGoods('resource:' + res1)))['resource:' + res1];
+  check(ph.guide === 0.75 && ph.guide_source === 'trades' && ph.days.length === 1 && ph.days[0].n === 3, '3 trades: the guide follows the trades (150 / 200)');
+  const tSnap = q2 => ({ item_key: item1, name: 'Test Blade', icon: '🗡️', metadata: q2 ? { quality: q2, crafted_by: { name: 'Fenn' } } : {} });
+  await rec({ item_snapshot: tSnap(null), qty: 1, gold: 10 });
+  await rec({ item_snapshot: tSnap('fine'), qty: 1, gold: 40 });
+  await rec({ item_snapshot: tSnap('fine'), qty: 1, gold: 50, kind: 'pickup' });
+  const ip = await ledger.priceHistory(ledger.parseGoods(`item:${item1},item:${item1}:fine`));
+  check(ip[`item:${item1}:basic`].week.avg === 10 && ip[`item:${item1}:fine`].week.avg === 45, 'items are priced per quality (Fine doesn\'t move Basic)');
+  const failId = 900000000 + Math.floor(Math.random() * 99999999);
+  await ledger.record({ query: q }, { kind: 'pickup', source: 'run', source_id: failId, item_snapshot: tSnap(null), qty: 1, gold: 999, buyer_id: buyer.sid, seller_id: seller.sid });
+  await ledger.settle({ query: q }, 'run', failId, { failed: true });
+  check((await ledger.priceHistory(ledger.parseGoods(`item:${item1}`)))[`item:${item1}:basic`].week.avg === 10, 'a failed pickup doesn\'t count');
+  r = await api(seller, 'GET', `/api/market/prices?goods=resource:${res1},item:${item1}:fine`);
+  check(r.status === 200 && r.body.prices['resource:' + res1].guide === 0.75 && r.body.prices[`item:${item1}:fine`].week.n === 2, 'GET /prices');
+  r = await api(seller, 'GET', '/api/market/prices?goods=resource:timber,item:iron_sword:shiny');
+  check(r.status === 400, 'unknown qualities are refused');
+  r = await api(seller, 'GET', '/api/market/prices?goods=' + Array.from({ length: 13 }, (_, i) => 'resource:r' + i).join(','));
+  check(r.status === 400 && /12/.test(r.body.error), 'at most 12 goods per request');
+  r = await api(seller, 'GET', '/api/market/prices?goods=resource:timber');
+  check(r.body.prices['resource:timber'].reference.price === 0.7, 'resources fall back to the reference price');
+  r = await api(seller, 'GET', '/api/market/prices/movers');
+  const mv = (r.body.goods || []).find(g => g.key === 'resource:' + res1);
+  check(mv && mv.avg === 0.75 && mv.qty === 200 && mv.n === 3, 'Prices view: this week\'s goods with volume');
+  r = await api(seller, 'GET', '/api/market/status');
+  check(r.body.guide && ['food', 'timber', 'stone', 'metal'].every(k => r.body.guide[k] && ['trades', 'reference'].includes(r.body.guide[k].source)), '/status carries guide prices for the Sell form');
+  // The backfill is idempotent: re-running the migration adds nothing.
+  const n0 = Number((await q('SELECT COUNT(*) FROM market_trades')).rows[0].count);
+  const sql = require('fs').readFileSync(require('path').join(__dirname, '..', 'migrations', '0NN_market_ledger.sql'), 'utf8');
+  await q(sql);
+  check(Number((await q('SELECT COUNT(*) FROM market_trades')).rows[0].count) === n0, 're-running the migration adds no duplicates');
+  await q('DELETE FROM market_trades WHERE resource = $1 OR item_key = $2', [res1, item1]);
+
   await pool.end();
 }
 
