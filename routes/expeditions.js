@@ -178,6 +178,7 @@ router.get('/', requireAuth, async (req, res) => {
 // Complete finished expeditions and reveal tiles
 // Each expedition is claimed first (status → complete), so the lazy read
 // and the worker can't both finish it.
+const EXPEDITION_SCHEMATIC = { perHex: 0.008, max: 0.12 };
 async function completeExpeditions(settlementId, userId) {
   const done = await query(
     `UPDATE expeditions SET status='complete' WHERE settlement_id=$1 AND status='travelling' AND completes_at <= NOW() RETURNING *`,
@@ -202,6 +203,12 @@ async function completeExpeditions(settlementId, userId) {
         'INSERT INTO fog_of_war (user_id, tile_q, tile_r) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
         [userId, tq, tr]
       );
+    }
+    // Scouts sometimes bring a schematic back from what they explored:
+    // longer trips, better odds (lib/crafting grantRandomSchematic).
+    if (Math.random() < Math.min(EXPEDITION_SCHEMATIC.max, EXPEDITION_SCHEMATIC.perHex * path.length)) {
+      const t = await require('../lib/crafting').grantRandomSchematic({ query }, settlementId, Math.random, 'expedition').catch(() => null);
+      if (t) require('../lib/event_bus').publish(settlementId, { type: 'schematic_found', source: 'expedition', item: { name: t.name, icon: t.icon } });
     }
     // citizen is now free (tracked by expedition status)
     if (exp.citizen_id) {

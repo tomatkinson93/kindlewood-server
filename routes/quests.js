@@ -69,6 +69,7 @@ async function questMods(ownerUserId) {
 function moddedDuration(durationS, mods) {
   return Math.max(10, Math.round(Number(durationS) * Math.max(0.1, 1 + (mods.quest_duration || 0))));
 }
+const QUEST_SCHEMATIC = { base: 0.03, high: 0.05 };   // chance of a schematic per collected quest
 const moddedSuccess = (chance, mods) => Math.min(0.95, Math.max(0.02, chance + (mods.quest_success || 0)));
 const moddedReward = (amount, mods) => Math.round(Number(amount) * Math.max(0, 1 + (mods.quest_rewards || 0)));
 
@@ -745,6 +746,14 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
         for (const drop of quest.drops) {
           const chance = drop.roll_chance ?? 1;
           if (Math.random() > chance) continue;
+          // Schematics (and any real item) come in as their template says.
+          const dtpl = drop.item_key ? (await query('SELECT * FROM item_templates WHERE item_key = $1', [drop.item_key])).rows[0] : null;
+          if (dtpl && dtpl.category === 'schematic') {
+            await require('../lib/inventory').grantItem(query, run.settlement_id, {
+              item_key: dtpl.item_key, name: dtpl.name, description: dtpl.description, icon: dtpl.icon, category: dtpl.category,
+              rarity: dtpl.rarity, quantity: drop.quantity || 1, source: run.quest_id, metadata: { sell_value: dtpl.sell_value } });
+            continue;
+          }
           await query(
             `INSERT INTO inventory_items (settlement_id, item_key, name, description, icon, category, rarity, quantity, source)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
@@ -765,12 +774,24 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
       }
     }
 
+    // Any finished quest: a small chance of a schematic in the spoils
+    // (better odds on a high roll). lib/crafting grantRandomSchematic.
+    let schematic = null;
+    if (run.status === 'completed') {
+      const high = (run.success_roll || 0) > (run.success_chance || 0.8);
+      if (Math.random() < (high ? QUEST_SCHEMATIC.high : QUEST_SCHEMATIC.base)) {
+        schematic = await require('../lib/crafting').grantRandomSchematic({ query }, run.settlement_id, Math.random, run.quest_id).catch(() => null);
+        if (schematic) eventBus.publish(run.settlement_id, { type: 'schematic_found', source: 'quest', item: { name: schematic.name, icon: schematic.icon } });
+      }
+    }
+
     await query(
       "UPDATE settlement_quests SET status='collected' WHERE id=$1",
       [run.id]
     );
 
-    res.json({ ok: true, gold_awarded: goldAwarded, status: run.status, bonus: bonusReward });
+    res.json({ ok: true, gold_awarded: goldAwarded, status: run.status, bonus: bonusReward,
+      schematic: schematic ? { name: schematic.name, icon: schematic.icon } : null });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to collect quest.' });
