@@ -48,7 +48,7 @@ async function unavailable(settlementId, ids) {
     else if (c.life_stage === 'deceased') out[id] = `${c.name} has passed away.`;
   }
   const mark = (rows, why) => rows.forEach(id => { if (!out[id]) out[id] = `${nameOf(id)} ${why}`; });
-  mark(await market.merchantCitizenIds(ids), 'is busy at the Market.');
+  mark(await market.merchantCitizenIds(ids), 'is busy at work (Market or workshop).');
   mark((await query("SELECT citizen_id FROM expeditions WHERE status = 'travelling' AND citizen_id = ANY($1::int[])", [ids]))
     .rows.map(r => r.citizen_id), 'is on an expedition.');
   const quests = (await query(
@@ -263,7 +263,7 @@ router.get('/mine', requireAuth, async (req, res) => {
         id: r.id, ...snap, quantity: r.quantity,
         tradeable: !why, reason: why,
         weight: market.itemWeight(snap), max_lot: market.maxItemUnits(snap, mods.carryWeight),
-        sell_value: Number(r.template_sell) || Number(r.metadata && r.metadata.sell_value) || 0,
+        sell_value: market.itemValue(r.metadata, r.template_sell) || 0,
       };
     });
 
@@ -1063,7 +1063,7 @@ async function ironhavenState(me, bestCarry = 1) {
     items: inv.map(r => {
       const snap = snapshotOf(r);
       const why = untradeableReason(r, r.template_tradeable == null ? null : { tradeable: r.template_tradeable });
-      const value = Number(r.template_sell) || Number(r.metadata && r.metadata.sell_value) || 1;
+      const value = market.itemValue(r.metadata, r.template_sell) || 1;
       const wanted = wants.includes(r.item_key);
       return {
         id: r.id, ...snap, quantity: r.quantity, cat: market.categoryOf(snap),
@@ -1128,7 +1128,7 @@ router.post('/ironhaven/sell', requireAuth, async (req, res) => {
       const tpl = (await client.query('SELECT item_key, sell_value, tradeable FROM item_templates')).rows;
       const wanted = market.ironhavenWants(tpl).includes(snap.item_key);
       const t = tpl.find(x => x.item_key === snap.item_key);
-      const value = (t && Number(t.sell_value)) || Number(snap.metadata && snap.metadata.sell_value) || 1;
+      const value = market.itemValue(snap.metadata, t && t.sell_value) || 1;
       const gold = market.ironhavenUnitPrice(value, wanted) * qty;
       const cit = (await client.query('SELECT * FROM citizens WHERE id = $1 AND settlement_id = $2', [citizenId, me.id])).rows[0];
       const distance = market.distanceBetween(me, ih) || 0;

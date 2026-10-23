@@ -164,6 +164,7 @@ const BUILDINGS = {
     effect: () => ({}),
     citizenSlots: () => 1,           // the shopkeeper
     stallSlots: (level) => level * 4,
+    craftSlots: (level) => level,    // forges for blacksmiths (careers)
     requires: [],
     minTier: 'village',
   },
@@ -177,8 +178,22 @@ const BUILDINGS = {
     effect: () => ({}),
     citizenSlots: () => 1,
     stallSlots: (level) => level * 4,
+    craftSlots: (level) => level,    // benches for jewellers (careers)
     requires: [],
     minTier: 'town',
+  },
+  // Carpenters' workplace (careers). Mole settlements start with one.
+  workshop: {
+    id: 'workshop',
+    label: 'Workshop',
+    desc: 'Benches, saws and shavings. Carpenters make rods, carts and bows here — each level adds a bench.',
+    icon: '🪚',
+    cost: { timber: 100, stone: 40 },
+    maxLevel: 3,
+    effect: () => ({}),
+    citizenSlots: (level) => level,
+    craftSlots: (level) => level,
+    requires: [],
   },
 };
 
@@ -195,6 +210,9 @@ const ROLE_BUILDING_MAP = {
   soldier:     [],
   idle:        [],
   tavernkeep:   ['tavern'],
+  blacksmith:  ['smithy'],
+  jeweller:    ['jeweller'],
+  carpenter:   ['workshop'],
 };
 
 // Per-citizen production (careers). Lazy require: profiles → classes, no cycle.
