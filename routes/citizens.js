@@ -283,6 +283,8 @@ router.patch('/:id/role', requireAuth, async (req, res) => {
       porter: 'is out carrying goods', trade: 'is on a trade run', envoy: 'is away as an envoy',
     };
     if (away) return res.status(400).json({ error: `${cit.name} ${AWAY_MSG[away] || 'is away'} and can't be reassigned until they return.` });
+    if ((await require('../lib/crafting').busyCitizenIds([cit.id])).length)
+      return res.status(400).json({ error: `${cit.name} has crafting queued — cancel it at their workshop first.` });
 
     const events = [];
     await withTransaction(async client => {

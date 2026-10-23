@@ -303,6 +303,17 @@ async function part2() {
   r = await api(a, 'GET', '/api/game/resource-breakdown');
   check(r.status === 200 && r.body.breakdown.food.sources.some(s => s.kind === 'citizen_role' && s.role === 'farmer'), 'breakdown lists farmers');
 
+  console.log('Loose ends');
+  r = await api(a, 'GET', `/api/combat/citizen/${f1}/events`);
+  check(r.status === 200 && !(r.body.events || []).some(e => /^career|trait_/.test(e.event_type)), 'Scars tab shows injuries and deaths only, not career history');
+  const kidG = (await q(`INSERT INTO citizens (settlement_id, name, gender, role, life_stage, parent_ids, hidden_traits) VALUES ($1,'Sprout','female','idle','child',$2,'["green_thumb"]') RETURNING id`,
+    [a.sid, JSON.stringify([g])])).rows[0].id;
+  r = await api(a, 'GET', '/api/citizens');
+  const kidRow = (r.body.citizens || []).find(c => c.id === kidG);
+  check(kidRow && kidRow.family_hint && kidRow.family_hint.trait === 'green_thumb', 'a child carrying a parent\'s known talent shows a family likeness');
+  const away = require('../lib/away_report').eventFromCitizenEvent({ event_type: 'career_level', narrative: 'Fenn became Farmer (Lv 10).', occurred_at: new Date(), citizen_id: 1 }, 'Fenn');
+  check(away.category === 'citizens' && away.icon === '🎓', 'away report files career news under Citizens');
+
   await pool.end();
 }
 
