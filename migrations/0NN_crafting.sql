@@ -145,4 +145,57 @@ INSERT INTO recipes (recipe_key, name, class_key, spec, station, min_level, min_
   ('pack_frame',     'Pack Frame',     'carpenter',  'wainwright',  'workshop',12, 2, '{"resources":{"timber":20},"items":[{"item_key":"hide","qty":1}]}',          'pack_frame',     3600, 60, 'carpenter.pack_frames', 'superior', 60),
   ('caravan_wagon',  'Caravan Wagon',  'carpenter',  'wainwright',  'workshop',15, 3, '{"resources":{"timber":60,"metal":15}}',                                     'caravan_wagon', 10800, 140, 'carpenter.pack_frames', 'superior', 61)
 ON CONFLICT (recipe_key) DO NOTHING;
+-- ── Crafting finish-up: shields, recipes a town must learn, schematics ──
+--   recipes.discovery  'known' (anyone of the class/level can make it) or
+--                      'hidden' (the town must learn it first: a crafter
+--                      discovers it while working, or someone studies its
+--                      schematic).
+--   settlement_recipes the hidden recipes each town has learned.
+ALTER TABLE recipes ADD COLUMN IF NOT EXISTS discovery TEXT NOT NULL DEFAULT 'known';
+DO $$ BEGIN
+  ALTER TABLE recipes ADD CONSTRAINT recipes_discovery_chk CHECK (discovery IN ('known','hidden'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS settlement_recipes (
+  settlement_id  INTEGER NOT NULL REFERENCES settlements(id) ON DELETE CASCADE,
+  recipe_key     TEXT NOT NULL,
+  source         TEXT NOT NULL CHECK (source IN ('discovery','schematic','admin')),
+  citizen_id     INTEGER REFERENCES citizens(id) ON DELETE SET NULL,
+  learned_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (settlement_id, recipe_key)
+);
+
+-- Shields (their own slot) and the hidden recipes' items.
+INSERT INTO item_templates (item_key, name, description, icon, category, rarity, rarity_order, quality, equip_slot, stat_bonuses, sell_value, item_effects) VALUES
+  ('wooden_buckler', 'Wooden Buckler', 'A small round shield of banded wood.',           '🛡️', 'equipment', 'common',   1, 'basic', 'shield',  '{"combat":1}',   18, '[{"type":"injury","value":-2}]'),
+  ('iron_shield',    'Iron Shield',    'Faced with iron, rimmed with steel.',             '🛡️', 'equipment', 'uncommon', 2, 'basic', 'shield',  '{"combat":2}',   50, '[{"type":"injury","value":-4}]'),
+  ('tower_shield',   'Tower Shield',   'A wall you can carry.',                           '🧱', 'equipment', 'rare',     3, 'basic', 'shield',  '{"combat":3}',  120, '[{"type":"injury","value":-7}]'),
+  ('falchion',       'Falchion',       'A heavy, curved chopping blade.',                 '🗡️', 'equipment', 'rare',     3, 'basic', 'weapon',  '{"combat":5}',   95, NULL),
+  ('miners_amulet',  'Miner''s Amulet','A lump of ore set in silver. Miners swear by it.','📿', 'equipment', 'uncommon', 2, 'basic', 'trinket', '{"mining":2}',   45, NULL),
+  ('harvest_brooch', 'Harvest Brooch', 'A wheatsheaf in gold wire.',                      '🌾', 'equipment', 'uncommon', 2, 'basic', 'trinket', '{"farming":2}',  45, NULL),
+  ('composite_bow',  'Composite Bow',  'Horn, sinew and wood, glued and bound.',          '🏹', 'equipment', 'rare',     3, 'basic', 'weapon',  '{"combat":5}',  110, NULL),
+  ('sledge',         'Sledge',         'Runners and a bed: drags far more than it carries.','🛷', 'equipment', 'uncommon', 2, 'basic', 'tool',  '{}',             80, '[{"type":"carry","value":0.2}]')
+ON CONFLICT (item_key) DO NOTHING;
+
+INSERT INTO recipes (recipe_key, name, class_key, spec, station, min_level, min_station_level, inputs, output_key, base_seconds, base_xp, unlock_node, quality_cap, sort_order, discovery) VALUES
+  ('wooden_buckler', 'Wooden Buckler', 'carpenter',  NULL,          'workshop', 4, 1, '{"resources":{"timber":15,"metal":2}}',                                       'wooden_buckler', 1800,  22, NULL, 'superior',  25, 'known'),
+  ('iron_shield',    'Iron Shield',    'blacksmith', 'armorer',     'smithy',  11, 2, '{"resources":{"metal":25,"timber":5},"items":[{"item_key":"iron_ore","qty":2}]}', 'iron_shield', 6000, 70, NULL, 'legendary', 59, 'known'),
+  ('tower_shield',   'Tower Shield',   'blacksmith', 'armorer',     'smithy',  15, 3, '{"resources":{"metal":45,"timber":10},"items":[{"item_key":"iron_ore","qty":4},{"item_key":"hide","qty":1}]}', 'tower_shield', 12000, 130, NULL, 'legendary', 63, 'hidden'),
+  ('falchion',       'Falchion',       'blacksmith', 'weaponsmith', 'smithy',  14, 2, '{"resources":{"metal":35},"items":[{"item_key":"iron_ore","qty":3}]}',       'falchion',       9000, 110, NULL, 'legendary', 53, 'hidden'),
+  ('miners_amulet',  'Miner''s Amulet','jeweller',   NULL,          'jeweller', 6, 1, '{"resources":{"metal":8,"wealth":40},"items":[{"item_key":"iron_ore","qty":1}]}', 'miners_amulet', 2700, 35, NULL, 'legendary', 32, 'hidden'),
+  ('harvest_brooch', 'Harvest Brooch', 'jeweller',   NULL,          'jeweller', 6, 1, '{"resources":{"metal":6,"wealth":40}}',                                      'harvest_brooch', 2700,  35, NULL, 'legendary', 33, 'hidden'),
+  ('composite_bow',  'Composite Bow',  'carpenter',  'bowyer',      'workshop',16, 3, '{"resources":{"timber":30},"items":[{"item_key":"rare_sap","qty":2},{"item_key":"hide","qty":1}]}', 'composite_bow', 10800, 140, NULL, 'legendary', 52, 'hidden'),
+  ('sledge',         'Sledge',         'carpenter',  'wainwright',  'workshop',13, 2, '{"resources":{"timber":40,"metal":8}}',                                      'sledge',         7200,  90, NULL, 'superior',  62, 'hidden')
+ON CONFLICT (recipe_key) DO NOTHING;
+
+-- A schematic for every hidden recipe (lib/crafting.js ensureSchematic does
+-- the same when Dev Tools hides a recipe). Rarity and value follow the level.
+INSERT INTO item_templates (item_key, name, description, icon, category, rarity, rarity_order, quality, equip_slot, stat_bonuses, sell_value)
+SELECT 'schematic_' || r.recipe_key, 'Schematic: ' || r.name,
+       'Study it and your town''s crafters can make ' || r.name || '.', '📜', 'schematic',
+       CASE WHEN r.min_level < 8 THEN 'uncommon' WHEN r.min_level < 14 THEN 'rare' ELSE 'epic' END,
+       CASE WHEN r.min_level < 8 THEN 2 WHEN r.min_level < 14 THEN 3 ELSE 4 END,
+       'basic', NULL, '{}', 20 + 6 * r.min_level
+  FROM recipes r WHERE r.discovery = 'hidden'
+ON CONFLICT (item_key) DO NOTHING;
 COMMIT;

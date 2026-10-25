@@ -347,39 +347,12 @@ router.get('/mine', requireAuth, async (req, res) => {
 // buyers send their own porters to collect.
 async function listItemStall(me, item, invId, b) {
   const qty = toInt(b.qty_total), unit = toInt(b.unit_price != null ? b.unit_price : b.lot_price);
-  if (!Number.isInteger(qty) || qty <= 0) throw new MarketError(400, 'Invalid quantity.');
-  if (!Number.isInteger(unit) || unit <= 0) throw new MarketError(400, 'Set a price per item.');
-  if (unit > 1000000) throw new MarketError(400, 'That price is too high.');
-  const stalls = await market.stallState({ query }, me.id);
-  const cat = market.categoryOf(item);
-  // The requested venue, else the first one that sells this and has room.
-  let venue = b.venue && stalls[b.venue] ? b.venue : null;
-  if (!venue) venue = Object.keys(stalls).find(v => stalls[v].free > 0 && (!stalls[v].sells || stalls[v].sells.includes(cat))) || null;
-  if (!venue) {
-    const any = Object.values(stalls).some(s => s.slots > 0);
-    throw new MarketError(any ? 400 : 403, any ? 'All your stalls are full — wait for a sale or cancel a listing.' : 'Build a Market first.');
+  try {
+    return await withTransaction(client => market.listItemStallIn(client, me.id, { item, invId, qty, unit, venue: b.venue }));
+  } catch (e) {
+    if (e && e.status) throw new MarketError(e.status, e.message);
+    throw e;
   }
-  const v = stalls[venue];
-  if (!v.slots) throw new MarketError(400, `Build a ${v.label} first.`);
-  if (!v.open) throw new MarketError(400, `Your ${v.label} needs a shopkeeper before it can sell.`);
-  if (v.sells && !v.sells.includes(cat)) throw new MarketError(400, `Your ${v.label} doesn't sell ${cat} items.`);
-  const mods = await market.loadModifiers({ query }, me.id);
-
-  return withTransaction(async (client) => {
-    await client.query('SELECT id FROM settlements WHERE id = $1 FOR UPDATE', [me.id]);
-    const used = (await client.query(
-      `SELECT COUNT(*)::int AS n FROM market_orders WHERE seller_settlement_id = $1 AND status = 'active'
-          AND kind = 'item' AND COALESCE(venue, 'market') = $2`, [me.id, venue])).rows[0].n;
-    if (used >= v.slots) throw new MarketError(400, `All ${v.slots} stalls at your ${v.label} are full.`);
-    let snap;
-    try { snap = await takeItem(client, me.id, invId, qty); }
-    catch (e) { throw new MarketError(e.status || 400, e.message); }
-    return (await client.query(
-      `INSERT INTO market_orders (seller_settlement_id, kind, item_key, item_snapshot, venue,
-                                  lot_size, lot_price, qty_total, qty_escrowed, expires_at)
-       VALUES ($1,'item',$2,$3,$4,1,$5,$6,$6, NOW() + make_interval(hours => $7)) RETURNING *`,
-      [me.id, snap.item_key, JSON.stringify(snap), venue, unit, qty, mods.expiryHours])).rows[0];
-  });
 }
 
 // ── POST /api/market/orders ───────────────────────────────────────────────

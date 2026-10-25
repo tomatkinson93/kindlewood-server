@@ -2,13 +2,15 @@
 //  CRAFTING — /api/crafting (lib/crafting)
 //
 //  GET    /station/:station        smithy | jeweller | workshop: crafters, recipes, odds inputs, queue
-//  POST   /jobs                    { citizen_id, recipe_key, qty, name? }  queue (materials reserved)
+//  POST   /jobs                    { citizen_id, recipe_key, qty, name?, list?: { markup } }  queue (materials reserved)
 //  DELETE /jobs/:id                cancel (materials refunded exactly)
+//  POST   /schematics/:id/study    study a schematic (inventory id): the town learns its recipe
 //  Dev Tools (admin):
 //  GET    /admin/recipes           every recipe, archived too
 //  POST   /admin/recipes           { recipe_key, ...fields }
 //  PATCH  /admin/recipes/:key      { ...fields }
 //  DELETE /admin/recipes/:key      archive (queued jobs keep their snapshot)
+//  POST   /admin/recipes/:key/teach  your town learns a hidden recipe
 // ══════════════════════════════════════════════════════════════════════════
 
 'use strict';
@@ -46,6 +48,7 @@ router.post('/jobs', requireAuth, async (req, res) => {
     const out = await crafting.queueJobs(sid, {
       citizenId: parseInt(b.citizen_id, 10), recipeKey: String(b.recipe_key || ''), qty: b.qty == null ? 1 : b.qty,
       name: b.name ? String(b.name) : null,
+      list: b.list && typeof b.list === 'object' ? { markup: Number(b.list.markup) } : null,
     });
     res.json({ ok: true, ...out });
   } catch (e) { send(res, e, 'Could not queue that.'); }
@@ -58,6 +61,22 @@ router.delete('/jobs/:id', requireAuth, async (req, res) => {
     if (!Number.isInteger(id) || id <= 0) throw new crafting.CraftError(400, 'Bad job id.');
     res.json({ ok: true, ...(await crafting.cancelJob(sid, id)) });
   } catch (e) { send(res, e, 'Could not cancel that.'); }
+});
+
+router.post('/schematics/:id/study', requireAuth, async (req, res) => {
+  try {
+    const sid = await mySettlementId(req.user.userId);
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0) throw new crafting.CraftError(400, 'Bad item id.');
+    res.json({ ok: true, ...(await crafting.studySchematic(sid, id)) });
+  } catch (e) { send(res, e, 'Could not study that.'); }
+});
+
+router.post('/admin/recipes/:key/teach', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const sid = await mySettlementId(req.user.userId);
+    res.json({ ok: true, learned: await crafting.teachRecipe(sid, String(req.params.key)) });
+  } catch (e) { send(res, e, 'Could not teach that.'); }
 });
 
 router.get('/admin/recipes', requireAuth, requireAdmin, async (req, res) => {

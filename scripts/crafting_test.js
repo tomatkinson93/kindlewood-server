@@ -58,6 +58,38 @@ function part1() {
   check(market.itemValue(fine.metadata, 20) === fine.metadata.sell_value, 'Market: a crafted item is worth its own value');
   check(market.itemValue({ sell_value: 999 }, 20) === 20 && market.itemValue({ sell_value: 7 }, null) === 7, 'Market: others use the template value');
 
+  console.log('Shields & effects');
+  const shield = crafting.craftedItem({ item_key: 'iron_shield', name: 'Iron Shield', equip_slot: 'shield', stat_bonuses: { combat: 2 }, sell_value: 50,
+    item_effects: [{ type: 'injury', value: -4 }] }, 'superior', { citizen: cit });
+  check(shield.metadata.item_effects[0].value === Math.round(-4 * M.QUALITY_STAT_MULT.superior) && shield.name === 'Superior Iron Shield',
+    'a crafted shield\'s lower injury risk scales with quality');
+  const cart = crafting.craftedItem({ item_key: 'sledge', name: 'Sledge', equip_slot: 'tool', stat_bonuses: {}, sell_value: 80,
+    item_effects: [{ type: 'carry', value: 0.2 }] }, 'fine', { citizen: cit });
+  check(cart.metadata.item_effects[0].value === Math.round(0.2 * M.QUALITY_STAT_MULT.fine * 100) / 100, 'percentage effects keep their decimals');
+  check(market.categoryOf({ equip_slot: 'shield' }) === 'armour' && market.ITEM_SLOT_WEIGHT.shield === 4, 'shields trade as armour (Smithy stalls)');
+
+  console.log('Village schematics');
+  const npcTrade = require('../lib/npc_trade');
+  const tpls = [{ item_key: 'trout', name: 'Trout', category: 'fish', rarity: 'common', sell_value: 3, tradeable: true },
+    { item_key: 'schematic_x', name: 'Schematic: X', category: 'schematic', rarity: 'epic', sell_value: 100, tradeable: true },
+    { item_key: 'schematic_y', name: 'Schematic: Y', category: 'schematic', rarity: 'uncommon', sell_value: 50, tradeable: true }];
+  let withS = null, days = 0;
+  for (let d = 1; d <= 60 && !withS; d++) {
+    const day = `2026-01-${String(((d - 1) % 28) + 1).padStart(2, '0')}`;
+    const os = npcTrade.npcOrdersFor({ id: d, species: 'mice' }, day, tpls);
+    if (os.some(o => o.schematic)) { withS = { day, id: d, os }; days++; }
+  }
+  check(withS && JSON.stringify(npcTrade.npcOrdersFor({ id: withS.id, species: 'mice' }, withS.day, tpls)) === JSON.stringify(withS.os),
+    'villages sometimes sell a schematic — the same one all day');
+  const sOrder = withS && withS.os.find(o => o.schematic);
+  check(sOrder && sOrder.qty === 1 && sOrder.key === 's9' && sOrder.price === Math.round((sOrder.item.item_key === 'schematic_x' ? 100 : 50) * 1.2),
+    'one schematic, at 120% of its value');
+  check(!npcTrade.npcOrdersFor({ id: 3, species: 'mice' }, '2026-02-02', tpls).some(o => !o.schematic && o.item && o.item.item_key.startsWith('schematic_')),
+    'schematics never turn up as ordinary goods');
+  const epicOrder = { key: 's9', side: 'sell', kind: 'item', schematic: true, min_tier: 'allied', qty: 1, price: 120, per: 1, item: {} };
+  check(npcTrade.forTier([epicOrder], npcTrade.tierFor(50)).length === 0 && npcTrade.forTier([epicOrder], npcTrade.tierFor(80))[0].qty === 1,
+    'rare schematics only for towns the village trusts most (and still just one)');
+
   console.log('Stations & classes');
   for (const [st, cls] of Object.entries(crafting.STATIONS)) {
     check(C.CLASSES[cls] && C.CLASSES[cls].station === st && BUILDINGS[st] && BUILDINGS[st].craftSlots(2) === 2, `${st}: ${cls} works there, one place per level`);
@@ -320,6 +352,152 @@ async function part2() {
     check(!r.body.recipes.some(x => x.recipe_key === key), 'archived recipes leave the station');
     await q('DELETE FROM recipes WHERE recipe_key=$1', [key]);
   } else console.log('  (CRAFTING_TEST_ADMIN_ID not set — skipping Dev Tools checks)');
+
+  console.log('Recipes to learn');
+  const HID = /Not known yet/;
+  const L1 = await user('learn', [['jeweller', 2]]);
+  const jA = await citizen(L1, 'jeweller', { name: 'Amber' }), jB = await citizen(L1, 'jeweller', { name: 'Beryl' });
+  await careers.adminGrant(L1.sid, jA, 'jeweller', { level: 6 });
+  await careers.adminGrant(L1.sid, jB, 'jeweller', { level: 6 });
+  r = await api(L1, 'GET', '/api/crafting/station/jeweller');
+  const amulet = r.body.recipes.find(x => x.recipe_key === 'miners_amulet');
+  check(amulet && amulet.hidden && !amulet.known && HID.test(r.body.crafters.find(c => c.id === jA).can.miners_amulet), 'a hidden recipe is locked until the town learns it');
+  r = await api(L1, 'POST', '/api/crafting/jobs', { citizen_id: jA, recipe_key: 'miners_amulet', qty: 1 });
+  check(r.status === 400 && HID.test(r.body.error), '…and can\'t be queued');
+  const sch = async (p, key, n = 1) => (await q(`INSERT INTO inventory_items (settlement_id,item_key,name,icon,category,rarity,quantity) VALUES ($1,$2,'Schematic','📜','schematic','uncommon',$3) RETURNING id`, [p.sid, key, n])).rows[0].id;
+  const schA = await sch(L1, 'schematic_miners_amulet', 2);
+  r = await api(L1, 'POST', `/api/crafting/schematics/${schA}/study`);
+  check(r.status === 200 && r.body.recipe === 'Miner\'s Amulet' && (await q('SELECT quantity FROM inventory_items WHERE id=$1', [schA])).rows[0].quantity === 1,
+    'studying a schematic uses one up');
+  r = await api(L1, 'GET', '/api/crafting/station/jeweller');
+  check(r.body.crafters.every(c => c.can.miners_amulet === null) && r.body.recipes.find(x => x.recipe_key === 'miners_amulet').known,
+    'the whole town knows it now: both jewellers can make it');
+  r = await api(L1, 'POST', `/api/crafting/schematics/${schA}/study`);
+  check(r.status === 409 && (await q('SELECT quantity FROM inventory_items WHERE id=$1', [schA])).rows[0].quantity === 1, 'a known recipe: refused, the schematic is kept to sell');
+  await ore(L1.sid, 1);
+  const oreId = (await q("SELECT id FROM inventory_items WHERE settlement_id=$1 AND item_key='iron_ore' LIMIT 1", [L1.sid])).rows[0].id;
+  r = await api(L1, 'POST', `/api/crafting/schematics/${oreId}/study`);
+  check(r.status === 400, 'only schematics can be studied');
+  const otherTown = await user('other');
+  const schB = await sch(otherTown, 'schematic_harvest_brooch');
+  r = await api(L1, 'POST', `/api/crafting/schematics/${schB}/study`);
+  check(r.status === 404, 'not someone else\'s');
+  r = await api(L1, 'POST', '/api/crafting/jobs', { citizen_id: jB, recipe_key: 'miners_amulet', qty: 1 });
+  check(r.status === 200, 'a learned recipe queues like any other');
+
+  console.log('Discovery while crafting');
+  const D1 = await user('disc', [['smithy', 3]]);
+  const ws12 = await citizen(D1, 'blacksmith', { name: 'Garnet', stats: { strength: 8, agility: 8, endurance: 8, intelligence: 8, charisma: 8 } });
+  await careers.adminGrant(D1.sid, ws12, 'blacksmith', { level: 12 });
+  await q("UPDATE citizen_classes SET spec = 'weaponsmith' WHERE citizen_id = $1 AND class_key = 'blacksmith'", [ws12]);
+  const finish = async (p, cid, rand) => {
+    await api(p, 'POST', '/api/crafting/jobs', { citizen_id: cid, recipe_key: 'iron_dagger', qty: 1 });
+    const jobsNow = (await jobsOf(cid)).filter(x => x.status === 'active');
+    await due(jobsNow[0].id);
+    await crafting.resolveDue(p.sid, { rand });
+    return (await q('SELECT * FROM craft_jobs WHERE id=$1', [jobsNow[0].id])).rows[0];
+  };
+  let jobRow = await finish(D1, ws12, () => 0.99);
+  check(!jobRow.roll.discovered && !(await crafting.knownSet(null, D1.sid)).size, 'most pieces teach nothing new');
+  jobRow = await finish(D1, ws12, () => 0);
+  const knownNow = await crafting.knownSet(null, D1.sid);
+  check(jobRow.roll.discovered === 'Falchion' && knownNow.has('falchion') && !knownNow.has('tower_shield'), 'a Lv12 Weaponsmith discovers the Falchion (Lv14) — never the Armorer\'s Tower Shield');
+  const howLearned = (await q('SELECT source, citizen_id FROM settlement_recipes WHERE settlement_id=$1 AND recipe_key=$2', [D1.sid, 'falchion'])).rows[0];
+  check(howLearned && howLearned.source === 'discovery' && howLearned.citizen_id === ws12, 'recorded as Garnet\'s discovery');
+  jobRow = await finish(D1, ws12, () => 0);
+  check(!jobRow.roll.discovered && knownNow.size === 1, 'nothing left on their path to discover');
+  const D2 = await user('disc2', [['smithy', 3]]);
+  const ws11 = await citizen(D2, 'blacksmith', { name: 'Flint' });
+  await careers.adminGrant(D2.sid, ws11, 'blacksmith', { level: 11 });
+  await q("UPDATE citizen_classes SET spec = 'weaponsmith' WHERE citizen_id = $1 AND class_key = 'blacksmith'", [ws11]);
+  jobRow = await finish(D2, ws11, () => 0);
+  check(!jobRow.roll.discovered, 'no more than two levels beyond the crafter');
+
+  console.log('Shields');
+  const S1 = await user('shield', [['workshop', 1]]);
+  const carpId = await citizen(S1, 'carpenter', { name: 'Ash' });
+  await careers.adminGrant(S1.sid, carpId, 'carpenter', { level: 4 });
+  jobRow = await (async () => {
+    await api(S1, 'POST', '/api/crafting/jobs', { citizen_id: carpId, recipe_key: 'wooden_buckler', qty: 1 });
+    const jobsNow = (await jobsOf(carpId)).filter(x => x.status === 'active');
+    await due(jobsNow[0].id);
+    await crafting.resolveDue(S1.sid, { rand: () => 0.999 });
+    return (await q('SELECT * FROM craft_jobs WHERE id=$1', [jobsNow[0].id])).rows[0];
+  })();
+  const buckler = (await q("SELECT * FROM inventory_items WHERE settlement_id=$1 AND item_key='wooden_buckler'", [S1.sid])).rows[0];
+  check(buckler && buckler.equip_slot === 'shield' && buckler.metadata.item_effects[0].type === 'injury'
+    && buckler.metadata.item_effects[0].value === Math.round(-2 * M.QUALITY_STAT_MULT[buckler.metadata.quality]), 'a carpenter makes a Wooden Buckler; its protection follows its quality');
+  const guardId = await citizen(S1, 'soldier', { name: 'Tor' });
+  const sw2 = (await q("INSERT INTO inventory_items (settlement_id,item_key,name,category,quantity,equip_slot,stat_bonuses) VALUES ($1,'iron_sword','Iron Sword','equipment',1,'weapon','{\"combat\":2}') RETURNING id", [S1.sid])).rows[0].id;
+  const ar2 = (await q("INSERT INTO inventory_items (settlement_id,item_key,name,category,quantity,equip_slot,stat_bonuses) VALUES ($1,'chainmail','Chainmail','equipment',1,'armour','{\"combat\":2}') RETURNING id", [S1.sid])).rows[0].id;
+  const injBefore = ((await careers.profilesFor(null, S1.sid)).get(guardId) || { effects: {} }).effects.injury || 0;
+  for (const id of [sw2, ar2, buckler.id]) await api(S1, 'PATCH', `/api/inventory/${id}`, { equipped_to: guardId });
+  const wornSlots = (await q('SELECT equip_slot FROM inventory_items WHERE equipped_to=$1 ORDER BY equip_slot', [guardId])).rows.map(x => x.equip_slot);
+  check(wornSlots.join() === 'armour,shield,weapon', 'a shield is worn alongside a weapon and armour');
+  const injAfter = (await careers.profilesFor(null, S1.sid)).get(guardId).effects.injury;
+  check(injAfter === injBefore + buckler.metadata.item_effects[0].value, `the guard is harder to hurt (injury risk ${injBefore} → ${injAfter})`);
+
+  console.log('Straight to a stall');
+  const M1 = await user('stall', [['smithy', 1]]);
+  await q("INSERT INTO buildings (settlement_id, type, level) VALUES ($1,'market',1)", [M1.sid]);
+  const sm1 = await citizen(M1, 'blacksmith', { name: 'Cole' });
+  r = await api(M1, 'POST', '/api/crafting/jobs', { citizen_id: sm1, recipe_key: 'iron_dagger', qty: 1, list: { markup: 0.3 } });
+  check(r.status === 400 && /Markup/.test(r.body.error), 'markup is 0, 10, 25 or 50%');
+  r = await api(M1, 'POST', '/api/crafting/jobs', { citizen_id: sm1, recipe_key: 'iron_dagger', qty: 1, list: { markup: 0.1 } });
+  check(r.status === 200, 'queue a dagger to sell at +10%');
+  let jobsNow = (await jobsOf(sm1)).filter(x => x.status === 'active');
+  check(jobsNow[0].options.list && jobsNow[0].options.list.markup === 0.1, 'the job remembers to list it');
+  await due(jobsNow[0].id);
+  await crafting.resolveDue(M1.sid, { rand: () => 0.5 });
+  jobRow = (await q('SELECT * FROM craft_jobs WHERE id=$1', [jobsNow[0].id])).rows[0];
+  const dagListing = (await q("SELECT * FROM market_orders WHERE seller_settlement_id=$1 AND item_key='iron_dagger' AND status='active'", [M1.sid])).rows[0];
+  const dagVal = dagListing && dagListing.item_snapshot.metadata.sell_value;
+  check(dagListing && jobRow.roll.listed && dagListing.lot_price === Math.round(dagVal * 1.1) && jobRow.roll.listed.price === dagListing.lot_price,
+    `listed at its value +10% (no trades yet): ${dagListing && dagListing.lot_price}`);
+  check(!(await q("SELECT 1 FROM inventory_items WHERE settlement_id=$1 AND item_key='iron_dagger'", [M1.sid])).rowCount, 'it left the stores for the stall');
+  check(dagListing && dagListing.item_snapshot.metadata.crafted_by.name === 'Cole', 'the stall shows the crafter\'s mark');
+  // Fill the remaining stalls, then the next piece can't be listed.
+  const stallsNow = await require('../lib/market').stallState({ query: q }, M1.sid);
+  const freeStalls = Object.values(stallsNow).reduce((n, v) => n + Math.max(0, v.free || 0), 0);
+  for (let i = 0; i < freeStalls; i++) {
+    await q(`INSERT INTO market_orders (seller_settlement_id, kind, item_key, item_snapshot, venue, lot_size, lot_price, qty_total, qty_escrowed, expires_at)
+             VALUES ($1,'item','iron_ore','{"name":"Iron Ore","item_key":"iron_ore","category":"material"}','market',1,5,1,1,NOW() + interval '1 day')`, [M1.sid]);
+  }
+  await api(M1, 'POST', '/api/crafting/jobs', { citizen_id: sm1, recipe_key: 'iron_dagger', qty: 1, list: { markup: 0 } });
+  jobsNow = (await jobsOf(sm1)).filter(x => x.status === 'active');
+  await due(jobsNow[0].id);
+  await crafting.resolveDue(M1.sid, { rand: () => 0.5 });
+  jobRow = (await q('SELECT * FROM craft_jobs WHERE id=$1', [jobsNow[0].id])).rows[0];
+  check(jobRow.status === 'done' && !jobRow.roll.listed && /full/.test(jobRow.roll.list_failed || '') && (await q("SELECT 1 FROM inventory_items WHERE settlement_id=$1 AND item_key='iron_dagger'", [M1.sid])).rowCount === 1,
+    `stalls full: kept in the stores, and says why ("${jobRow.roll.list_failed}")`);
+  const N1 = await user('nomkt', [['smithy', 1]]);
+  const sm2 = await citizen(N1, 'blacksmith', { name: 'Dell' });
+  jobRow = await finish(N1, sm2, () => 0.5);
+  await api(N1, 'POST', '/api/crafting/jobs', { citizen_id: sm2, recipe_key: 'iron_dagger', qty: 1, list: { markup: 0.25 } });
+  jobsNow = (await jobsOf(sm2)).filter(x => x.status === 'active');
+  await due(jobsNow[0].id);
+  await crafting.resolveDue(N1.sid, { rand: () => 0.5 });
+  jobRow = (await q('SELECT * FROM craft_jobs WHERE id=$1', [jobsNow[0].id])).rows[0];
+  check(/shopkeeper|Market/.test(jobRow.roll.list_failed || '') && (await q("SELECT COUNT(*)::int AS n FROM inventory_items WHERE settlement_id=$1 AND item_key='iron_dagger'", [N1.sid])).rows[0].n === 2,
+    'no Market: the piece stays home');
+
+  console.log('Schematic loot');
+  const G1 = await user('loot');
+  const gotSch = await crafting.grantRandomSchematic({ query: q }, G1.sid, () => 0, 'quest');
+  const gotRow = gotSch && (await q('SELECT * FROM inventory_items WHERE settlement_id=$1 AND item_key=$2', [G1.sid, gotSch.item_key])).rows[0];
+  check(gotRow && gotRow.category === 'schematic' && gotRow.item_key.startsWith('schematic_'), `loot can be a schematic (${gotSch && gotSch.name})`);
+  r = await api(G1, 'POST', `/api/crafting/schematics/${gotRow.id}/study`);
+  check(r.status === 200, '…which can be studied');
+  const pickCount = {};
+  for (let i = 0; i < 200; i++) { const t = await crafting.randomSchematic({ query: q }, (() => { const u = (i + 0.5) / 200; return () => u; })()); pickCount[t.min_level] = (pickCount[t.min_level] || 0) + 1; }
+  const lvls = Object.keys(pickCount).map(Number).sort((a, b) => a - b);
+  check(pickCount[lvls[0]] > pickCount[lvls[lvls.length - 1]], 'lower-level schematics turn up more often');
+  if (process.env.CRAFTING_TEST_ADMIN_ID) {
+    const adm = await user('admin2', [], Number(process.env.CRAFTING_TEST_ADMIN_ID));
+    r = await api(adm, 'POST', '/api/crafting/admin/recipes/sledge/teach');
+    check(r.status === 200 && (await crafting.knownSet(null, adm.sid)).has('sledge'), 'Dev Tools: teach my town a recipe');
+    await q("DELETE FROM settlement_recipes WHERE settlement_id=$1 AND recipe_key='sledge'", [adm.sid]);
+  }
 
   await pool.end();
 }
