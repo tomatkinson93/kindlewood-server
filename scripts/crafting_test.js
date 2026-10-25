@@ -144,7 +144,7 @@ async function part2() {
     if (!cls || cls.station !== r.station) errs.push('class/station ' + r.recipe_key);
     if (r.spec && !C.specOf(cls, r.spec)) errs.push('spec ' + r.recipe_key);
     if (r.unlock_node && !(cls && cls.tree.some(n => n.id === r.unlock_node))) errs.push('unlock ' + r.recipe_key);
-    if (!keys.has(r.output_key)) errs.push('output ' + r.recipe_key);
+    if (!keys.has(r.output_key) && !require('../lib/resource_defs').isResource(r.output_key)) errs.push('output ' + r.recipe_key);
     for (const it of (r.inputs.items || [])) if (!keys.has(it.item_key)) errs.push('input ' + r.recipe_key + ':' + it.item_key);
     if (r.spec && r.min_level < M.FORK_LEVEL) errs.push('spec level ' + r.recipe_key);
   }
@@ -191,7 +191,7 @@ async function part2() {
   await careers.adminGrant(a.sid, s1, 'blacksmith', { level: 3 });
   await q('UPDATE settlements SET metal = 10 WHERE id = $1', [a.sid]);
   r = await api(a, 'POST', '/api/crafting/jobs', { citizen_id: s1, recipe_key: 'iron_sword', qty: 1 });
-  check(r.status === 400 && /metal/.test(r.body.error), 'not enough metal: refused');
+  check(r.status === 400 && /iron/.test(r.body.error), 'not enough iron: refused');
   await q('UPDATE settlements SET metal = 500 WHERE id = $1', [a.sid]);
   r = await api(a, 'POST', '/api/crafting/jobs', { citizen_id: s1, recipe_key: 'iron_sword', qty: 1 });
   check(r.status === 400 && /Iron Ore|iron_ore|enough/i.test(r.body.error) && (await res(a.sid)).metal === 500, 'no Iron Ore: refused, metal untouched');
@@ -306,6 +306,7 @@ async function part2() {
   const opal = r.body.crafters.find(c => c.id === jw);
   check(opal.can.gold_ring === null && /Gemcutter/.test(opal.can.cut_gem), 'Goldsmiths make gold, not cut gems');
   check(/level 3/.test(opal.can.heart_of_the_mountain) || /Gemcutter/.test(opal.can.heart_of_the_mountain), 'the Heart of the Mountain needs its own path and station');
+  await q('UPDATE settlements SET goldore = 10 WHERE id = $1', [b.sid]);
   r = await api(b, 'POST', '/api/crafting/jobs', { citizen_id: jw, recipe_key: 'gold_ring', qty: 1 });
   jobs = await jobsOf(jw);
   await due(jobs[0].id);
@@ -328,6 +329,54 @@ async function part2() {
   r = await api(a, 'GET', '/api/market/ironhaven');
   const iv = (r.body.items || r.body.sell || []).find && (r.body.items || r.body.sell || []).find(x => x.id === made.id);
   if (iv) check(Number(iv.value || iv.unit_price) > 0, 'Ironhaven prices the crafted sword');
+
+  console.log('Smelter');
+  const RD = require('../lib/resource_defs');
+  const sm = await user('smelt', [['mine', 1], ['smelter', 2]]);
+  const fur = await citizen(sm, 'smelter', { name: 'Ember' });
+  await q('UPDATE settlements SET copper = 20, tin = 10, coal = 10, metal = 50 WHERE id = $1', [sm.sid]);
+  r = await api(sm, 'GET', '/api/crafting/station/smelter');
+  const bz = r.body.recipes && r.body.recipes.find(x => x.recipe_key === 'bronze');
+  check(r.status === 200 && r.body.slots === 2 && bz && bz.output && bz.output.resource && bz.output.name === 'Bronze', 'the Smelter panel: two furnaces, Bronze makes a resource');
+  check(/Needs research: Smelting/.test((r.body.crafters[0] || { can: {} }).can.bronze || ''), 'bronze needs the Smelting research');
+  r = await api(sm, 'POST', '/api/crafting/jobs', { citizen_id: fur, recipe_key: 'bronze', qty: 1 });
+  check(r.status === 400 && /Smelting/.test(r.body.error), '…and the server refuses it before then');
+  await q("INSERT INTO settlement_research (settlement_id, project, progress, done_at) VALUES ($1,'smelting',150,NOW())", [sm.sid]);
+  r = await api(sm, 'POST', '/api/crafting/jobs', { citizen_id: fur, recipe_key: 'bronze', qty: 2 });
+  const sres = (await q('SELECT copper, tin FROM settlements WHERE id=$1', [sm.sid])).rows[0];
+  check(r.status === 200 && sres.copper === 16 && sres.tin === 8, 'two batches of bronze take 4 copper and 2 tin');
+  for (const j of await jobsOf(fur)) await due(j.id);
+  await crafting.resolveDue(sm.sid, { rand: () => 0.99 });
+  await crafting.resolveDue(sm.sid, { rand: () => 0.99 });
+  const bres = (await q('SELECT bronze FROM settlements WHERE id=$1', [sm.sid])).rows[0];
+  const sj = await jobsOf(fur);
+  check(bres.bronze === 4 && sj.every(j => j.status === 'done' && j.quality === 'basic' && j.result_item_id === null), 'each batch puts 2 bronze in the stores (no item)');
+  check((await require('../lib/resources').discoveredKeys(null, sm.sid)).includes('bronze'), 'the first bronze is a discovery');
+  check(Number(sj[0].xp_awarded) > 0, 'smelting earns Smelter XP');
+  check(!(await api(sm, 'POST', '/api/crafting/jobs', { citizen_id: fur, recipe_key: 'steel', qty: 1 })).status.toString().startsWith('2'), 'steel waits for Steelworking (and level 3)');
+  await q('UPDATE settlements SET copper = 3 WHERE id = $1', [sm.sid]);
+  r = await api(sm, 'POST', '/api/crafting/jobs', { citizen_id: fur, recipe_key: 'bronze', qty: 5 });
+  check(r.status === 400 && /copper/i.test(r.body.error), 'not enough copper: the error names it');
+
+  console.log('Recipes on the new metals');
+  const recs = Object.fromEntries((await crafting.recipes()).map(x => [x.recipe_key, x]));
+  check(recs.steel_sword.inputs.resources.steel > 0 && recs.plate_armour.inputs.resources.steel > 0 && recs.tower_shield.inputs.resources.steel > 0, 'steel sword, plate and the tower shield need steel');
+  check(recs.scale_mail.inputs.resources.bronze > 0 && recs.caravan_wagon.inputs.resources.bronze > 0, 'scale mail and caravan wagons use bronze');
+  check(recs.gold_ring.inputs.resources.goldore > 0 && recs.gem_pendant.inputs.resources.silver > 0 && recs.cut_gem.inputs.resources.gems === 2, 'jewellers use gold ore, silver and gems');
+  check(recs.heart_of_the_mountain.inputs.resources.mithril === 2, 'the Heart of the Mountain needs mithril');
+  check(Object.values(recs).every(x => Object.keys((x.inputs || {}).resources || {}).every(k => RD.isResource(k))), 'every recipe input is a known resource');
+  check(Object.values(recs).filter(x => x.station === 'smelter').every(x => RD.isResource(x.output_key) && x.research), 'Smelter recipes make resources and name their research');
+
+  console.log('Gem finds');
+  const gm = await user('gem', [['mine', 1]]);
+  const gmc = await citizen(gm, 'miner', { name: 'Glint' });
+  const careersLib = require('../lib/careers');
+  const gf = await require('../db').withTransaction(c => careersLib._grantFind ? careersLib._grantFind(c, gm.sid, 'gemstone', 'spring') : null);
+  if (gf) {
+    const gs = (await q('SELECT gems FROM settlements WHERE id=$1', [gm.sid])).rows[0];
+    check(gf.resource === 'gems' && gs.gems === 1, 'a miner\'s gemstone find goes into the stores as Gems');
+  } else check(false, 'grantFind is exported for tests');
+  void gmc;
 
   console.log('Dev Tools');
   const adminId = Number(process.env.CRAFTING_TEST_ADMIN_ID || 0);
@@ -382,6 +431,7 @@ async function part2() {
   const schB = await sch(otherTown, 'schematic_harvest_brooch');
   r = await api(L1, 'POST', `/api/crafting/schematics/${schB}/study`);
   check(r.status === 404, 'not someone else\'s');
+  await q('UPDATE settlements SET silver = 10 WHERE id = $1', [L1.sid]);
   r = await api(L1, 'POST', '/api/crafting/jobs', { citizen_id: jB, recipe_key: 'miners_amulet', qty: 1 });
   check(r.status === 200, 'a learned recipe queues like any other');
 

@@ -144,7 +144,7 @@ const BUILDINGS = {
   mine: {
     id: 'mine',
     label: 'Mine',
-    desc: 'Shafts into the hillside. Miners dig stone and ore here — they need a Mine to work.',
+    desc: 'Shafts into the hillside. Miners dig stone and iron here — they need a Mine to work. Miners also turn up new ores, and each level digs deeper for rarer ones.',
     icon: '⛏️',
     cost: { timber: 60, food: 30 },
     maxLevel: 3,
@@ -195,6 +195,34 @@ const BUILDINGS = {
     craftSlots: (level) => level,
     requires: [],
   },
+  // Smelters' workplace (careers): copper + tin → bronze, iron + coal → steel.
+  // Needs the Smelting research (lib/research_defs.js).
+  smelter: {
+    id: 'smelter',
+    label: 'Smelter',
+    desc: 'A roaring furnace. Smelters turn copper and tin into bronze, and iron and coal into steel — each level adds a furnace.',
+    icon: '🔥',
+    cost: { timber: 80, stone: 120, metal: 40 },
+    maxLevel: 3,
+    effect: () => ({}),
+    citizenSlots: (level) => level,
+    craftSlots: (level) => level,
+    requires: ['mine'],
+    research: 'smelting',
+  },
+  // Scholars' workplace (careers): research points for the town's project
+  // (lib/research.js). Each level seats one more Scholar and studies 10% faster.
+  library: {
+    id: 'library',
+    label: 'Library',
+    desc: 'Shelves, candles and long tables. Scholars study here, unlocking new resources, buildings and recipes. Each level seats another Scholar and studies 10% faster.',
+    icon: '📚',
+    cost: { timber: 100, stone: 80, wealth: 60 },
+    maxLevel: 3,
+    effect: () => ({}),
+    citizenSlots: (level) => level,
+    requires: [],
+  },
 };
 
 // Citizen role → building it contributes to
@@ -213,6 +241,8 @@ const ROLE_BUILDING_MAP = {
   blacksmith:  ['smithy'],
   jeweller:    ['jeweller'],
   carpenter:   ['workshop'],
+  smelter:     ['smelter'],
+  scholar:     ['library'],
 };
 
 // Per-citizen production (careers). Lazy require: profiles → classes, no cycle.
@@ -224,7 +254,8 @@ function citizenContributions(buildings, citizens) {
 // `outposts` (010): [{ terrain, level }, ...] — optional 4th param so the
 // two pre-outpost call sites keep working unchanged. Yields are integer /hr
 // by config, so the production floor in applyTick gains no new residue.
-function calculateRates(buildings, citizens, species, outposts = []) {
+// `opts.research`: Set of finished research projects (unlocks rarer ores).
+function calculateRates(buildings, citizens, species, outposts = [], opts = {}) {
   const BASE_RATES = {
     Mice:    { food:20, timber:10, stone:5,  metal:3,  wealth:8  },
     Badgers: { food:12, timber:15, stone:12, metal:8,  wealth:5  },
@@ -268,6 +299,10 @@ function calculateRates(buildings, citizens, species, outposts = []) {
       }
     }
   }
+
+  // Ores, rare materials (lib/ores.js): miners at the Mine, hill and
+  // mountain outposts.
+  Object.assign(rates, require('./lib/ores').oreRates(buildings, citizens, outposts, opts.research).rates);
 
   return rates;
 }

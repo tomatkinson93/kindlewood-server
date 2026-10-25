@@ -85,6 +85,7 @@ app.use('/api/clan-quests', require('./routes/clan_quests'));
 app.use('/api/market', require('./routes/market'));
 app.use('/api/travel', require('./routes/travel'));
 app.use('/api/careers', require('./routes/careers'));
+app.use('/api/research', require('./routes/research'));
 app.use('/api/crafting', require('./routes/crafting'));
 app.use((err, req, res, next) => {
   console.error(err.message);

@@ -179,6 +179,7 @@ router.get('/', requireAuth, async (req, res) => {
 // Each expedition is claimed first (status → complete), so the lazy read
 // and the worker can't both finish it.
 const EXPEDITION_SCHEMATIC = { perHex: 0.008, max: 0.12 };
+const EXPEDITION_ORE = { perHex: 0.02, max: 0.3, keys: ['copper', 'tin', 'coal', 'silver', 'goldore', 'gems', 'obsidian'] };
 async function completeExpeditions(settlementId, userId) {
   const done = await query(
     `UPDATE expeditions SET status='complete' WHERE settlement_id=$1 AND status='travelling' AND completes_at <= NOW() RETURNING *`,
@@ -209,6 +210,22 @@ async function completeExpeditions(settlementId, userId) {
     if (Math.random() < Math.min(EXPEDITION_SCHEMATIC.max, EXPEDITION_SCHEMATIC.perHex * path.length)) {
       const t = await require('../lib/crafting').grantRandomSchematic({ query }, settlementId, Math.random, 'expedition').catch(() => null);
       if (t) require('../lib/event_bus').publish(settlementId, { type: 'schematic_found', source: 'expedition', item: { name: t.name, icon: t.icon } });
+    }
+    // …and sometimes an ore sample: a handful of a resource the town may
+    // not have seen yet (that's a discovery). Rarer ones only once studied.
+    if (Math.random() < Math.min(EXPEDITION_ORE.max, EXPEDITION_ORE.perHex * path.length)) {
+      const done = await require('../lib/research').doneSet(null, settlementId);
+      const pool = EXPEDITION_ORE.keys.filter(k => require('../lib/ores').available(k, done));
+      const key = pool[Math.floor(Math.random() * pool.length)];
+      const qty = 5 + Math.floor(Math.random() * 11);
+      if (key) {
+        await query(`UPDATE settlements SET ${key} = ${key} + $2 WHERE id = $1`, [settlementId, qty]);
+        const isNew = await require('../lib/resources').discover(null, settlementId, key, 'expedition');
+        const RD = require('../lib/resource_defs');
+        await query('INSERT INTO settlement_events (settlement_id, type, message, citizen_ids) VALUES ($1,$2,$3,$4)',
+          [settlementId, 'expedition', `${RD.icon(key)} An expedition brought back ${qty} ${RD.label(key).toLowerCase()}${isNew ? ' — something new!' : '.'}`, JSON.stringify(exp.citizen_id ? [exp.citizen_id] : [])]).catch(() => {});
+        require('../lib/event_bus').publish(settlementId, { type: 'ore_sample', resource: key, qty, discovered: isNew });
+      }
     }
     // citizen is now free (tracked by expedition status)
     if (exp.citizen_id) {

@@ -89,7 +89,7 @@ async function loadUserSettlement(userId, client = null) {
 // GET /settlement.
 async function freshResourcesAndRates(settlementId, userId) {
   const [sRes, uRes, bRes, cRows, oRes] = await Promise.all([
-    query('SELECT food, timber, stone, metal, wealth FROM settlements WHERE id=$1', [settlementId]),
+    query(`SELECT ${require('../lib/resource_defs').KEYS.join(', ')} FROM settlements WHERE id=$1`, [settlementId]),
     query('SELECT species FROM users WHERE id=$1', [userId]),
     query('SELECT type, level FROM buildings WHERE settlement_id=$1', [settlementId]),
     require('../lib/careers').loadWorkforce(null, settlementId).catch(async () =>
@@ -99,7 +99,7 @@ async function freshResourcesAndRates(settlementId, userId) {
   const { calculateRates } = require('../buildings');
   const { getCurrentSeason, applySeasonModifiers } = require('../seasons');
   const species = uRes.rows[0]?.species || 'Mice';
-  const baseRates = calculateRates(bRes.rows, cRows, species, oRes.rows);
+  const baseRates = calculateRates(bRes.rows, cRows, species, oRes.rows, { research: await require('../lib/research').doneSet(null, settlementId) });
   const rates = applySeasonModifiers(baseRates, getCurrentSeason());
   return { resources: sRes.rows[0], rates };
 }

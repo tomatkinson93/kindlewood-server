@@ -144,6 +144,13 @@ function applySeasonModifiers(rates, season) {
       modified[res] = Math.round(modified[res] * mult);
     }
   }
+  // Ores follow a base resource's season (lib/resource_defs `follows`); they
+  // are small numbers, so keep two decimals.
+  const RD = require('./lib/resource_defs');
+  for (const k of RD.EXTRA) {
+    const mult = season.modifiers[RD.def(k).follows];
+    if (typeof modified[k] === 'number' && mult != null) modified[k] = Math.round(modified[k] * mult * 100) / 100;
+  }
   return modified;
 }
 

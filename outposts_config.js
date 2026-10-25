@@ -11,6 +11,8 @@
 //      Turning them on later = set the object + flip SECONDARY_YIELDS_ENABLED.
 //    • level is read (yield = primary × level) but nothing writes level > 1
 //      yet — the upgrade route is reserved, not built.
+//    • `ores` (per hour × level): extra resources a terrain turns up
+//      (lib/ores.js). Research-gated ones (resource_defs) only once studied.
 //    • Upkeep is SEASON-FLAT (no winter ×1.20) by design — winter already
 //      squeezes outpost YIELDS via the production season modifier; flat
 //      upkeep squeezes one end only. See spec §5.
@@ -21,8 +23,10 @@
 const OUTPOST_CONFIG = {
   plains:   { name: 'Farmstead',      icon: '🌾', primary: { food: 6 },   secondary: null /* { wealth: 1 } */ },
   forest:   { name: 'Logging Camp',   icon: '🪓', primary: { timber: 6 }, secondary: null /* { food: 1 }   */ },
-  hills:    { name: 'Quarry',         icon: '⛏️', primary: { stone: 5 },  secondary: null /* { metal: 1 }  */ },
-  mountain: { name: 'Mine',           icon: '⚒️', primary: { metal: 5 },  secondary: null /* { stone: 1 }  */ },
+  hills:    { name: 'Quarry',         icon: '⛏️', primary: { stone: 5 },  secondary: null /* { metal: 1 }  */,
+              ores: { copper: 0.6, tin: 0.5, coal: 0.8 } },
+  mountain: { name: 'Mine',           icon: '⚒️', primary: { metal: 5 },  secondary: null /* { stone: 1 }  */,
+              ores: { silver: 0.4, goldore: 0.25, gems: 0.06, obsidian: 0.2, mithril: 0.03, moonsilver: 0.03 } },
   river:    { name: 'Fishing Wharf',  icon: '🎣', primary: { wealth: 4 }, secondary: null /* { food: 2 }   */ },
   marsh:    { name: "Forager's Camp", icon: '🌿', primary: { food: 4 },   secondary: null /* { timber: 1 } */ },
   ruins:    { name: 'Excavation',     icon: '🏺', primary: { wealth: 4 }, secondary: null /* { metal: 1 }  */ },
@@ -76,7 +80,7 @@ function outpostYields(terrain, level = 1) {
 function publicConfig() {
   const cfg = {};
   for (const [terrain, c] of Object.entries(OUTPOST_CONFIG)) {
-    cfg[terrain] = { name: c.name, icon: c.icon, yields: outpostYields(terrain, 1) };
+    cfg[terrain] = { name: c.name, icon: c.icon, yields: outpostYields(terrain, 1), ores: c.ores || {} };
   }
   return cfg;
 }

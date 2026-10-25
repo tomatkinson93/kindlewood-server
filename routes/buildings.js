@@ -1,8 +1,31 @@
 const express = require('express');
 const { createHouseForSettlement, removeHouseForSettlement } = require('./housing');
 const { query } = require('../db');
+const RD = require('../lib/resource_defs');
+const RS = require('../lib/research_defs');
 const requireAuth = require('../middleware/auth');
 const { BUILDINGS, TIER_ORDER, calculateRates } = require('../buildings');
+
+// Building-cost discounts: research (Engineering) and the best Stonemason's
+// perks. → { mult, parts: [{ label, pct }] }
+// Capped at −20% in all.
+const MAX_BUILD_DISCOUNT = 0.2;
+async function buildDiscount(sid, done) {
+  const parts = [];
+  const r = RS.effectsOf(done || await require('../lib/research').doneSet(null, sid)).build_cost || 0;
+  if (r) parts.push({ label: 'Engineering', pct: r });
+  // The town's best Stonemason (careers build_cost perks): theirs alone counts.
+  const wf = await require('../lib/careers').loadWorkforce(null, sid).catch(() => []);
+  let best = null;
+  for (const c of wf) {
+    const v = c.profile && c.profile.effects ? Number(c.profile.effects.build_cost) || 0 : 0;
+    if (v < 0 && (!best || v < best.pct)) best = { label: `Stonemason ${c.name}`, pct: v };
+  }
+  if (best) parts.push(best);
+  const total = Math.max(-MAX_BUILD_DISCOUNT, parts.reduce((a, p) => a + p.pct, 0));
+  return { mult: 1 + total, parts };
+}
+const scaledCost = (def, level, mult) => Object.fromEntries(Object.entries(def.cost).map(([r, v]) => [r, Math.ceil(v * level * mult)]));
 
 // True when a settlement at `tier` may build `def` (its optional minTier).
 function tierMetFor(def, tier) {
@@ -50,6 +73,10 @@ router.get('/', requireAuth, async (req, res) => {
       }
     }
 
+    // Finished research (a building can need a project: the Smelter).
+    const done = await require('../lib/research').doneSet(null, settlement.id);
+    const discount = await buildDiscount(settlement.id, done);
+
     // Determine what can be built / upgraded
     const available = Object.values(BUILDINGS).map(def => {
       const existing = builtMap[def.id];
@@ -65,12 +92,8 @@ router.get('/', requireAuth, async (req, res) => {
       const nextLevelTier = canUpgrade ? levelTierFor(def, currentLevel + 1) : null;
       const nextLevelTierMet = !canUpgrade || levelTierMet(def, currentLevel + 1, settlement.tier);
 
-      // Scale cost with level
-      const levelMultiplier = currentLevel + 1;
-      const cost = {};
-      for (const [r, v] of Object.entries(def.cost)) {
-        cost[r] = v * levelMultiplier;
-      }
+      // Scale cost with level, less any discount (Engineering…)
+      const cost = scaledCost(def, currentLevel + 1, discount.mult);
 
       return {
         id: def.id,
@@ -83,11 +106,15 @@ router.get('/', requireAuth, async (req, res) => {
         canUpgrade,
         requiresMet,
         tierMet,
+        research: def.research || null,
+        researchLabel: def.research ? RS.label(def.research) : null,
+        researchMet: !def.research || done.has(def.research),
         minTier: def.minTier || null,
         nextLevelTier,
         nextLevelTierMet,
         levelTierReq: def.levelTierReq || null,
         cost,
+        discount: discount.parts.length ? discount.parts : null,
         effect: def.effect(Math.max(1, currentLevel)),
         nextEffect: canUpgrade ? def.effect(currentLevel + 1) : null,
         citizenSlots: def.citizenSlots(Math.max(1, currentLevel)),
@@ -149,6 +176,9 @@ router.post('/build', requireAuth, async (req, res) => {
     if (!levelTierMet(def, currentLevel + 1, settlement.tier))
       return res.status(400).json({ error: `Level ${currentLevel + 1} ${def.label} requires a ${tierLabel(levelTierFor(def, currentLevel + 1))} settlement.` });
 
+    if (def.research && !(await require('../lib/research').doneSet(null, settlement.id)).has(def.research))
+      return res.status(400).json({ error: `Study ${RS.label(def.research)} at a Library first.` });
+
     // Check requirements
     for (const req of def.requires) {
       const reqCheck = await query(
@@ -159,30 +189,20 @@ router.post('/build', requireAuth, async (req, res) => {
         return res.status(400).json({ error: `Requires ${BUILDINGS[req]?.label || req} first.` });
     }
 
-    // Scale cost by level
-    const levelMultiplier = currentLevel + 1;
-    const cost = {};
-    for (const [r, v] of Object.entries(def.cost)) {
-      cost[r] = v * levelMultiplier;
+    // Scale cost by level, less any discount (Engineering…)
+    const cost = scaledCost(def, currentLevel + 1, (await buildDiscount(settlement.id)).mult);
+
+    // Check resources (any resource in lib/resource_defs.js)
+    for (const [r, v] of Object.entries(cost)) {
+      if (!RD.isResource(r)) continue;
+      if (v > (Number(settlement[r]) || 0)) return res.status(400).json({ error: `Not enough ${RD.label(r).toLowerCase()}. Need ${v}.` });
     }
 
-    // Check resources
-    if ((cost.food   || 0) > settlement.food)   return res.status(400).json({ error: `Not enough food. Need ${cost.food}.` });
-    if ((cost.timber || 0) > settlement.timber) return res.status(400).json({ error: `Not enough timber. Need ${cost.timber}.` });
-    if ((cost.stone  || 0) > settlement.stone)  return res.status(400).json({ error: `Not enough stone. Need ${cost.stone}.` });
-    if ((cost.metal  || 0) > settlement.metal)  return res.status(400).json({ error: `Not enough metal. Need ${cost.metal}.` });
-    if ((cost.wealth || 0) > settlement.wealth) return res.status(400).json({ error: `Not enough wealth. Need ${cost.wealth}.` });
-
     // Deduct resources
-    await query(`
-      UPDATE settlements SET
-        food   = food   - $1,
-        timber = timber - $2,
-        stone  = stone  - $3,
-        metal  = metal  - $4,
-        wealth = wealth - $5
-      WHERE id = $6
-    `, [cost.food||0, cost.timber||0, cost.stone||0, cost.metal||0, cost.wealth||0, settlement.id]);
+    const costKeys = Object.keys(cost).filter(r => RD.isResource(r) && cost[r] > 0);
+    if (costKeys.length) await query(
+      `UPDATE settlements SET ${costKeys.map((r, i) => `${r} = ${r} - $${i + 1}`).join(', ')} WHERE id = $${costKeys.length + 1}`,
+      [...costKeys.map(r => cost[r]), settlement.id]);
 
     // Build or upgrade
     if (def.isHousing) {
@@ -255,17 +275,10 @@ router.post('/remove', requireAuth, async (req, res) => {
       for (const [r, v] of Object.entries(def.cost)) {
         refund[r] = Math.floor(v * 0.5);
       }
-      if (Object.keys(refund).length) {
-        await query(`
-          UPDATE settlements SET
-            food   = food   + $1,
-            timber = timber + $2,
-            stone  = stone  + $3,
-            metal  = metal  + $4,
-            wealth = wealth + $5
-          WHERE id = $6
-        `, [refund.food||0, refund.timber||0, refund.stone||0, refund.metal||0, refund.wealth||0, settlement.id]);
-      }
+      const keys = Object.keys(refund).filter(r => RD.isResource(r) && refund[r] > 0);
+      if (keys.length) await query(
+        `UPDATE settlements SET ${keys.map((r, i) => `${r} = ${r} + $${i + 1}`).join(', ')} WHERE id = $${keys.length + 1}`,
+        [...keys.map(r => refund[r]), settlement.id]);
     }
 
     // Remove from DB
@@ -304,3 +317,4 @@ router.get('/definitions', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.buildDiscount = buildDiscount;

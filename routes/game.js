@@ -13,6 +13,9 @@ const happenings = require('../lib/happenings');
 const HFX = require('../lib/happening_effects');
 const gameEvents = require('../lib/game_events');
 const awayReport = require('../lib/away_report');
+const RD = require('../lib/resource_defs');
+const resourcesLib = require('../lib/resources');
+const research = require('../lib/research');
 
 const router = express.Router();
 
@@ -97,7 +100,7 @@ async function applyTick(settlement, species, workforce) {
     query('SELECT id, tile_q, tile_r, terrain, level FROM outposts WHERE settlement_id=$1', [settlement.id]).catch(() => ({ rows: [] })),
   ]);
   const wf = workforce || await loadWorkforce(settlement.id);
-  const baseRates = calculateRates(bRes.rows, wf, species, oRes.rows);
+  const baseRates = calculateRates(bRes.rows, wf, species, oRes.rows, { research: await research.doneSet(null, settlement.id) });
   // Effective production hours per resource over exactly [last_tick, now]:
   // each season multiplier applies only to the hours it covered (seasons are
   // 7h, so a long absence spans several), and Happening modifiers are
@@ -105,20 +108,24 @@ async function applyTick(settlement, species, workforce) {
   const effHours = awayReport.effectiveProductionHours(await happenings.loadLive(), lastTick, now);
   const extra = seasonalExtra(bRes.rows, wf, lastTick, now);
   const updated = {}, delta = {};
-  for (const res of HFX.RESOURCES) {
-    updated[res] = Math.floor(settlement[res] + (baseRates[res] || 0) * effHours[res] + (extra[res] || 0));
-    delta[res] = updated[res] - settlement[res];
+  // Ores and other extras share the season / Happening hours of the base
+  // resource they follow (resource_defs `follows`).
+  for (const res of RD.KEYS) {
+    const hours = effHours[res] ?? effHours[RD.def(res).follows] ?? 0;
+    updated[res] = Math.floor((Number(settlement[res]) || 0) + (baseRates[res] || 0) * hours + (extra[res] || 0));
+    delta[res] = updated[res] - (Number(settlement[res]) || 0);
   }
 
   // Deltas, not absolutes, and only if nobody ticked since we read: a spend
   // landing between our read and this write (market escrow, crafting) is
   // never undone, and two page loads can't both credit the same hours.
+  const n = RD.KEYS.length;
   const w = await query(`
     UPDATE settlements
-    SET food=food+$1, timber=timber+$2, stone=stone+$3, metal=metal+$4, wealth=wealth+$5, last_tick=NOW()
-    WHERE id=$6 AND date_trunc('milliseconds', last_tick) = date_trunc('milliseconds', $7::timestamptz)
-    RETURNING food, timber, stone, metal, wealth, last_tick
-  `, [delta.food, delta.timber, delta.stone, delta.metal, delta.wealth, settlement.id, new Date(lastTick).toISOString()]);
+    SET ${RD.KEYS.map((k, i) => `${k}=${k}+$${i + 1}`).join(', ')}, last_tick=NOW()
+    WHERE id=$${n + 1} AND date_trunc('milliseconds', last_tick) = date_trunc('milliseconds', $${n + 2}::timestamptz)
+    RETURNING ${RD.KEYS.join(', ')}, last_tick
+  `, [...RD.KEYS.map(k => delta[k]), settlement.id, new Date(lastTick).toISOString()]);
   if (!w.rowCount) {
     const fresh = (await query('SELECT * FROM settlements WHERE id=$1', [settlement.id])).rows[0];
     return fresh || settlement;
@@ -128,7 +135,9 @@ async function applyTick(settlement, species, workforce) {
   // produced since the player was last seen online. Separate statement so a
   // ledger problem can never block production.
   await addToAwayLedger(settlement.id, Object.fromEntries(
-    HFX.RESOURCES.map(res => ['produced_' + res, Math.max(0, delta[res])])));
+    RD.KEYS.map(res => ['produced_' + res, Math.max(0, delta[res])])));
+  // The first ore a mine or outpost turns up is a discovery.
+  for (const res of RD.EXTRA) if (delta[res] > 0) await resourcesLib.discover(null, settlement.id, res, 'mine').catch(() => {});
 
   // ── Consumption & famine tick ──
   // MUST run AFTER the production write above: applyConsumption deducts food
@@ -197,8 +206,15 @@ router.get('/settlement', requireAuth, async (req, res) => {
       [settlement.id]
     ).catch(() => ({ rows: [] }));
     const season = getCurrentSeason();
-    const baseRates = calculateRates(buildingsResult.rows, workforce, user.species, outpostsResult.rows);
-    const rates = applyHappeningRates(applySeasonModifiers(baseRates, season), await happeningModsNow());
+    const baseRates = calculateRates(buildingsResult.rows, workforce, user.species, outpostsResult.rows, { research: await research.doneSet(null, settlement.id) });
+    const hMods = await happeningModsNow();
+    const rates = applyHappeningRates(applySeasonModifiers(baseRates, season), hMods);
+    // Ores share the season and Happening multiplier of the resource they follow.
+    for (const k of RD.EXTRA) {
+      if (!baseRates[k]) continue;
+      const f = RD.def(k).follows;
+      rates[k] = Math.round(baseRates[k] * (season.modifiers[f] ?? 1) * HFX.productionFactor(hMods, f) * 100) / 100;
+    }
     // Season know-how (careers) on top, this season only.
     const know = citizenContributions(buildingsResult.rows, workforce).seasonal[season.id] || {};
     for (const [res, v] of Object.entries(know)) if (typeof rates[res] === 'number') rates[res] = Math.round(rates[res] + v);
@@ -214,6 +230,14 @@ router.get('/settlement', requireAuth, async (req, res) => {
       console.error('[famine] summary error:', famineErr.message);
     }
 
+    // Extras the town holds count as discovered (an admin grant, a trade);
+    // unseen discoveries become the "New discovery!" cards.
+    await resourcesLib.discoverHeld(null, settlement).catch(() => []);
+    // The Library: research points for the hours studied (gated; cheap).
+    await research.settle(settlement.id).catch(e => console.error('[research] settle failed:', e.message));
+    const discovered = await resourcesLib.discoveredKeys(null, settlement.id);
+    const newDiscoveries = await resourcesLib.unseen(null, settlement.id);
+
     console.log(`SETTLEMENT returning tile_q=${settlement.tile_q} for user=${req.user.userId}`);
     res.json({
       ok: true,
@@ -225,10 +249,9 @@ router.get('/settlement', requireAuth, async (req, res) => {
         tile_r: settlement.tile_r,
         isNewSettlement: (settlement.tile_q == null),
         needsResettlement: (settlement.world_version || 0) < 2,
-        resources: {
-          food: settlement.food, timber: settlement.timber,
-          stone: settlement.stone, metal: settlement.metal, wealth: settlement.wealth,
-        },
+        resources: resourcesLib.resourcesOf(settlement),
+        discovered: discovered,
+        new_discoveries: newDiscoveries,
         rates,
         baseRates,
         season,
@@ -1195,27 +1218,36 @@ router.post('/reset-placement', requireAuth, async (req, res) => {
 // ── Cheat menu ──
 router.post('/cheat/resources', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { food, timber, stone, metal, wealth } = req.body;
     const settlementRes = await query(
       'SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]
     );
     const settlement = settlementRes.rows[0];
     if (!settlement) return res.status(404).json({ error: 'No settlement.' });
 
+    // Any resource in lib/resource_defs.js; granting an extra discovers it.
+    const amounts = RD.KEYS.map(k => Math.trunc(Number(req.body[k]) || 0));
     await query(`
-      UPDATE settlements SET
-        food   = GREATEST(0, food   + $1),
-        timber = GREATEST(0, timber + $2),
-        stone  = GREATEST(0, stone  + $3),
-        metal  = GREATEST(0, metal  + $4),
-        wealth = GREATEST(0, wealth + $5)
-      WHERE id = $6
-    `, [food||0, timber||0, stone||0, metal||0, wealth||0, settlement.id]);
+      UPDATE settlements SET ${RD.KEYS.map((k, i) => `${k} = GREATEST(0, ${k} + $${i + 1})`).join(', ')}
+      WHERE id = $${RD.KEYS.length + 1}
+    `, [...amounts, settlement.id]);
+    for (const [i, k] of RD.KEYS.entries()) if (amounts[i] > 0) await resourcesLib.discover(null, settlement.id, k, 'admin');
 
-    const updated = await query('SELECT food,timber,stone,metal,wealth FROM settlements WHERE id=$1', [settlement.id]);
-    res.json({ ok: true, resources: updated.rows[0] });
+    const updated = await query(`SELECT ${RD.KEYS.join(',')} FROM settlements WHERE id=$1`, [settlement.id]);
+    res.json({ ok: true, resources: updated.rows[0], discovered: await resourcesLib.discoveredKeys(null, settlement.id) });
   } catch(err) {
     res.status(500).json({ error: 'Cheat failed.' });
+  }
+});
+
+// The "New discovery!" cards were shown: { keys?: [...] } (all when omitted).
+router.post('/discoveries/seen', requireAuth, async (req, res) => {
+  try {
+    const s = (await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId])).rows[0];
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+    await resourcesLib.markSeen(null, s.id, req.body && req.body.keys);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not save.' });
   }
 });
 
@@ -1338,7 +1370,7 @@ router.post('/upgrade-tier', requireAuth, async (req, res) => {
     if (s.food   < reqs.resources.food)   errors.push(`Need ${reqs.resources.food} food (have ${s.food})`);
     if (s.timber < reqs.resources.timber) errors.push(`Need ${reqs.resources.timber} timber (have ${s.timber})`);
     if (s.stone  < reqs.resources.stone)  errors.push(`Need ${reqs.resources.stone} stone (have ${s.stone})`);
-    if (s.metal  < reqs.resources.metal)  errors.push(`Need ${reqs.resources.metal} metal (have ${s.metal})`);
+    if (s.metal  < reqs.resources.metal)  errors.push(`Need ${reqs.resources.metal} iron (have ${s.metal})`);
     if (s.wealth < reqs.resources.wealth) errors.push(`Need ${reqs.resources.wealth} wealth (have ${s.wealth})`);
     if (s.population < reqs.population)   errors.push(`Need ${reqs.population} citizens (have ${s.population})`);
     if (buildingCount < reqs.buildings)    errors.push(`Need ${reqs.buildings} buildings (have ${buildingCount})`);

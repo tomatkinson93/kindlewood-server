@@ -17,6 +17,7 @@ const { calculateRatesBreakdown } = require('../buildings');
 const { buildUpkeepBreakdownSource, buildOutpostUpkeepBreakdownSource } = require('../famine');
 const happenings = require('../lib/happenings');
 const HFX = require('../lib/happening_effects');
+const RD = require('../lib/resource_defs');
 const A = require('../lib/away_report');
 
 const router = express.Router();
@@ -91,6 +92,20 @@ async function buildReport(s, since, now) {
       // Average season × Happening multiplier over the absence (1 = none).
       multiplier: awayHours > 0 ? Math.round(effHours[r] / awayHours * 100) / 100 : 1,
       sources: A.splitBySources(produced, (base[r] && base[r].sources || []).filter(x => x.kind !== 'season_multiplier')),
+      consumers: [],
+    };
+  }
+  // Ores and other extras the town turned up while away (only those).
+  const ore = require('../lib/ores').oreRates(bRes.rows, cRes.rows.filter(c => c.life_stage !== 'deceased' && c.life_stage !== 'child'), oRes.rows,
+    await require('../lib/research').doneSet(null, s.id).catch(() => new Set()));
+  for (const r of RD.EXTRA) {
+    const produced = Math.round(Number(ledger['produced_' + r]) || 0);
+    if (produced <= 0) continue;
+    const f = RD.def(r).follows;
+    resources[r] = {
+      produced, consumed: 0, net: produced,
+      multiplier: awayHours > 0 ? Math.round(effHours[f] / awayHours * 100) / 100 : 1,
+      sources: A.splitBySources(produced, (ore.sources[r] || []).map(x => ({ ...x, weight: x.value }))),
       consumers: [],
     };
   }

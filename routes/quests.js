@@ -737,7 +737,7 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
           // Party rewards live in `rewards` JSONB. Apply each resource delta.
           const rewards = {};
           for (const [k, v] of Object.entries(quest.rewards || {})) {
-            if (['food', 'timber', 'stone', 'metal', 'wealth'].includes(k)) rewards[k] = moddedReward(v, rMods);
+            if (require('../lib/resource_defs').isResource(k)) rewards[k] = moddedReward(v, rMods);
           }
           const sets = Object.entries(rewards).map(([k, v]) => `${k} = ${k} + ${Number(v) || 0}`).join(', ');
           if (sets) await client.query(`UPDATE settlements SET ${sets} WHERE id=$1`, [run.settlement_id]);
