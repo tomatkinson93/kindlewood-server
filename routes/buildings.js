@@ -2,6 +2,7 @@ const express = require('express');
 const { createHouseForSettlement, removeHouseForSettlement } = require('./housing');
 const { query } = require('../db');
 const RD = require('../lib/resource_defs');
+const RS = require('../lib/research_defs');
 const requireAuth = require('../middleware/auth');
 const { BUILDINGS, TIER_ORDER, calculateRates } = require('../buildings');
 
@@ -51,6 +52,9 @@ router.get('/', requireAuth, async (req, res) => {
       }
     }
 
+    // Finished research (a building can need a project: the Smelter).
+    const done = await require('../lib/research').doneSet(null, settlement.id);
+
     // Determine what can be built / upgraded
     const available = Object.values(BUILDINGS).map(def => {
       const existing = builtMap[def.id];
@@ -84,6 +88,9 @@ router.get('/', requireAuth, async (req, res) => {
         canUpgrade,
         requiresMet,
         tierMet,
+        research: def.research || null,
+        researchLabel: def.research ? RS.label(def.research) : null,
+        researchMet: !def.research || done.has(def.research),
         minTier: def.minTier || null,
         nextLevelTier,
         nextLevelTierMet,
@@ -149,6 +156,9 @@ router.post('/build', requireAuth, async (req, res) => {
 
     if (!levelTierMet(def, currentLevel + 1, settlement.tier))
       return res.status(400).json({ error: `Level ${currentLevel + 1} ${def.label} requires a ${tierLabel(levelTierFor(def, currentLevel + 1))} settlement.` });
+
+    if (def.research && !(await require('../lib/research').doneSet(null, settlement.id)).has(def.research))
+      return res.status(400).json({ error: `Study ${RS.label(def.research)} at a Library first.` });
 
     // Check requirements
     for (const req of def.requires) {

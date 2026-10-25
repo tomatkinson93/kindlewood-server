@@ -195,6 +195,21 @@ const BUILDINGS = {
     craftSlots: (level) => level,
     requires: [],
   },
+  // Smelters' workplace (careers): copper + tin → bronze, iron + coal → steel.
+  // Needs the Smelting research (lib/research_defs.js).
+  smelter: {
+    id: 'smelter',
+    label: 'Smelter',
+    desc: 'A roaring furnace. Smelters turn copper and tin into bronze, and iron and coal into steel — each level adds a furnace.',
+    icon: '🔥',
+    cost: { timber: 80, stone: 120, metal: 40 },
+    maxLevel: 3,
+    effect: () => ({}),
+    citizenSlots: (level) => level,
+    craftSlots: (level) => level,
+    requires: ['mine'],
+    research: 'smelting',
+  },
 };
 
 // Citizen role → building it contributes to
@@ -213,6 +228,7 @@ const ROLE_BUILDING_MAP = {
   blacksmith:  ['smithy'],
   jeweller:    ['jeweller'],
   carpenter:   ['workshop'],
+  smelter:     ['smelter'],
 };
 
 // Per-citizen production (careers). Lazy require: profiles → classes, no cycle.
