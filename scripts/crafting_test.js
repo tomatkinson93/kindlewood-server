@@ -481,6 +481,23 @@ async function part2() {
   check(/shopkeeper|Market/.test(jobRow.roll.list_failed || '') && (await q("SELECT COUNT(*)::int AS n FROM inventory_items WHERE settlement_id=$1 AND item_key='iron_dagger'", [N1.sid])).rows[0].n === 2,
     'no Market: the piece stays home');
 
+  console.log('Catching up');
+  const C1 = await user('catchup', [['smithy', 1]]);
+  const cu = await citizen(C1, 'blacksmith', { name: 'Hale' });
+  await api(C1, 'POST', '/api/crafting/jobs', { citizen_id: cu, recipe_key: 'iron_dagger', qty: 5 });
+  // Away for a day: the whole queue is long overdue.
+  const first = (await jobsOf(cu)).find(x => x.status === 'active');
+  await q("UPDATE craft_jobs SET started_at = NOW() - interval '1 day', completes_at = NOW() - interval '23 hours' WHERE id = $1", [first.id]);
+  const loads0 = careers._loadStats.loads;
+  await crafting.resolveDue(C1.sid, { rand: () => 0.5 });
+  const loadsUsed = careers._loadStats.loads - loads0;
+  check((await jobsOf(cu)).filter(x => x.status === 'done').length === 5, 'a day away: all five pieces made, one after another');
+  check(loadsUsed <= 2, `…loading the town's careers ${loadsUsed}× for the whole catch-up (was 2 per piece)`);
+  await api(C1, 'GET', '/api/crafting/station/smithy');
+  const l2 = careers._loadStats.loads;
+  await crafting.stationState(C1.sid, 'smithy');
+  check(careers._loadStats.loads - l2 === 1, 'the workshop view loads careers once');
+
   console.log('Schematic loot');
   const G1 = await user('loot');
   const gotSch = await crafting.grantRandomSchematic({ query: q }, G1.sid, () => 0, 'quest');
