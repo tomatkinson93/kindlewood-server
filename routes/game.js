@@ -15,6 +15,7 @@ const gameEvents = require('../lib/game_events');
 const awayReport = require('../lib/away_report');
 const RD = require('../lib/resource_defs');
 const resourcesLib = require('../lib/resources');
+const research = require('../lib/research');
 
 const router = express.Router();
 
@@ -99,7 +100,7 @@ async function applyTick(settlement, species, workforce) {
     query('SELECT id, tile_q, tile_r, terrain, level FROM outposts WHERE settlement_id=$1', [settlement.id]).catch(() => ({ rows: [] })),
   ]);
   const wf = workforce || await loadWorkforce(settlement.id);
-  const baseRates = calculateRates(bRes.rows, wf, species, oRes.rows);
+  const baseRates = calculateRates(bRes.rows, wf, species, oRes.rows, { research: await research.doneSet(null, settlement.id) });
   // Effective production hours per resource over exactly [last_tick, now]:
   // each season multiplier applies only to the hours it covered (seasons are
   // 7h, so a long absence spans several), and Happening modifiers are
@@ -205,8 +206,15 @@ router.get('/settlement', requireAuth, async (req, res) => {
       [settlement.id]
     ).catch(() => ({ rows: [] }));
     const season = getCurrentSeason();
-    const baseRates = calculateRates(buildingsResult.rows, workforce, user.species, outpostsResult.rows);
-    const rates = applyHappeningRates(applySeasonModifiers(baseRates, season), await happeningModsNow());
+    const baseRates = calculateRates(buildingsResult.rows, workforce, user.species, outpostsResult.rows, { research: await research.doneSet(null, settlement.id) });
+    const hMods = await happeningModsNow();
+    const rates = applyHappeningRates(applySeasonModifiers(baseRates, season), hMods);
+    // Ores share the season and Happening multiplier of the resource they follow.
+    for (const k of RD.EXTRA) {
+      if (!baseRates[k]) continue;
+      const f = RD.def(k).follows;
+      rates[k] = Math.round(baseRates[k] * (season.modifiers[f] ?? 1) * HFX.productionFactor(hMods, f) * 100) / 100;
+    }
     // Season know-how (careers) on top, this season only.
     const know = citizenContributions(buildingsResult.rows, workforce).seasonal[season.id] || {};
     for (const [res, v] of Object.entries(know)) if (typeof rates[res] === 'number') rates[res] = Math.round(rates[res] + v);

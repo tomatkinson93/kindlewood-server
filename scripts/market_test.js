@@ -521,7 +521,7 @@ async function part2() {
   check((await npcSells(npcBuyer)).length === 0, 'trust 15: the village doesn\'t trade yet');
   await q('UPDATE diplomacy_relations SET trust = 45, status = \'friendly\' WHERE settlement_id = $1 AND npc_id = $2', [npcBuyer.sid, villa.id]);
   const rows1 = await npcSells(npcBuyer);
-  check(rows1.length >= 1 && rows1.every(o => ['stone', 'metal'].includes(o.resource) && o.npc.tier === 'Friendly'), 'Friendly: badger village sells stone/metal at the Market');
+  check(rows1.length >= 1 && rows1.every(o => ['stone', 'metal', 'copper', 'coal'].includes(o.resource) && o.npc.tier === 'Friendly'), 'Friendly: badger village sells stone, iron, copper or coal at the Market');
   r = await api(npcBuyer, 'GET', '/api/market/orders?resource=resources&npc=0');
   check(!(r.body.orders || []).some(o => o.npc), '?npc=0 hides NPC traders');
   r = await api(npcBuyer, 'GET', '/api/market/wants?resource=resources');

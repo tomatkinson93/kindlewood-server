@@ -99,7 +99,7 @@ async function freshResourcesAndRates(settlementId, userId) {
   const { calculateRates } = require('../buildings');
   const { getCurrentSeason, applySeasonModifiers } = require('../seasons');
   const species = uRes.rows[0]?.species || 'Mice';
-  const baseRates = calculateRates(bRes.rows, cRows, species, oRes.rows);
+  const baseRates = calculateRates(bRes.rows, cRows, species, oRes.rows, { research: await require('../lib/research').doneSet(null, settlementId) });
   const rates = applySeasonModifiers(baseRates, getCurrentSeason());
   return { resources: sRes.rows[0], rates };
 }

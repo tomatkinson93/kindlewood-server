@@ -144,7 +144,7 @@ const BUILDINGS = {
   mine: {
     id: 'mine',
     label: 'Mine',
-    desc: 'Shafts into the hillside. Miners dig stone and ore here — they need a Mine to work.',
+    desc: 'Shafts into the hillside. Miners dig stone and iron here — they need a Mine to work. Miners also turn up new ores, and each level digs deeper for rarer ones.',
     icon: '⛏️',
     cost: { timber: 60, food: 30 },
     maxLevel: 3,
@@ -224,7 +224,8 @@ function citizenContributions(buildings, citizens) {
 // `outposts` (010): [{ terrain, level }, ...] — optional 4th param so the
 // two pre-outpost call sites keep working unchanged. Yields are integer /hr
 // by config, so the production floor in applyTick gains no new residue.
-function calculateRates(buildings, citizens, species, outposts = []) {
+// `opts.research`: Set of finished research projects (unlocks rarer ores).
+function calculateRates(buildings, citizens, species, outposts = [], opts = {}) {
   const BASE_RATES = {
     Mice:    { food:20, timber:10, stone:5,  metal:3,  wealth:8  },
     Badgers: { food:12, timber:15, stone:12, metal:8,  wealth:5  },
@@ -268,6 +269,10 @@ function calculateRates(buildings, citizens, species, outposts = []) {
       }
     }
   }
+
+  // Ores, rare materials (lib/ores.js): miners at the Mine, hill and
+  // mountain outposts.
+  Object.assign(rates, require('./lib/ores').oreRates(buildings, citizens, outposts, opts.research).rates);
 
   return rates;
 }

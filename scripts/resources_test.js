@@ -57,6 +57,47 @@ function part1() {
     check(fs.readFileSync(hfx, 'utf8') === fs.readFileSync(path.join(__dirname, '..', 'lib', 'happening_effects.js'), 'utf8'), 'frontend js/happening-effects.js is byte-identical');
   } else console.log('  (frontend checkout not found — twin checks skipped)');
 
+  console.log('Where ores come from');
+  const { oreRates, MINE_ORE } = require('../lib/ores');
+  const miner = (id, m = 1, effects = {}) => ({ id, name: 'M' + id, role: 'miner', profile: { outputMult: m, effects } });
+  check(Object.keys(oreRates([], [miner(1)], [], new Set()).rates).length === 0, 'no Mine, no ore');
+  const l1 = oreRates([{ type: 'mine', level: 1 }], [miner(1), miner(2)], [], new Set()).rates;
+  check(l1.copper === MINE_ORE.copper * 2 && l1.tin > 0 && l1.coal > 0 && !l1.silver && !l1.gems, 'Lv1 Mine: copper, tin, coal from each miner');
+  const l2 = oreRates([{ type: 'mine', level: 2 }], [miner(1)], [], new Set()).rates;
+  check(l2.silver > 0 && !l2.goldore, 'Lv2 Mine adds silver');
+  const l3 = oreRates([{ type: 'mine', level: 3 }], [miner(1)], [], new Set()).rates;
+  check(!l3.goldore && !l3.gems, 'Lv3: gold ore and gems wait for Deep Veins research');
+  const l3r = oreRates([{ type: 'mine', level: 3 }], [miner(1)], [], new Set(['deep_veins'])).rates;
+  check(l3r.goldore > 0 && l3r.gems > 0, '…and appear once it is studied');
+  const seats = oreRates([{ type: 'mine', level: 1 }], [miner(1), miner(2), miner(3)], [], new Set()).rates;
+  check(seats.copper === MINE_ORE.copper * 2, 'only seated miners dig (Lv1 Mine: 2 places)');
+  const perky = oreRates([{ type: 'mine', level: 3 }], [miner(1, 1.2, { ore: 0.25, 'ore:gems': 1 })], [], new Set(['deep_veins'])).rates;
+  check(Math.abs(perky.copper - MINE_ORE.copper * 1.2 * 1.25) < 0.01 && Math.abs(perky.gems - MINE_ORE.gems * 1.2 * 2.25) < 0.01, 'stats and ore perks (all ores, one ore) multiply');
+  const hills = oreRates([], [], [{ terrain: 'hills', level: 2 }, { terrain: 'forest', level: 1 }], new Set()).rates;
+  check(hills.copper === 1.2 && hills.coal === 1.6 && !hills.silver, 'hills outposts: copper, tin, coal × level');
+  const mtn = oreRates([], [], [{ terrain: 'mountain', level: 1 }], new Set()).rates;
+  check(mtn.silver > 0 && !mtn.mithril && !mtn.obsidian, 'mountain outposts: silver; legendary metals need research');
+  check(oreRates([], [], [{ terrain: 'mountain', level: 1 }], new Set(['starmetal', 'volcanic_lore'])).rates.mithril > 0, 'Starmetal unlocks mithril at mountain outposts');
+  const C = require('../lib/careers/classes');
+  const minerNodes = JSON.stringify(C.CLASSES.miner);
+  check(/"type":"ore"/.test(minerNodes) && /"param":"gems"/.test(minerNodes), 'Miner perks (Ore Nose, Gem Sight, Stone Song…) raise ore finds');
+  const { calculateRates } = require('../buildings');
+  const cr = calculateRates([{ type: 'mine', level: 1 }], [miner(9)], 'Mice', [{ terrain: 'hills', level: 1 }]);
+  check(cr.copper === MINE_ORE.copper + 0.6 && cr.stone > 0, 'calculateRates includes ores alongside the basics');
+  const { applySeasonModifiers, SEASONS } = require('../seasons');
+  const winter = Object.values(SEASONS).find(x => x.modifiers && x.modifiers.metal && x.modifiers.metal !== 1);
+  if (winter) check(applySeasonModifiers({ copper: 1 }, winter).copper === Math.round(winter.modifiers.metal * 100) / 100, 'ores follow iron\'s season multiplier');
+
+  console.log('Villages');
+  const npcTrade = require('../lib/npc_trade');
+  let ores = [];
+  for (let d = 1; d <= 20; d++) for (const sp of ['badger', 'otter', 'weasel', 'mice', 'squirrel'])
+    ores.push(...npcTrade.npcOrdersFor({ id: d, species: sp }, `2026-02-${String(d).padStart(2, '0')}`, []).filter(o => o.kind === 'resource' && RD.def(o.resource).group !== 'base'));
+  check(ores.some(o => o.resource === 'copper' && o.side === 'sell') && ores.some(o => o.resource === 'silver'), 'villages sell and buy ores (copper, silver…)');
+  check(ores.every(o => o.per === 10 && o.qty >= 10 && o.qty <= 200 && o.price >= 10), 'ores come in small lots priced per 10');
+  const iron = npcTrade.npcOrdersFor({ id: 3, species: 'badger' }, '2026-02-03', []).filter(o => o.resource === 'metal');
+  check(iron.every(o => o.per === 100), 'iron is still priced per 100');
+
   const mig = fs.readFileSync(path.join(__dirname, '..', 'migrations', fs.readdirSync(path.join(__dirname, '..', 'migrations')).find(f => f.endsWith('_resources.sql'))), 'utf8');
   check(RD.EXTRA.every(k => new RegExp(`ADD COLUMN IF NOT EXISTS ${k}\\s`).test(mig)), 'the migration adds a column for every extra');
 }
@@ -121,6 +162,37 @@ async function part2() {
   const after = (await q('SELECT * FROM settlements WHERE id=$1', [a.sid])).rows[0];
   check(RD.EXTRA.every(k => after[k] >= before[k]) && after.tin === 5 && after.gems === 1, 'the tick keeps extras (no rate yet → unchanged)');
   check(new Date(after.last_tick) > new Date(before.last_tick), 'the generalised tick UPDATE still advances last_tick');
+
+  console.log('Mine output');
+  const m = await user('mine');
+  await q("INSERT INTO buildings (settlement_id, type, level) VALUES ($1,'mine',2)", [m.sid]);
+  await q(`INSERT INTO citizens (settlement_id, name, role, stats, skills, life, life_stage, hidden_traits, visible_traits, career_settled_at)
+           VALUES ($1,'Dig','miner',$2,'{}','{"happiness":60,"hunger":20}','adult','[]','[]',NOW())`,
+    [m.sid, JSON.stringify({ strength: 8, agility: 8, endurance: 8, intelligence: 8, charisma: 8 })]);
+  const g1 = await api(m, 'GET', '/api/game/settlement');
+  const rt = (g1.body.settlement || {}).rates || {};
+  check(rt.copper > 0 && rt.tin > 0 && rt.coal > 0 && rt.silver > 0 && !rt.gems, 'GET /settlement: a Lv2 Mine with a miner shows copper, tin, coal and silver per hour');
+  await q("UPDATE settlements SET last_tick = NOW() - interval '10 hours' WHERE id=$1", [m.sid]);
+  await api(m, 'GET', '/api/game/settlement');
+  const after2 = (await q('SELECT copper, silver FROM settlements WHERE id=$1', [m.sid])).rows[0];
+  check(after2.copper >= 2 && after2.silver >= 1, `ten hours at the Mine dig ore (copper ${after2.copper}, silver ${after2.silver})`);
+  const disc = await resources.discoveredKeys(null, m.sid);
+  check(disc.includes('copper') && disc.includes('silver'), 'the first ore dug is a discovery');
+  const ledger = (await q('SELECT away_ledger FROM settlements WHERE id=$1', [m.sid])).rows[0].away_ledger || {};
+  check(Number(ledger.produced_copper) > 0, 'the away report ledger counts ore');
+
+  console.log('Expedition samples');
+  const e = await user('exp');
+  await q("INSERT INTO expeditions (settlement_id, user_id, target_q, target_r, completes_at, path) VALUES ($1,$2,1,1,NOW() - interval '1 minute',$3)",
+    [e.sid, e.id, JSON.stringify(Array.from({ length: 20 }, (_, i) => ({ q: i, r: 0 })))]);
+  const realRandom = Math.random;
+  Math.random = () => 0.001;
+  try { await require('../routes/expeditions').completeExpeditions(e.sid, e.id); } finally { Math.random = realRandom; }
+  const es = (await q('SELECT * FROM settlements WHERE id=$1', [e.sid])).rows[0];
+  const got = RD.EXTRA.filter(k => es[k] > 0);
+  check(got.length === 1 && es[got[0]] >= 5 && es[got[0]] <= 15, `a long expedition brought back a sample (${got[0]} ×${es[got[0]]})`);
+  check(got.length === 1 && RD.def(got[0]).discovery === 'mining' && (await resources.discoveredKeys(null, e.sid)).includes(got[0]),
+    '…of an ore the town can find without research, now discovered');
 
   if (ADMIN) {
     console.log('Dev Tools grant');

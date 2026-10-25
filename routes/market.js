@@ -739,7 +739,7 @@ router.post('/npc/:npcId/:orderKey', requireAuth, async (req, res) => {
         const col = o.resource;   // from SPECIES_TRADE, a tradeable resource
         if (!market.isTradeable(col)) throw new MarketError(400, 'Bad order.');
         const took = await client.query(`UPDATE settlements SET ${col} = ${col} - $2 WHERE id = $1 AND ${col} >= $2`, [me.id, qty]);
-        if (!took.rowCount) throw new MarketError(400, `Not enough ${col}.`);
+        if (!took.rowCount) throw new MarketError(400, `Not enough ${RD.label(col).toLowerCase()}.`);
       }
       await client.query(
         `INSERT INTO npc_trade_usage (settlement_id, npc_id, day, order_key, qty) VALUES ($1,$2,$3,$4,$5)
@@ -918,7 +918,7 @@ router.post('/wants/:id/fill', requireAuth, async (req, res) => {
         if (qty > max) throw new MarketError(400, `You can carry at most ${max} ${w.resource} per trip.`);
         const col = w.resource;   // whitelisted at posting
         const took = await client.query(`UPDATE settlements SET ${col} = ${col} - $2 WHERE id = $1 AND ${col} >= $2`, [me.id, qty]);
-        if (!took.rowCount) throw new MarketError(400, `Not enough ${col}.`);
+        if (!took.rowCount) throw new MarketError(400, `Not enough ${RD.label(col).toLowerCase()}.`);
       }
       const gold = Math.min(w.gold_held, market.wantGold(w.price, qty, w.per));
       const left = w.qty_open - qty;
