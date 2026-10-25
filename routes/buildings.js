@@ -6,6 +6,18 @@ const RS = require('../lib/research_defs');
 const requireAuth = require('../middleware/auth');
 const { BUILDINGS, TIER_ORDER, calculateRates } = require('../buildings');
 
+// Building-cost discounts: research (Engineering). → { mult, parts: [{ label, pct }] }
+// Capped at −20% in all.
+const MAX_BUILD_DISCOUNT = 0.2;
+async function buildDiscount(sid, done) {
+  const parts = [];
+  const r = RS.effectsOf(done || await require('../lib/research').doneSet(null, sid)).build_cost || 0;
+  if (r) parts.push({ label: 'Engineering', pct: r });
+  const total = Math.max(-MAX_BUILD_DISCOUNT, parts.reduce((a, p) => a + p.pct, 0));
+  return { mult: 1 + total, parts };
+}
+const scaledCost = (def, level, mult) => Object.fromEntries(Object.entries(def.cost).map(([r, v]) => [r, Math.ceil(v * level * mult)]));
+
 // True when a settlement at `tier` may build `def` (its optional minTier).
 function tierMetFor(def, tier) {
   if (!def.minTier) return true;
@@ -54,6 +66,7 @@ router.get('/', requireAuth, async (req, res) => {
 
     // Finished research (a building can need a project: the Smelter).
     const done = await require('../lib/research').doneSet(null, settlement.id);
+    const discount = await buildDiscount(settlement.id, done);
 
     // Determine what can be built / upgraded
     const available = Object.values(BUILDINGS).map(def => {
@@ -70,12 +83,8 @@ router.get('/', requireAuth, async (req, res) => {
       const nextLevelTier = canUpgrade ? levelTierFor(def, currentLevel + 1) : null;
       const nextLevelTierMet = !canUpgrade || levelTierMet(def, currentLevel + 1, settlement.tier);
 
-      // Scale cost with level
-      const levelMultiplier = currentLevel + 1;
-      const cost = {};
-      for (const [r, v] of Object.entries(def.cost)) {
-        cost[r] = v * levelMultiplier;
-      }
+      // Scale cost with level, less any discount (Engineering…)
+      const cost = scaledCost(def, currentLevel + 1, discount.mult);
 
       return {
         id: def.id,
@@ -96,6 +105,7 @@ router.get('/', requireAuth, async (req, res) => {
         nextLevelTierMet,
         levelTierReq: def.levelTierReq || null,
         cost,
+        discount: discount.parts.length ? discount.parts : null,
         effect: def.effect(Math.max(1, currentLevel)),
         nextEffect: canUpgrade ? def.effect(currentLevel + 1) : null,
         citizenSlots: def.citizenSlots(Math.max(1, currentLevel)),
@@ -170,12 +180,8 @@ router.post('/build', requireAuth, async (req, res) => {
         return res.status(400).json({ error: `Requires ${BUILDINGS[req]?.label || req} first.` });
     }
 
-    // Scale cost by level
-    const levelMultiplier = currentLevel + 1;
-    const cost = {};
-    for (const [r, v] of Object.entries(def.cost)) {
-      cost[r] = v * levelMultiplier;
-    }
+    // Scale cost by level, less any discount (Engineering…)
+    const cost = scaledCost(def, currentLevel + 1, (await buildDiscount(settlement.id)).mult);
 
     // Check resources (any resource in lib/resource_defs.js)
     for (const [r, v] of Object.entries(cost)) {
@@ -302,3 +308,4 @@ router.get('/definitions', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.buildDiscount = buildDiscount;

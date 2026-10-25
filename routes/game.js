@@ -233,6 +233,8 @@ router.get('/settlement', requireAuth, async (req, res) => {
     // Extras the town holds count as discovered (an admin grant, a trade);
     // unseen discoveries become the "New discovery!" cards.
     await resourcesLib.discoverHeld(null, settlement).catch(() => []);
+    // The Library: research points for the hours studied (gated; cheap).
+    await research.settle(settlement.id).catch(e => console.error('[research] settle failed:', e.message));
     const discovered = await resourcesLib.discoveredKeys(null, settlement.id);
     const newDiscoveries = await resourcesLib.unseen(null, settlement.id);
 

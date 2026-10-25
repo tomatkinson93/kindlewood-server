@@ -210,6 +210,19 @@ const BUILDINGS = {
     requires: ['mine'],
     research: 'smelting',
   },
+  // Scholars' workplace (careers): research points for the town's project
+  // (lib/research.js). Each level seats one more Scholar and studies 10% faster.
+  library: {
+    id: 'library',
+    label: 'Library',
+    desc: 'Shelves, candles and long tables. Scholars study here, unlocking new resources, buildings and recipes. Each level seats another Scholar and studies 10% faster.',
+    icon: '📚',
+    cost: { timber: 100, stone: 80, wealth: 60 },
+    maxLevel: 3,
+    effect: () => ({}),
+    citizenSlots: (level) => level,
+    requires: [],
+  },
 };
 
 // Citizen role → building it contributes to
@@ -229,6 +242,7 @@ const ROLE_BUILDING_MAP = {
   jeweller:    ['jeweller'],
   carpenter:   ['workshop'],
   smelter:     ['smelter'],
+  scholar:     ['library'],
 };
 
 // Per-citizen production (careers). Lazy require: profiles → classes, no cycle.

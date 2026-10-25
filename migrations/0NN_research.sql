@@ -24,4 +24,7 @@ ALTER TABLE settlements
   ADD COLUMN IF NOT EXISTS research_active      TEXT,
   ADD COLUMN IF NOT EXISTS research_bank        NUMERIC(12,3) NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS research_settled_at  TIMESTAMPTZ;
+-- A finished project can teach the town recipes (Master Recipes).
+ALTER TABLE settlement_recipes DROP CONSTRAINT IF EXISTS settlement_recipes_source_check;
+ALTER TABLE settlement_recipes ADD CONSTRAINT settlement_recipes_source_check CHECK (source IN ('discovery','schematic','admin','research'));
 COMMIT;
