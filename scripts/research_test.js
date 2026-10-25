@@ -23,7 +23,19 @@ function check(cond, msg) {
 
 function part1() {
   console.log('The tree');
-  check(RS.KEYS.length === 9, 'nine projects');
+  check(RS.KEYS.length === 23, '23 projects');
+  check(['prospecting', 'smelting', 'record_keeping', 'deep_veins', 'steelworking', 'engineering', 'volcanic_lore', 'master_recipes', 'starmetal'].every(k => RS.PROJECTS[k]),
+    'every key a town may already have finished still exists');
+  console.log('Layout');
+  const cells = new Set(RS.KEYS.map(k => { const p = RS.PROJECTS[k]; return `${p.branch}:${p.tier}:${p.slot || 0}`; }));
+  check(cells.size === RS.KEYS.length, 'no two projects share a cell (path, era, slot)');
+  check(RS.KEYS.every(k => { const p = RS.PROJECTS[k]; return RS.BRANCHES[p.branch] && p.tier >= 1 && p.tier <= RS.ERAS.length && p.field === RS.BRANCHES[p.branch].field; }),
+    'each project sits in a known path and era; its field comes from the path');
+  check(RS.KEYS.every(k => RS.PROJECTS[k].requires.every(r => RS.PROJECTS[r].tier < RS.PROJECTS[k].tier)), 'every prerequisite sits in an earlier era (the tree reads left to right)');
+  check(Object.keys(RS.BRANCHES).every(b => RS.KEYS.some(k => RS.PROJECTS[k].branch === b && RS.PROJECTS[k].tier === 1)), 'every path starts in era I');
+  check(RS.PROJECTS.prospecting_2.requires.includes('prospecting') && RS.PROJECTS.prospecting_3.requires.includes('prospecting_2') && RS.PROJECTS.furnaces_2.requires.includes('furnaces'),
+    'versions need the one before (Prospecting I → II → III, Hotter Furnaces I → II)');
+  check(RS.PROJECTS.starmetal.branch === 'metallurgy' && RS.PROJECTS.starmetal.requires.includes('volcanic_lore'), 'paths cross: Starmetal needs Volcanic Lore from Mining');
   check(RS.KEYS.every(k => RS.PROJECTS[k].requires.every(r => RS.PROJECTS[r])), 'every prerequisite exists');
   // No cycles: a topological pass finishes everything.
   const done = new Set();
@@ -35,9 +47,22 @@ function part1() {
   const { BUILDINGS } = require('../buildings');
   check(Object.values(BUILDINGS).filter(b => b.research).every(b => (RS.project(b.research).buildings || []).includes(b.id)), 'research-gated buildings match their project');
   check(BUILDINGS.library && BUILDINGS.library.citizenSlots(3) === 3, 'the Library seats one Scholar per level');
-  check(/Study Prospecting first/.test(RS.blockedBy('deep_veins', [])) && RS.blockedBy('deep_veins', ['prospecting']) === null, 'blockedBy names what to study first');
+  check(/Study Prospecting II first/.test(RS.blockedBy('deep_veins', ['prospecting'])) && RS.blockedBy('deep_veins', ['prospecting', 'prospecting_2']) === null, 'blockedBy names what to study first');
   check(/Volcanic Lore and Steelworking/.test(RS.blockedBy('starmetal', ['prospecting', 'deep_veins'])), '…both missing prerequisites');
+  const fx = RS.effectsOf(['prospecting', 'prospecting_2', 'prospecting_3', 'furnaces', 'furnaces_2', 'scriptorium', 'academy', 'masonry', 'engineering', 'architecture']);
+  check(Math.abs(fx.ore - 0.5) < 1e-9 && Math.abs(fx['craft_speed:smelter'] - 0.3) < 1e-9 && Math.abs(fx.research - 0.25) < 1e-9 && Math.abs(fx.build_cost + 0.13) < 1e-9,
+    'versions stack (ore +50%, Smelter +30%, research +25%, buildings −13%)');
   check(RS.effectsOf(new Set(['prospecting', 'engineering', 'record_keeping'])).ore === 0.15 && RS.effectsOf(['engineering']).build_cost === -0.05, 'effects add up');
+
+  console.log('Effects on crafting');
+  const crafting = require('../lib/crafting');
+  const C0 = require('../lib/careers/classes');
+  const tc = crafting.townCraft(new Set(['furnaces', 'swift_benches', 'guild_marks', 'apprenticeship']), 'smelter');
+  check(Math.abs(tc.speed - 0.25) < 1e-9 && tc.quality === 3 && tc.xp === 0.1, 'at the Smelter: Hotter Furnaces + Swift Benches speed, Guild Marks quality, Apprenticeship XP');
+  check(crafting.townCraft(new Set(['furnaces', 'swift_benches']), 'smithy').speed === 0.1, 'Hotter Furnaces only speeds the Smelter');
+  const plain = crafting.benchOf(null, C0.CLASSES.smelter, null, 1), fast = crafting.benchOf(null, C0.CLASSES.smelter, null, 1, tc);
+  const M0 = require('../lib/career_math');
+  check(fast.quality === plain.quality + 3 && M0.craftSeconds(1200, fast.speed, 1) < M0.craftSeconds(1200, plain.speed, 1), 'the bench is faster and finer (the panel shows the same numbers)');
 
   console.log('Scholars');
   const C = require('../lib/careers/classes');
@@ -86,7 +111,8 @@ async function part2() {
   console.log('No Library');
   const none = await user('nolib');
   let r = await api(none, 'GET', '/api/research');
-  check(r.status === 200 && r.body.library_level === 0 && r.body.per_hour === 0 && r.body.projects.length === 9, 'GET /api/research works without a Library');
+  check(r.status === 200 && r.body.library_level === 0 && r.body.per_hour === 0 && r.body.projects.length === 23 && r.body.branches && r.body.eras.length === 5
+    && r.body.projects.every(p => p.branch && p.tier && Array.isArray(p.requires) && p.unlocks), 'GET /api/research works without a Library (whole tree, with paths and eras)');
   r = await api(none, 'POST', '/api/research/start', { project: 'prospecting' });
   check(r.status === 400 && /Library/.test(r.body.error), 'you need a Library to study');
 
@@ -100,7 +126,7 @@ async function part2() {
   const per = research.BASE_PER_HOUR * 2 * 1.1;
   check(Math.abs(r.body.per_hour - per) < 0.05, `two average Scholars at a Lv2 Library: ${per.toFixed(1)} points/hr`);
   r = await api(a, 'POST', '/api/research/start', { project: 'deep_veins' });
-  check(r.status === 400 && /Prospecting/.test(r.body.error), 'Deep Veins needs Prospecting first');
+  check(r.status === 400 && /Prospecting II/.test(r.body.error), 'Deep Veins needs Prospecting II first');
   r = await api(a, 'POST', '/api/research/start', { project: 'prospecting' });
   check(r.status === 200 && r.body.active === 'prospecting' && r.body.eta_hours > 0, 'start Prospecting: it is active, with an ETA');
   await back(a.sid, 10);
@@ -150,7 +176,7 @@ async function part2() {
   await research.adminComplete(u.sid, 'engineering');
   b = await api(u, 'GET', '/api/buildings');
   const lib1 = (b.body.buildings || []).find(x => x.id === 'library');
-  check(lib1.cost.timber === Math.ceil(lib0.cost.timber * 0.95) && lib1.discount && lib1.discount[0].label === 'Engineering', `Engineering: buildings cost 5% less (${lib0.cost.timber} → ${lib1.cost.timber} timber)`);
+  check(lib1.cost.timber === Math.ceil(lib0.cost.timber * 0.95) && lib1.discount && lib1.discount[0].label === 'Research', `Engineering: buildings cost 5% less (${lib0.cost.timber} → ${lib1.cost.timber} timber)`);
   const market = require('../lib/market');
   const mods = await market.loadModifiers({ query: q }, u.sid);
   check(Math.abs(mods.feeRate - 0.05 * 0.9) < 1e-9, 'Record Keeping: Market fees fall by a tenth');
@@ -159,6 +185,16 @@ async function part2() {
   check(learned.length === 2 && learned.every(x => x.source === 'research'), 'Master Recipes teaches the town the Falchion and the Tower Shield');
   const { oreRates } = require('../lib/ores');
   check(oreRates([], [], [{ terrain: 'mountain', level: 1 }], await research.doneSet(null, u.sid)).rates.obsidian === undefined, 'obsidian still needs Volcanic Lore');
+
+  console.log('Effects in play');
+  const per0 = (await research.scholarsOf(u.sid, 'prospecting')).perHour;
+  await research.adminComplete(u.sid, 'scriptorium');
+  const per1 = (await research.scholarsOf(u.sid, 'prospecting')).perHour;
+  check(Math.abs(per1 - per0 * 1.1) < 0.06, `Scriptorium: research 10% faster (${per0} → ${per1}/hr)`);
+  const carry0 = (await market.loadModifiers({ query: q }, u.sid)).carryWeight;
+  await research.adminComplete(u.sid, 'caravan_routes');
+  const carry1 = (await market.loadModifiers({ query: q }, u.sid)).carryWeight;
+  check(carry1 > carry0, `Caravan Routes: porters carry more (${carry0} → ${carry1})`);
 
   console.log('Through the settlement tick');
   const t = await user('tick', [['library', 1]]);

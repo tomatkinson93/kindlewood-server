@@ -6,14 +6,14 @@ const RS = require('../lib/research_defs');
 const requireAuth = require('../middleware/auth');
 const { BUILDINGS, TIER_ORDER, calculateRates } = require('../buildings');
 
-// Building-cost discounts: research (Engineering) and the best Stonemason's
+// Building-cost discounts: research (Masonry, Engineering, Architecture) and the best Stonemason's
 // perks. → { mult, parts: [{ label, pct }] }
 // Capped at −20% in all.
 const MAX_BUILD_DISCOUNT = 0.2;
 async function buildDiscount(sid, done) {
   const parts = [];
   const r = RS.effectsOf(done || await require('../lib/research').doneSet(null, sid)).build_cost || 0;
-  if (r) parts.push({ label: 'Engineering', pct: r });
+  if (r) parts.push({ label: 'Research', pct: r });
   // The town's best Stonemason (careers build_cost perks): theirs alone counts.
   const wf = await require('../lib/careers').loadWorkforce(null, sid).catch(() => []);
   let best = null;
