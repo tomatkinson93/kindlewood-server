@@ -10,6 +10,8 @@
 //  POST /admin/citizen/:id/grant    { class_key, xp?, level?, hours? }
 //  POST /admin/citizen/:id/reveal   { trait }
 //  POST /admin/citizen/:id/reset    { class_key? }          wipe a class (or the whole career)
+//  GET  /admin/balance              server-wide overview (lib/career_balance) + tuning
+//  POST /admin/tuning               { key, value }          a balance multiplier (lib/tuning)
 // ══════════════════════════════════════════════════════════════════════════
 
 'use strict';
@@ -93,6 +95,16 @@ router.post('/admin/citizen/:id/reveal', requireAuth, requireAdmin, async (req, 
     await careers.adminReveal(sid, citizenId(req), String((req.body || {}).trait || ''));
     res.json({ ok: true, career: await careers.citizenCareer(sid, citizenId(req)) });
   } catch (e) { send(res, e, 'Could not reveal.'); }
+});
+
+router.get('/admin/balance', requireAuth, requireAdmin, async (req, res) => {
+  try { res.json({ ok: true, ...(await require('../lib/career_balance').overview()) }); }
+  catch (e) { console.error('[careers] balance', e); res.status(500).json({ error: 'Could not build the overview.' }); }
+});
+
+router.post('/admin/tuning', requireAuth, requireAdmin, async (req, res) => {
+  try { res.json({ ok: true, tuning: await require('../lib/tuning').set(String((req.body || {}).key || ''), (req.body || {}).value) }); }
+  catch (e) { res.status(e.status || 500).json({ error: e.status ? e.message : 'Could not save.' }); }
 });
 
 router.post('/admin/citizen/:id/reset', requireAuth, requireAdmin, async (req, res) => {
