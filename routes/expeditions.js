@@ -223,7 +223,7 @@ async function completeExpeditions(settlementId, userId) {
         const isNew = await require('../lib/resources').discover(null, settlementId, key, 'expedition');
         const RD = require('../lib/resource_defs');
         await query('INSERT INTO settlement_events (settlement_id, type, message, citizen_ids) VALUES ($1,$2,$3,$4)',
-          [settlementId, 'expedition', `${RD.icon(key)} An expedition brought back ${qty} ${RD.label(key).toLowerCase()}${isNew ? ' — something new!' : '.'}`, exp.citizen_id ? [exp.citizen_id] : []]).catch(() => {});
+          [settlementId, 'expedition', `${RD.icon(key)} An expedition brought back ${qty} ${RD.label(key).toLowerCase()}${isNew ? ' — something new!' : '.'}`, JSON.stringify(exp.citizen_id ? [exp.citizen_id] : [])]).catch(() => {});
         require('../lib/event_bus').publish(settlementId, { type: 'ore_sample', resource: key, qty, discovered: isNew });
       }
     }

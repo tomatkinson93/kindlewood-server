@@ -673,7 +673,8 @@ async function npcRows(me, side, f) {
         kind: o.kind, resource: o.resource || null, item: o.item || null, item_key: o.item ? o.item.item_key : null,
         price: o.price, per: o.per, unit_price: Math.round((o.price / o.per) * 100) / 100,
         qty_available: o.remaining, qty_total: o.qty, qty_open: o.remaining, carry_max: Math.min(o.remaining, carry),
-        distance, eta_seconds: 2 * market.legSeconds(distance, null, {}), expires_at: t.ends_at,
+        distance, eta_seconds: 2 * market.legSeconds(distance, null, {}), expires_at: o.request ? o.request.ends_at : t.ends_at,
+        request: o.request || null,
         merchants: 0, paused: false, next_free_at: null,
       };
       if (side === 'sell') row.seller = { id: null, name: t.npc.name, username: 'village', species: t.npc.species };
@@ -692,7 +693,7 @@ router.post('/npc/:npcId/:orderKey', requireAuth, async (req, res) => {
   try {
     const npcId = parseId(req.params.npcId);
     const key = String(req.params.orderKey || '');
-    if (!npcId || !/^[sb]\d$/.test(key)) throw new MarketError(400, 'Bad order.');
+    if (!npcId || !/^([sb]\d|req)$/.test(key)) throw new MarketError(400, 'Bad order.');
     const me = await mySettlement(req.user.userId);
     await settle(me.id);
     if (me.tile_q == null) throw new MarketError(400, 'Place your settlement on the map first.');
@@ -713,6 +714,10 @@ router.post('/npc/:npcId/:orderKey', requireAuth, async (req, res) => {
       const o = trader.orders.find(x => x.key === key);
       if (!o) throw new MarketError(404, 'That order is gone — villages post new ones every day.');
       if (qty > o.remaining) throw new MarketError(409, o.remaining ? `Only ${o.remaining} left for you today.` : 'You\'ve used this order up for today.');
+      // A special request counts on its start day; the trip that finishes it
+      // is marked 'req!' so the porter brings home the village's thanks.
+      const tradeDay = o.request ? o.request.day : trader.day;
+      const runKey = o.request && qty === o.remaining ? 'req!' : key;
       const npcCarry = Math.floor(mods.carryWeight * porterCarry);
       const carry = o.kind === 'item' ? Math.floor(npcCarry / market.itemWeight(o.item)) : market.maxLotUnits(o.resource, npcCarry);
       if (qty > carry) throw new MarketError(400, `One trip carries at most ${carry}.`);
@@ -744,7 +749,7 @@ router.post('/npc/:npcId/:orderKey', requireAuth, async (req, res) => {
       await client.query(
         `INSERT INTO npc_trade_usage (settlement_id, npc_id, day, order_key, qty) VALUES ($1,$2,$3,$4,$5)
          ON CONFLICT (settlement_id, npc_id, day, order_key) DO UPDATE SET qty = npc_trade_usage.qty + $5`,
-        [me.id, npcId, trader.day, key, qty]);
+        [me.id, npcId, tradeDay, key, qty]);
       const cit = (await client.query('SELECT * FROM citizens WHERE id = $1 AND settlement_id = $2', [citizenId, me.id])).rows[0];
       const distance = market.distanceBetween(me, trader.npc) || 0;
       const leg = market.legSeconds(distance, await careers.travelCitizen(me.id, cit), {});
@@ -753,7 +758,7 @@ router.post('/npc/:npcId/:orderKey', requireAuth, async (req, res) => {
                                   item_key, item_snapshot, resource, qty, gold, distance, arrives_at, returns_at)
          VALUES ('npc',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, NOW() + make_interval(secs => $16), NOW() + make_interval(secs => $16 * 2))
          RETURNING *`,
-        [playerSide, npcId, key, trader.day, me.id, citizenId, trader.npc.name, trader.npc.tile_q, trader.npc.tile_r,
+        [playerSide, npcId, runKey, tradeDay, me.id, citizenId, trader.npc.name, trader.npc.tile_q, trader.npc.tile_r,
          snap && snap.item_key, snap && JSON.stringify(snap), o.kind === 'resource' ? o.resource : null, qty, gold, distance, leg])).rows[0];
       await ledger.record(client, { kind: 'npc', source: 'run', source_id: run.id, resource: o.kind === 'resource' ? o.resource : null, item_snapshot: snap,
         qty, gold, fee: 0, seller_id: playerSide === 'sell' ? me.id : null, buyer_id: playerSide === 'buy' ? me.id : null,
