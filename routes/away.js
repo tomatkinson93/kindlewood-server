@@ -109,6 +109,10 @@ async function buildReport(s, since, now) {
   }
   for (const e of ceRes.rows) events.push(A.eventFromCitizenEvent(e, names[e.citizen_id]));
 
+  // ── Trade & crafting: pieces made, recipes learned, Market deals ──
+  const trade = await tradeSince(s.id, sinceIso, since);
+  events.push(...trade.events);
+
   const wait = waitRes.rows[0] || {};
   const waiting = [];
   if (wait.to_collect > 0) waiting.push({ icon: '🎁', text: `${wait.to_collect} quest reward${wait.to_collect === 1 ? '' : 's'} ready to collect`, action: 'quests' });
@@ -122,6 +126,45 @@ async function buildReport(s, since, now) {
     happenings: A.happeningsBetween(defs, since, now),
     seasons: seasons.length > 1 ? seasons : [],
     waiting,
+    trade: trade.totals,
+  };
+}
+
+// What the workshops and the Market did while you were away. Optional
+// tables (pre-migration) just yield nothing.
+const QORDER = ['basic', 'sturdy', 'fine', 'superior', 'legendary'];
+async function tradeSince(sid, sinceIso, sinceMs) {
+  const none = { rows: [] };
+  const [jobs, learned, deals] = await Promise.all([
+    query(`SELECT j.*, c.name AS citizen_name FROM craft_jobs j LEFT JOIN citizens c ON c.id = j.citizen_id
+            WHERE j.settlement_id = $1 AND j.status IN ('done','ruined') AND j.finished_at > $2
+            ORDER BY j.finished_at DESC LIMIT $3`, [sid, sinceIso, A.MAX_EVENTS]).catch(() => none),
+    query(`SELECT k.*, r.name AS recipe_name, c.name AS citizen_name FROM settlement_recipes k
+             LEFT JOIN recipes r ON r.recipe_key = k.recipe_key LEFT JOIN citizens c ON c.id = k.citizen_id
+            WHERE k.settlement_id = $1 AND k.learned_at > $2 AND k.source <> 'admin'`, [sid, sinceIso]).catch(() => none),
+    query(`SELECT * FROM market_trades WHERE (seller_settlement_id = $1 OR buyer_settlement_id = $1) AND agreed_at > $2
+            ORDER BY id DESC LIMIT 200`, [sid, sinceIso]).catch(() => none),
+  ]);
+  const ledger = require('../lib/market_ledger');
+  const entries = deals.rows.map(t => ledger.entryFor(t, sid));
+  const made = jobs.rows.filter(j => j.status === 'done');
+  const best = made.reduce((b, j) => (QORDER.indexOf(j.quality) > QORDER.indexOf(b) ? j.quality : b), null);
+  const live = entries.filter(e => e.status !== 'returned');
+  const totals = {
+    made: made.length, ruined: jobs.rows.length - made.length, best_quality: best,
+    listed: made.filter(j => j.roll && j.roll.listed).length,
+    learned: learned.rows.length,
+    earned: live.filter(e => e.side === 'sold').reduce((n, e) => n + e.net, 0),
+    spent: live.filter(e => e.side === 'bought').reduce((n, e) => n - e.net, 0),
+    fees: live.reduce((n, e) => n + (e.fee || 0), 0),
+    deals: live.length,
+    on_road: live.filter(e => e.side === 'sold' && e.status === 'on_road').reduce((n, e) => n + e.net, 0),
+  };
+  totals.net = totals.earned - totals.spent;
+  return {
+    totals,
+    events: [...jobs.rows.map(A.eventFromCraftJob), ...learned.rows.map(A.eventFromRecipe), ...entries.map(A.eventFromTrade)]
+      .filter(e => Number.isFinite(e.at) && e.at > sinceMs),
   };
 }
 
