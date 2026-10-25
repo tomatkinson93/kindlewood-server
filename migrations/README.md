@@ -29,6 +29,7 @@ END $x$;
 New files are written as `0NN_<name>.sql`. **At deploy time, rename each to the next free number** (e.g. `014_crafting.sql`). Only the `_<name>.sql` suffix is matched, so `db.js` needs no change. Keep the order in `applyMigrationFiles`: a file can rely on the ones before it, e.g.
 - `market_ledger` → `market_npc` → `market_v2` → `market_items` → `market`
 - `crafting` → `careers`
+- `resources` (settlement columns for every key in lib/resource_defs.js — add a line here when you add a resource)
 
 ## Tests
 - `scripts/test_all.sh` runs every server suite and the frontend proofs against a throwaway database and a running server.

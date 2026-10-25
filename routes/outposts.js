@@ -89,7 +89,7 @@ async function loadUserSettlement(userId, client = null) {
 // GET /settlement.
 async function freshResourcesAndRates(settlementId, userId) {
   const [sRes, uRes, bRes, cRows, oRes] = await Promise.all([
-    query('SELECT food, timber, stone, metal, wealth FROM settlements WHERE id=$1', [settlementId]),
+    query(`SELECT ${require('../lib/resource_defs').KEYS.join(', ')} FROM settlements WHERE id=$1`, [settlementId]),
     query('SELECT species FROM users WHERE id=$1', [userId]),
     query('SELECT type, level FROM buildings WHERE settlement_id=$1', [settlementId]),
     require('../lib/careers').loadWorkforce(null, settlementId).catch(async () =>

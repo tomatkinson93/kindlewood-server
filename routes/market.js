@@ -1,5 +1,6 @@
 // /api/market — player-to-player trading. See lib/market.js for the flow.
 const express = require('express');
+const RD = require('../lib/resource_defs');
 const { query, withTransaction } = require('../db');
 const requireAuth = require('../middleware/auth');
 const { BUILDINGS } = require('../buildings');
@@ -113,7 +114,9 @@ router.get('/status', requireAuth, async (req, res) => {
         cost: Object.fromEntries(Object.entries(def.cost).map(([r, v]) => [r, v * (mods.marketLevel + 1)])),
         requires: def.requires.map(id => ({ id, label: BUILDINGS[id]?.label || id, built: built.has(id) })),
       },
-      resources: { food: s.food, timber: s.timber, stone: s.stone, metal: s.metal, wealth: s.wealth },
+      resources: require('../lib/resources').resourcesOf(s),
+      discovered: await require('../lib/resources').discoveredKeys({ query }, s.id),
+      resourceDefs: RD.DEFS,
     });
   } catch (e) { sendError(res, e, 'Could not load the market.'); }
 });
@@ -416,7 +419,7 @@ router.post('/orders', requireAuth, async (req, res) => {
         const paid = await client.query(
           `UPDATE settlements SET ${col} = ${col} - $2 WHERE id = $1 AND ${col} >= $2 RETURNING ${col}`,
           [me.id, body.qty_total]);
-        if (!paid.rowCount) throw new MarketError(400, `Not enough ${col} — you need ${body.qty_total}.`);
+        if (!paid.rowCount) throw new MarketError(400, `Not enough ${RD.label(col).toLowerCase()} — you need ${body.qty_total}.`);
         remaining = paid.rows[0][col];
       }
 

@@ -1,6 +1,7 @@
 const express = require('express');
 const { createHouseForSettlement, removeHouseForSettlement } = require('./housing');
 const { query } = require('../db');
+const RD = require('../lib/resource_defs');
 const requireAuth = require('../middleware/auth');
 const { BUILDINGS, TIER_ORDER, calculateRates } = require('../buildings');
 
@@ -166,23 +167,17 @@ router.post('/build', requireAuth, async (req, res) => {
       cost[r] = v * levelMultiplier;
     }
 
-    // Check resources
-    if ((cost.food   || 0) > settlement.food)   return res.status(400).json({ error: `Not enough food. Need ${cost.food}.` });
-    if ((cost.timber || 0) > settlement.timber) return res.status(400).json({ error: `Not enough timber. Need ${cost.timber}.` });
-    if ((cost.stone  || 0) > settlement.stone)  return res.status(400).json({ error: `Not enough stone. Need ${cost.stone}.` });
-    if ((cost.metal  || 0) > settlement.metal)  return res.status(400).json({ error: `Not enough metal. Need ${cost.metal}.` });
-    if ((cost.wealth || 0) > settlement.wealth) return res.status(400).json({ error: `Not enough wealth. Need ${cost.wealth}.` });
+    // Check resources (any resource in lib/resource_defs.js)
+    for (const [r, v] of Object.entries(cost)) {
+      if (!RD.isResource(r)) continue;
+      if (v > (Number(settlement[r]) || 0)) return res.status(400).json({ error: `Not enough ${RD.label(r).toLowerCase()}. Need ${v}.` });
+    }
 
     // Deduct resources
-    await query(`
-      UPDATE settlements SET
-        food   = food   - $1,
-        timber = timber - $2,
-        stone  = stone  - $3,
-        metal  = metal  - $4,
-        wealth = wealth - $5
-      WHERE id = $6
-    `, [cost.food||0, cost.timber||0, cost.stone||0, cost.metal||0, cost.wealth||0, settlement.id]);
+    const costKeys = Object.keys(cost).filter(r => RD.isResource(r) && cost[r] > 0);
+    if (costKeys.length) await query(
+      `UPDATE settlements SET ${costKeys.map((r, i) => `${r} = ${r} - $${i + 1}`).join(', ')} WHERE id = $${costKeys.length + 1}`,
+      [...costKeys.map(r => cost[r]), settlement.id]);
 
     // Build or upgrade
     if (def.isHousing) {
@@ -255,17 +250,10 @@ router.post('/remove', requireAuth, async (req, res) => {
       for (const [r, v] of Object.entries(def.cost)) {
         refund[r] = Math.floor(v * 0.5);
       }
-      if (Object.keys(refund).length) {
-        await query(`
-          UPDATE settlements SET
-            food   = food   + $1,
-            timber = timber + $2,
-            stone  = stone  + $3,
-            metal  = metal  + $4,
-            wealth = wealth + $5
-          WHERE id = $6
-        `, [refund.food||0, refund.timber||0, refund.stone||0, refund.metal||0, refund.wealth||0, settlement.id]);
-      }
+      const keys = Object.keys(refund).filter(r => RD.isResource(r) && refund[r] > 0);
+      if (keys.length) await query(
+        `UPDATE settlements SET ${keys.map((r, i) => `${r} = ${r} + $${i + 1}`).join(', ')} WHERE id = $${keys.length + 1}`,
+        [...keys.map(r => refund[r]), settlement.id]);
     }
 
     // Remove from DB
