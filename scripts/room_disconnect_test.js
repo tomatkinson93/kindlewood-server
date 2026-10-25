@@ -11,7 +11,13 @@ let failures = 0;
 function ok(cond, msg) { console.log((cond ? '  ✅ ' : '  ❌ ') + msg); if (!cond) failures++; }
 
 // Build a started briar room with the given human ids (first is host) + AI fill.
+// A player may sit at one table at a time: end the previous section's table
+// (as its host would) before reusing h0/h1.
 function build(humanIds) {
+  for (const h of humanIds) {
+    const prev = rooms.activeRoomForUser(h);
+    if (prev) rooms.endMatch(prev, prev.hostId);
+  }
   const host = humanIds[0];
   const room = rooms.createRoom({ gameType: 'briar', hostId: host, hostName: host, visibility: 'private', maxPlayers: 6, difficulty: 'smart' });
   const subs = {};
@@ -24,23 +30,26 @@ function build(humanIds) {
 const drop = (room, subs, id) => rooms.unsubscribe(room, id, subs[id]);
 const seatOf = (room, id) => room.seats.find(s => s.id === id);
 
-// ── 1. Grace expiry converts an absent human seat to AI, game still finishes ──
-console.log('1. disconnect → AI conversion');
+// ── 1. A lone player's table waits for them; leaving ends it ──
+// (§3.3 as it stands: an absent seat is handed to the AI only while other
+// humans are present; alone, the game stays paused for them to come back.)
+console.log('1. lone player: paused while away, ended when they leave');
 {
   const { room, subs } = build(['h0']);           // sole human + AIs
   drop(room, subs, 'h0');
   rooms.markAbsent(room, 'h0');
   ok(room.absent && room.absent.has('h0'), 'seat flagged absent');
-  ok(seatOf(room, 'h0').isAI === false, 'still human before grace');
-  room.absent.get('h0').since -= 61000;            // fast-forward past the 60s grace
+  room.absent.get('h0').since -= 61000;            // well past the grace
+  const before = JSON.stringify(room.state.players.map(p => p.hand && p.hand.length));
+  for (let i = 0; i < 20; i++) { room.deadlineAt = 1; rooms._serverTick(Infinity); }
+  ok(seatOf(room, 'h0').isAI === false, 'alone: the seat stays theirs past the grace');
+  ok(room.status === 'playing' && JSON.stringify(room.state.players.map(p => p.hand && p.hand.length)) === before, '…and the table is paused (no AI moves)');
+  rooms.subscribe(room, 'h0', fakeRes());
+  rooms.markPresent(room, 'h0');
+  ok(!room.absent.has('h0'), 'coming back resumes the game');
+  rooms.forfeit(room, 'h0');
   rooms._serverTick();
-  ok(seatOf(room, 'h0').isAI === true, 'seat converted to AI on grace expiry');
-  const gp = room.state.players.find(p => p.seat === seatOf(room, 'h0').seat);
-  ok(gp && gp.isAI === true, 'engine player marked AI too');
-  // Drive to completion (now all AI).
-  let steps = 0;
-  while (room.state.phase !== 'gameover' && steps < 4000) { room.deadlineAt = 1; rooms._serverTick(Infinity); steps++; }
-  ok(room.state.phase === 'gameover', 'converted game reaches gameover');
+  ok(room.status === 'finished', 'leaving for good ends a table with no humans left');
 }
 
 // ── 2. Reconnect BEFORE grace cancels the absence ──

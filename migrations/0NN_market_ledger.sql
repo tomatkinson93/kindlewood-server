@@ -48,7 +48,16 @@ CREATE INDEX IF NOT EXISTS market_trades_seller_idx ON market_trades (seller_set
 CREATE INDEX IF NOT EXISTS market_trades_buyer_idx  ON market_trades (buyer_settlement_id, agreed_at DESC);
 CREATE INDEX IF NOT EXISTS market_trades_recent_idx ON market_trades (agreed_at) WHERE price_signal AND NOT failed;
 
--- Backfill from the trips and runs already made (skips what's recorded).
+-- Backfill the trips and runs made before the ledger existed — once. Every
+-- deal since is recorded by lib/market_ledger.js record(), so re-scanning all
+-- history on every boot would only slow startup. migration_marks remembers.
+CREATE TABLE IF NOT EXISTS migration_marks (
+  key      TEXT PRIMARY KEY,
+  done_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+DO $backfill$
+BEGIN
+IF NOT EXISTS (SELECT 1 FROM migration_marks WHERE key = 'market_ledger_backfill') THEN
 INSERT INTO market_trades (kind, source, source_id, good_type, resource, item_key, quality, item_name, item_icon, item_snapshot,
                            qty, gold, fee, unit_price, seller_settlement_id, buyer_settlement_id, seller_name, buyer_name,
                            citizen_name, citizen_side, agreed_at, delivered_at, paid_at, price_signal)
@@ -89,4 +98,9 @@ SELECT r.kind, 'run', r.id, CASE WHEN r.item_snapshot IS NOT NULL THEN 'item' EL
   JOIN settlements s ON s.id = r.settlement_id
   LEFT JOIN citizens c ON c.id = r.citizen_id
 ON CONFLICT (source, source_id) DO NOTHING;
+
+INSERT INTO migration_marks (key) VALUES ('market_ledger_backfill');
+END IF;
+END
+$backfill$;
 COMMIT;

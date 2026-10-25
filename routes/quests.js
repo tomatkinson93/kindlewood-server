@@ -676,123 +676,117 @@ router.post('/accept-party', requireAuth, async (req, res) => {
 
 // ── POST /api/quests/collect/:id — collect resolved quest reward ──
 router.post('/collect/:id', requireAuth, async (req, res) => {
+  // One transaction with the quest row locked: a second collect (double tap,
+  // retry) waits here, then sees 'collected' and gets nothing. Rewards and
+  // the status change commit together.
+  const { withTransaction } = require('../db');
+  const { grantItem } = require('../lib/inventory');
+  const after = [];   // realtime events, published after COMMIT
+  const fail = (status, error) => Object.assign(new Error(error), { status });
   try {
-    const questRunRes = await query(
-      `SELECT q.*, c.skills as citizen_skills, c.name as citizen_name
-       FROM settlement_quests q
-       LEFT JOIN citizens c ON q.citizen_id = c.id
-       WHERE q.id=$1 AND q.user_id=$2`,
-      [req.params.id, req.user.userId]
-    );
-    const run = questRunRes.rows[0];
-    if (!run) {
-      console.warn('[collect] 404 — no row for id=%s user=%s', req.params.id, req.user.userId);
-      return res.status(404).json({ error: 'Quest not found.' });
-    }
-    if (run.status === 'active') {
-      console.warn('[collect] 400 still-active — id=%s status=%s combat_status=%s completes_at=%s now=%s',
-        run.id, run.status, run.combat_status, run.completes_at, new Date().toISOString());
-      return res.status(400).json({ error: 'Quest still in progress.' });
-    }
-    if (run.status === 'collected') {
-      console.warn('[collect] 400 already-collected — id=%s', run.id);
-      return res.status(400).json({ error: 'Already collected.' });
-    }
-
-    // Resolve quest definition: hardcoded pools first, then DB.
-    let quest = QUEST_POOL.find(q => q.id === run.quest_id)
-             || PARTY_QUEST_POOL.find(q => q.id === run.quest_id);
-    if (!quest) {
-      const dbQ = await query('SELECT * FROM quest_definitions WHERE id=$1', [run.quest_id]);
-      if (dbQ.rows.length) quest = dbQ.rows[0];
-    }
-
-    let goldAwarded = 0;
-    let bonusReward = null;
-    if (run.status === 'completed' && quest) {
-      const isPartyRun = run.quest_type === 'party' || quest.quest_type === 'party';
-      const rMods = await questMods(req.user.userId);   // Happening quest_rewards
-
-      if (isPartyRun) {
-        // Party rewards live in `rewards` JSONB. Apply each resource delta.
-        const rewards = {};
-        for (const [k, v] of Object.entries(quest.rewards || {})) rewards[k] = moddedReward(v, rMods);
-        const sets = Object.entries(rewards).map(([k,v]) => `${k} = ${k} + ${v}`).join(', ');
-        if (sets) await query(`UPDATE settlements SET ${sets} WHERE id=$1`, [run.settlement_id]);
-        goldAwarded = rewards.wealth || 0;
-
-        // Award high_bonus item if roll was high
-        if (quest.high_bonus && (run.success_roll || 0) > (run.success_chance || 0.8)) {
-          const hb = quest.high_bonus;
-          await query(
-            `INSERT INTO inventory_items (settlement_id, item_key, name, description, icon, category, rarity, quantity, source)
-             VALUES ($1,$2,$3,$4,$5,'quest_item','rare',1,$6)
-             ON CONFLICT DO NOTHING`,
-            [run.settlement_id, hb.item?.toLowerCase().replace(/\s+/g,'_') || 'quest_item',
-             hb.item || 'Quest Item', hb.desc || '', '✨', run.quest_id]
-          );
-          bonusReward = hb;
-        }
-      } else {
-        // Solo: flat gold reward.
-        goldAwarded = moddedReward(quest.reward_gold ?? 10, rMods);
-        if (goldAwarded > 0) {
-          await query('UPDATE settlements SET wealth = wealth + $1 WHERE id=$2', [goldAwarded, run.settlement_id]);
-        }
+    const rMods = await questMods(req.user.userId);   // Happening quest_rewards (read-only)
+    const out = await withTransaction(async client => {
+      const db = (t, p) => client.query(t, p);
+      const run = (await client.query(
+        `SELECT q.*, c.skills as citizen_skills, c.name as citizen_name
+           FROM settlement_quests q LEFT JOIN citizens c ON q.citizen_id = c.id
+          WHERE q.id=$1 AND q.user_id=$2 FOR UPDATE OF q`, [req.params.id, req.user.userId])).rows[0];
+      if (!run) {
+        console.warn('[collect] 404 — no row for id=%s user=%s', req.params.id, req.user.userId);
+        throw fail(404, 'Quest not found.');
+      }
+      if (run.status === 'active') {
+        console.warn('[collect] 400 still-active — id=%s status=%s combat_status=%s completes_at=%s now=%s',
+          run.id, run.status, run.combat_status, run.completes_at, new Date().toISOString());
+        throw fail(400, 'Quest still in progress.');
+      }
+      if (run.status === 'collected') {
+        console.warn('[collect] 400 already-collected — id=%s', run.id);
+        throw fail(400, 'Already collected.');
       }
 
-      // Item drops (DB-defined). Each drop has an item_key, optional roll_chance (0-1, default 1).
-      if (Array.isArray(quest.drops) && quest.drops.length) {
-        for (const drop of quest.drops) {
-          const chance = drop.roll_chance ?? 1;
-          if (Math.random() > chance) continue;
-          // Schematics (and any real item) come in as their template says.
-          const dtpl = drop.item_key ? (await query('SELECT * FROM item_templates WHERE item_key = $1', [drop.item_key])).rows[0] : null;
-          if (dtpl && dtpl.category === 'schematic') {
-            await require('../lib/inventory').grantItem(query, run.settlement_id, {
-              item_key: dtpl.item_key, name: dtpl.name, description: dtpl.description, icon: dtpl.icon, category: dtpl.category,
-              rarity: dtpl.rarity, quantity: drop.quantity || 1, source: run.quest_id, metadata: { sell_value: dtpl.sell_value } });
-            continue;
+      // Resolve quest definition: hardcoded pools first, then DB.
+      let quest = QUEST_POOL.find(q => q.id === run.quest_id)
+               || PARTY_QUEST_POOL.find(q => q.id === run.quest_id);
+      if (!quest) {
+        const dbQ = await client.query('SELECT * FROM quest_definitions WHERE id=$1', [run.quest_id]);
+        if (dbQ.rows.length) quest = dbQ.rows[0];
+      }
+
+      // An item reward: its template's fields when there is one, else the
+      // drop's own; grantItem stacks materials, one row per equipment piece.
+      async function grantDrop(d) {
+        const key = d.item_key || ('drop_' + (d.name || 'item').toLowerCase().replace(/\s+/g, '_'));
+        const t = (await client.query('SELECT * FROM item_templates WHERE item_key = $1', [key])).rows[0];
+        await grantItem(db, run.settlement_id, t ? {
+          item_key: t.item_key, name: t.name, description: t.description || '', icon: t.icon || '📦', category: t.category || 'misc',
+          rarity: t.rarity || 'common', equip_slot: t.equip_slot || null, stat_bonuses: t.stat_bonuses || {}, quantity: d.quantity || 1,
+          source: run.quest_id, metadata: { sell_value: t.sell_value, food_value: t.food_value, armor_class: t.armor_class, damage_dice: t.damage_dice },
+          tradeable: t.tradeable !== false,
+        } : {
+          item_key: key, name: d.name || 'Quest Drop', description: d.description || '', icon: d.icon || '📦',
+          category: d.category || 'misc', rarity: d.rarity || 'common', quantity: d.quantity || 1, source: run.quest_id,
+        });
+      }
+
+      let goldAwarded = 0;
+      let bonusReward = null;
+      if (run.status === 'completed' && quest) {
+        const isPartyRun = run.quest_type === 'party' || quest.quest_type === 'party';
+        if (isPartyRun) {
+          // Party rewards live in `rewards` JSONB. Apply each resource delta.
+          const rewards = {};
+          for (const [k, v] of Object.entries(quest.rewards || {})) {
+            if (['food', 'timber', 'stone', 'metal', 'wealth'].includes(k)) rewards[k] = moddedReward(v, rMods);
           }
-          await query(
-            `INSERT INTO inventory_items (settlement_id, item_key, name, description, icon, category, rarity, quantity, source)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-             ON CONFLICT DO NOTHING`,
-            [
-              run.settlement_id,
-              drop.item_key || ('drop_' + (drop.name || 'item').toLowerCase().replace(/\s+/g,'_')),
-              drop.name || 'Quest Drop',
-              drop.description || '',
-              drop.icon || '📦',
-              drop.category || 'misc',
-              drop.rarity || 'common',
-              drop.quantity || 1,
-              run.quest_id,
-            ]
-          );
+          const sets = Object.entries(rewards).map(([k, v]) => `${k} = ${k} + ${Number(v) || 0}`).join(', ');
+          if (sets) await client.query(`UPDATE settlements SET ${sets} WHERE id=$1`, [run.settlement_id]);
+          goldAwarded = rewards.wealth || 0;
+
+          // Award high_bonus item if roll was high
+          if (quest.high_bonus && (run.success_roll || 0) > (run.success_chance || 0.8)) {
+            const hb = quest.high_bonus;
+            await grantDrop({ item_key: hb.item?.toLowerCase().replace(/\s+/g, '_') || 'quest_item', name: hb.item || 'Quest Item',
+              description: hb.desc || '', icon: '✨', category: 'quest_item', rarity: 'rare', quantity: 1 });
+            bonusReward = hb;
+          }
+        } else {
+          // Solo: flat gold reward.
+          goldAwarded = moddedReward(quest.reward_gold ?? 10, rMods);
+          if (goldAwarded > 0) {
+            await client.query('UPDATE settlements SET wealth = wealth + $1 WHERE id=$2', [goldAwarded, run.settlement_id]);
+          }
+        }
+
+        // Item drops (DB-defined). Each drop has an item_key, optional roll_chance (0-1, default 1).
+        if (Array.isArray(quest.drops) && quest.drops.length) {
+          for (const drop of quest.drops) {
+            const chance = drop.roll_chance ?? 1;
+            if (Math.random() > chance) continue;
+            await grantDrop(drop);
+          }
         }
       }
-    }
 
-    // Any finished quest: a small chance of a schematic in the spoils
-    // (better odds on a high roll). lib/crafting grantRandomSchematic.
-    let schematic = null;
-    if (run.status === 'completed') {
-      const high = (run.success_roll || 0) > (run.success_chance || 0.8);
-      if (Math.random() < (high ? QUEST_SCHEMATIC.high : QUEST_SCHEMATIC.base)) {
-        schematic = await require('../lib/crafting').grantRandomSchematic({ query }, run.settlement_id, Math.random, run.quest_id).catch(() => null);
-        if (schematic) eventBus.publish(run.settlement_id, { type: 'schematic_found', source: 'quest', item: { name: schematic.name, icon: schematic.icon } });
+      // Any finished quest: a small chance of a schematic in the spoils
+      // (better odds on a high roll). lib/crafting grantRandomSchematic.
+      let schematic = null;
+      if (run.status === 'completed') {
+        const high = (run.success_roll || 0) > (run.success_chance || 0.8);
+        if (Math.random() < (high ? QUEST_SCHEMATIC.high : QUEST_SCHEMATIC.base)) {
+          schematic = await require('../lib/crafting').grantRandomSchematic(client, run.settlement_id, Math.random, run.quest_id);
+          if (schematic) after.push([run.settlement_id, { type: 'schematic_found', source: 'quest', item: { name: schematic.name, icon: schematic.icon } }]);
+        }
       }
-    }
 
-    await query(
-      "UPDATE settlement_quests SET status='collected' WHERE id=$1",
-      [run.id]
-    );
-
-    res.json({ ok: true, gold_awarded: goldAwarded, status: run.status, bonus: bonusReward,
-      schematic: schematic ? { name: schematic.name, icon: schematic.icon } : null });
+      await client.query("UPDATE settlement_quests SET status='collected' WHERE id=$1", [run.id]);
+      return { ok: true, gold_awarded: goldAwarded, status: run.status, bonus: bonusReward,
+        schematic: schematic ? { name: schematic.name, icon: schematic.icon } : null };
+    });
+    for (const [sid, ev] of after) eventBus.publish(sid, ev);
+    res.json(out);
   } catch (err) {
+    if (err && err.status) return res.status(err.status).json({ error: err.message });
     console.error(err);
     res.status(500).json({ error: 'Failed to collect quest.' });
   }

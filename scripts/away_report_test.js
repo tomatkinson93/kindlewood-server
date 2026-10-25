@@ -215,6 +215,37 @@ const T0 = Date.parse('2026-11-05T03:00:00Z');   // post-cutover: 7h seasons
     assert.strictEqual(r.waiting[0].action, 'quests');
     assert.strictEqual(r.citizens['1'], 'Wren');
   });
+  await test('5f trade tab: pieces made, recipes learned, Market deals, and the totals', async () => {
+    awaySince = new Date(Date.now() - 6 * H);
+    const t = ms => new Date(Date.now() - ms).toISOString();
+    DB.handlers = [
+      [/FROM craft_jobs j/, () => ({ rows: [
+        { citizen_id: 1, citizen_name: 'Wren', status: 'done', quality: 'fine', finished_at: t(3 * H), recipe_snapshot: { name: 'Iron Dagger' },
+          roll: { item: { name: 'Fine Iron Dagger', icon: '🗡️' }, listed: { price: 26 } } },
+        { citizen_id: 1, citizen_name: 'Wren', status: 'done', quality: 'superior', finished_at: t(2 * H), recipe_snapshot: { name: 'Iron Sword' },
+          roll: { item: { name: 'Superior Iron Sword', icon: '⚔️' }, list_failed: 'All your stalls are full.' } },
+        { citizen_id: 2, citizen_name: 'Pip', status: 'ruined', finished_at: t(1 * H), recipe_snapshot: { name: 'Silver Ring' } },
+      ] })],
+      [/FROM settlement_recipes k/, () => ({ rows: [{ recipe_key: 'falchion', recipe_name: 'Falchion', source: 'discovery', citizen_id: 1, citizen_name: 'Wren', learned_at: t(2.5 * H) }] })],
+      [/FROM market_trades/, () => ({ rows: [
+        { id: 9, kind: 'pickup', seller_settlement_id: 7, buyer_settlement_id: 77, buyer_name: 'Oakhollow', good_type: 'item', item_key: 'iron_dagger', item_name: 'Fine Iron Dagger', item_icon: '🗡️',
+          item_snapshot: { rarity: 'common', metadata: {} }, qty: 1, gold: 26, fee: 1, unit_price: 26, agreed_at: t(2 * H), paid_at: t(1 * H), delivered_at: t(1 * H), failed: false },
+        { id: 8, kind: 'lot', seller_settlement_id: 77, buyer_settlement_id: 7, seller_name: 'Oakhollow', good_type: 'resource', resource: 'timber', qty: 100, gold: 70, fee: 3,
+          unit_price: 0.7, agreed_at: t(4 * H), paid_at: null, delivered_at: null, failed: false },
+      ] })],
+      ...baseHandlers(),
+    ];
+    const r = (await call('GET', '/api/game/away-report')).body;
+    const trade = r.events.filter(e => e.category === 'trade');
+    assert.strictEqual(trade.length, 6, JSON.stringify(trade.map(e => e.text)));
+    assert.ok(trade.some(e => /Wren made a Fine Iron Dagger — on a stall at 26 gold/.test(e.text)));
+    assert.ok(trade.some(e => /kept in the stores \(All your stalls are full.\)/.test(e.text)));
+    assert.ok(trade.some(e => e.icon === '💥' && /Pip ruined a Silver Ring/.test(e.text)));
+    assert.ok(trade.some(e => e.icon === '💡' && /Wren worked out how to make Falchion/.test(e.text)));
+    assert.ok(trade.some(e => /Sold 1× Fine Iron Dagger to Oakhollow for 25 gold \(after a 1 fee\)/.test(e.text)));
+    assert.ok(trade.some(e => /Bought 100 timber from Oakhollow for 70 gold — on the way/.test(e.text)));
+    assert.deepStrictEqual(r.trade, { made: 2, ruined: 1, best_quality: 'superior', listed: 1, learned: 1, earned: 25, spent: 70, fees: 1, deals: 2, on_road: 0, net: -45 });
+  });
   await test('5d POST /seen marks the player online and clears the ledger', async () => {
     DB.writes = []; DB.handlers = [];
     const r = await call('POST', '/api/game/seen');

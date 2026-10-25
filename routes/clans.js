@@ -871,8 +871,8 @@ router.post('/territory/claim', requireAuth, requireClanPermission('claim_territ
 });
 
 // ── POST /api/clans/cheat/prestige — { amount } (Dev Tools) ──────────────
-//  Same gate as the other Dev Tools cheats (/api/game/cheat/*): any signed-
-//  in player, own clan only. Adding moves spendable + lifetime and can level
+//  Same gate as the other Dev Tools cheats (/api/game/cheat/*): admins
+//  only (ADMIN_USER_IDS), own clan only. Adding moves spendable + lifetime and can level
 //  the clan up, skipping the daily cap. Removing only lowers the spendable
 //  balance (floored at 0) — lifetime and level never go down.
 router.post('/cheat/prestige', requireAuth, requireAdmin, requireClanMember, async (req, res) => {

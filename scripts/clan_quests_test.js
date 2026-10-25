@@ -4,11 +4,14 @@
 //
 // Usage:
 //   DATABASE_URL=postgres://… CLAN_TEST_BASE=http://localhost:3999 \
-//     node scripts/clan_quests_test.js
+//     CLAN_TEST_ADMIN_ID=990001 node scripts/clan_quests_test.js
+// CLAN_TEST_ADMIN_ID (an id in the server's ADMIN_USER_IDS) enables the
+// quest-admin checks; Dev Tools cheats and quest admin are admin-only.
 
 'use strict';
 
 const { Pool } = require('pg');
+const jwt = require('jsonwebtoken');
 const BASE = process.env.CLAN_TEST_BASE || 'http://localhost:3000';
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const q = (t, p) => pool.query(t, p);
@@ -203,8 +206,10 @@ async function main() {
   const soloKey = b.board.find(x => x.kind === 'solo' && x.state === 'available').key;
   const s5 = await api(M.token, 'POST', '/api/clan-quests/solo', { quest_key: soloKey, citizen_id: mc2.id });
   const ch = await api(M.token, 'POST', '/api/clan-quests/cheat/finish');
-  check(s5.status === 200 && ch.status === 200 && ch.data.finished >= 1, 'cheat finishes your running quests');
-  check(['completed', 'failed'].includes((await q('SELECT status FROM clan_quest_runs WHERE id = $1', [s5.data.run_id])).rows[0].status), 'and resolves them');
+  check(s5.status === 200 && ch.status === 403, 'the finish-now cheat is for admins only');
+  await finish(s5.data.run_id);
+  await board(M);
+  check(['completed', 'failed'].includes((await q('SELECT status FROM clan_quest_runs WHERE id = $1', [s5.data.run_id])).rows[0].status), 'a finished run resolves when the board is read');
 
   console.log('Board rotation');
   const CQ = require('../lib/clan_quests');
@@ -221,8 +226,18 @@ async function main() {
   check(mb.rotates_at && Array.isArray(mb.locked), 'board response carries rotates_at and locked teasers');
 
   console.log('Admin-defined clan quests');
+  const ADMIN_ID = Number(process.env.CLAN_TEST_ADMIN_ID || 0);
+  if (!ADMIN_ID) {
+    console.log('  (CLAN_TEST_ADMIN_ID not set — skipping quest-admin and combat checks)');
+    console.log(`\n${passed} passed, ${failed} failed`);
+    await pool.end();
+    process.exitCode = failed ? 1 : 0;
+    return;
+  }
+  const ADM = jwt.sign({ userId: ADMIN_ID, username: 'test-admin', species: 'Mice' }, process.env.JWT_SECRET || 'dev-secret-change-in-production');
+  check((await api(F.token, 'POST', '/api/quest-admin', { id: `cqx_${RUN}`, title: 'x' })).status === 403, 'quest admin is for admins only');
   const qid = `cqa_${RUN}`;
-  const mk = await api(F.token, 'POST', '/api/quest-admin', {
+  const mk = await api(ADM, 'POST', '/api/quest-admin', {
     id: qid, title: `Ambush Drill ${RUN}`, description: 'Test', icon: '🥁', quest_type: 'solo', quest_source: 'clan',
     skill_key: 'combat', base_success: 0.9, duration_s: 60, rewards: { stone: 7 }, clan_min_level: 1, clan_prestige: 9,
     combat_chance: 100, combat_encounter: ['marsh_rat'],
@@ -234,7 +249,7 @@ async function main() {
   check((await api(F.token, 'POST', '/api/quests/accept', { quest_id: qid, citizen_id: fc2.id })).status === 400, "clan quests can't be taken as personal quests");
   // Put it on today's board: archive the other solo clan quests for the test.
   const others = (await q("SELECT id FROM quest_definitions WHERE quest_source = 'clan' AND quest_type = 'solo' AND NOT archived AND id <> $1", [qid])).rows.map(r => r.id);
-  for (const id of others) await api(F.token, 'PATCH', `/api/quest-admin/${id}`, { archived: true });
+  for (const id of others) await api(ADM, 'PATCH', `/api/quest-admin/${id}`, { archived: true });
   try {
     b = await board(F);
     check(b.board.some(x => x.key === qid), 'admin quest appears on the board');
@@ -267,8 +282,8 @@ async function main() {
     await board(F);
     check(['completed', 'failed'].includes((await q('SELECT status FROM clan_quest_runs WHERE id = $1', [cr.data.run_id])).rows[0].status), 'run resolves after the battle');
   } finally {
-    for (const id of others) await api(F.token, 'PATCH', `/api/quest-admin/${id}`, { archived: false });
-    await api(F.token, 'DELETE', `/api/quest-admin/${qid}`);
+    for (const id of others) await api(ADM, 'PATCH', `/api/quest-admin/${id}`, { archived: false });
+    await api(ADM, 'DELETE', `/api/quest-admin/${qid}`);
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);

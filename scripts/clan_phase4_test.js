@@ -167,9 +167,20 @@ async function main() {
 
   console.log('Level-up & disband');
   await q('UPDATE clans SET level = 1, prestige_lifetime = 0 WHERE id = $1', [clanId]);
-  const cheat = await api(F.token, 'POST', '/api/clans/cheat/prestige', { amount: 500 });
+  check((await api(F.token, 'POST', '/api/clans/cheat/prestige', { amount: 500 })).status === 403, 'the prestige cheat is for admins only');
+  // The cheat acts on the caller's own clan: user 1 (in the server's
+  // ADMIN_USER_IDS, as for the chat tests) joins this clan for the call.
+  const admin1 = (await q('SELECT id, username FROM users WHERE id = 1')).rows[0];
+  if (!admin1) throw new Error('User id 1 must exist (and be in ADMIN_USER_IDS) for the level-up checks.');
+  const admPrev = (await q('SELECT clan_id, rank FROM clan_members WHERE user_id = 1')).rows[0];
+  await q('DELETE FROM clan_members WHERE user_id = 1');
+  await q("INSERT INTO clan_members (user_id, clan_id, rank) VALUES (1, $1, 'member')", [clanId]);
+  const admTok = require('jsonwebtoken').sign({ userId: 1, username: admin1.username }, process.env.JWT_SECRET || 'dev-secret-change-in-production');
+  const cheat = await api(admTok, 'POST', '/api/clans/cheat/prestige', { amount: 500 });
+  await q('DELETE FROM clan_members WHERE user_id = 1');
+  if (admPrev) await q('INSERT INTO clan_members (user_id, clan_id, rank) VALUES (1, $1, $2)', [admPrev.clan_id, admPrev.rank]);
   await tick(400);
-  check(cheat.data.leveledTo === 2 || cheat.data.level === 2, 'cheat levels the clan to 2');
+  check(cheat.data && (cheat.data.leveledTo === 2 || cheat.data.level === 2), 'the cheat levels the clan to 2');
   const sys = await q("SELECT body FROM chat_messages WHERE channel_id = $1 AND author_user_id IS NULL ORDER BY id DESC LIMIT 1", [ch.id]);
   check(/level 2/.test(sys.rows[0].body), 'level-up writes a system line');
   await api(F.token, 'POST', '/api/clans/disband');

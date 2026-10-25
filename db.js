@@ -423,11 +423,6 @@ async function initDB() {
   await query(`ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS path JSONB DEFAULT '[]'`).catch(()=>{});
 
 
-  // ── Quest definition new columns ─────────────────────────────────────────
-  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS quest_source TEXT NOT NULL DEFAULT 'tavern'`).catch(()=>{}); // tavern | settlement
-  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS given_by_npc_id INTEGER REFERENCES npc_settlements(id) ON DELETE SET NULL`).catch(()=>{});
-  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS min_trust INTEGER NOT NULL DEFAULT 0`).catch(()=>{});
-  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS drops JSONB DEFAULT '[]'`).catch(()=>{}); // [{item_key, name, ...}]
 
 
   // ── Item templates (master item registry) ────────────────────────────────
@@ -489,6 +484,14 @@ async function initDB() {
   `);
   await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS high_bonus JSONB DEFAULT NULL`).catch(()=>{});
   await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0`).catch(()=>{});
+
+  // ── Quest definition new columns ─────────────────────────────────────────
+  // (After CREATE TABLE: on a fresh database these used to run first, fail
+  // silently, and leave the columns missing until the next boot.)
+  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS quest_source TEXT NOT NULL DEFAULT 'tavern'`).catch(()=>{}); // tavern | settlement
+  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS given_by_npc_id INTEGER REFERENCES npc_settlements(id) ON DELETE SET NULL`).catch(()=>{});
+  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS min_trust INTEGER NOT NULL DEFAULT 0`).catch(()=>{});
+  await query(`ALTER TABLE quest_definitions ADD COLUMN IF NOT EXISTS drops JSONB DEFAULT '[]'`).catch(()=>{}); // [{item_key, name, ...}]
 
   // ── Quest combat-trigger fields ─────────────────────────────────────────
   // combat_chance: 0–100 percent. 0 = peaceful quest (default), 100 = always.
