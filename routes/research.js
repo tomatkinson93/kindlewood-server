@@ -2,7 +2,9 @@
 //  RESEARCH — /api/research (lib/research, lib/research_defs)
 //
 //  GET   /                     the Library: projects, scholars, points/hr, ETA
-//  POST  /start                { project }  study this next (keeps its progress)
+//  POST  /start                { project }  study it now (keeps its progress)
+//  POST  /queue                { project }  add to the queue (with missing prerequisites)
+//  DELETE /queue/:project                   remove from the queue (and what needed it)
 //  Dev Tools (admin):
 //  POST  /admin/complete       { project }  finish it for your town now
 //  POST  /admin/reset          forget all your town's research
@@ -37,6 +39,16 @@ router.get('/', requireAuth, async (req, res) => {
 router.post('/start', requireAuth, async (req, res) => {
   try { res.json({ ok: true, ...(await research.start(await mySettlementId(req.user.userId), String((req.body || {}).project || ''))) }); }
   catch (e) { send(res, e, 'Could not start that project.'); }
+});
+
+router.post('/queue', requireAuth, async (req, res) => {
+  try { res.json({ ok: true, ...(await research.queueAdd(await mySettlementId(req.user.userId), String((req.body || {}).project || ''))) }); }
+  catch (e) { send(res, e, 'Could not queue that project.'); }
+});
+
+router.delete('/queue/:project', requireAuth, async (req, res) => {
+  try { res.json({ ok: true, ...(await research.queueRemove(await mySettlementId(req.user.userId), String(req.params.project || ''))) }); }
+  catch (e) { send(res, e, 'Could not change the queue.'); }
 });
 
 router.post('/admin/complete', requireAuth, requireAdmin, async (req, res) => {
