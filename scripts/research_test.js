@@ -23,7 +23,7 @@ function check(cond, msg) {
 
 function part1() {
   console.log('The tree');
-  check(RS.KEYS.length === 23, '23 projects');
+  check(RS.KEYS.length === 46 && RS.ERAS.length === 8, '46 projects across 8 eras');
   check(['prospecting', 'smelting', 'record_keeping', 'deep_veins', 'steelworking', 'engineering', 'volcanic_lore', 'master_recipes', 'starmetal'].every(k => RS.PROJECTS[k]),
     'every key a town may already have finished still exists');
   console.log('Layout');
@@ -33,9 +33,20 @@ function part1() {
     'each project sits in a known path and era; its field comes from the path');
   check(RS.KEYS.every(k => RS.PROJECTS[k].requires.every(r => RS.PROJECTS[r].tier < RS.PROJECTS[k].tier)), 'every prerequisite sits in an earlier era (the tree reads left to right)');
   check(Object.keys(RS.BRANCHES).every(b => RS.KEYS.some(k => RS.PROJECTS[k].branch === b && RS.PROJECTS[k].tier === 1)), 'every path starts in era I');
-  check(RS.PROJECTS.prospecting_2.requires.includes('prospecting') && RS.PROJECTS.prospecting_3.requires.includes('prospecting_2') && RS.PROJECTS.furnaces_2.requires.includes('furnaces'),
+  check(RS.PROJECTS.prospecting_2.requires.includes('prospecting') && RS.PROJECTS.prospecting_3.requires.includes('prospecting_2') && RS.pathTo('furnaces_2', []).includes('furnaces'),
     'versions need the one before (Prospecting I → II → III, Hotter Furnaces I → II)');
-  check(RS.PROJECTS.starmetal.branch === 'metallurgy' && RS.PROJECTS.starmetal.requires.includes('volcanic_lore'), 'paths cross: Starmetal needs Volcanic Lore from Mining');
+  check(RS.PROJECTS.starmetal.branch === 'metallurgy' && RS.PROJECTS.starmetal.requires.includes('moon_lore') && RS.PROJECTS.meteor_hunting.requires.includes('observatory'),
+    'paths cross: Starmetal needs Moon Lore (Mining); Meteor Hunting needs the Observatory (Scholarship)');
+  console.log('Pace');
+  const chain = RS.pathTo('starmetal', []).reduce((a, k) => a + RS.PROJECTS[k].cost, 0);
+  check(chain >= 25000 && chain <= 40000, `Starmetal's whole road is ${chain} points: ~3–4 months for a strong Library (~320/day)`);
+  check(RS.ERA_COST.every((c, i) => i === 0 || c > RS.ERA_COST[i - 1]) && RS.KEYS.every(k => RS.PROJECTS[k].cost === RS.ERA_COST[RS.PROJECTS[k].tier - 1]), 'each era costs more than the last');
+  console.log('Distance');
+  const d0 = RS.distances([]);
+  check(d0.prospecting === 1 && d0.shoring === 2 && d0.assaying === 3 && d0.starmetal > 2, 'nothing studied: era I is 1 step, era II is 2, beyond is hidden');
+  const d1 = RS.distances(['prospecting', 'shoring']);
+  check(d1.prospecting === 0 && d1.assaying === 1 && d1.deep_veins === 2 && d1.gem_lore === 3, 'studying a path reveals more of it');
+  check(RS.pathTo('deep_veins', ['prospecting']).join() === 'shoring,assaying,prospecting_2,deep_veins', 'pathTo: what is still needed, in study order');
   check(RS.KEYS.every(k => RS.PROJECTS[k].requires.every(r => RS.PROJECTS[r])), 'every prerequisite exists');
   // No cycles: a topological pass finishes everything.
   const done = new Set();
@@ -47,22 +58,24 @@ function part1() {
   const { BUILDINGS } = require('../buildings');
   check(Object.values(BUILDINGS).filter(b => b.research).every(b => (RS.project(b.research).buildings || []).includes(b.id)), 'research-gated buildings match their project');
   check(BUILDINGS.library && BUILDINGS.library.citizenSlots(3) === 3, 'the Library seats one Scholar per level');
-  check(/Study Prospecting II first/.test(RS.blockedBy('deep_veins', ['prospecting'])) && RS.blockedBy('deep_veins', ['prospecting', 'prospecting_2']) === null, 'blockedBy names what to study first');
-  check(/Volcanic Lore and Steelworking/.test(RS.blockedBy('starmetal', ['prospecting', 'deep_veins'])), '…both missing prerequisites');
+  check(/Study Assaying and Prospecting II first/.test(RS.blockedBy('deep_veins', ['prospecting'])) && RS.blockedBy('deep_veins', ['prospecting', 'prospecting_2', 'assaying']) === null, 'blockedBy names what to study first');
+  check(/Meteor Hunting and Moon Lore/.test(RS.blockedBy('starmetal', ['prospecting', 'deep_veins'])), '…both missing prerequisites');
   const fx = RS.effectsOf(['prospecting', 'prospecting_2', 'prospecting_3', 'furnaces', 'furnaces_2', 'scriptorium', 'academy', 'masonry', 'engineering', 'architecture']);
-  check(Math.abs(fx.ore - 0.5) < 1e-9 && Math.abs(fx['craft_speed:smelter'] - 0.3) < 1e-9 && Math.abs(fx.research - 0.25) < 1e-9 && Math.abs(fx.build_cost + 0.13) < 1e-9,
-    'versions stack (ore +50%, Smelter +30%, research +25%, buildings −13%)');
-  check(RS.effectsOf(new Set(['prospecting', 'engineering', 'record_keeping'])).ore === 0.15 && RS.effectsOf(['engineering']).build_cost === -0.05, 'effects add up');
+  check(Math.abs(fx.ore - 0.35) < 1e-9 && Math.abs(fx['craft_speed:smelter'] - 0.3) < 1e-9 && Math.abs(fx.research - 0.18) < 1e-9 && Math.abs(fx.build_cost + 0.11) < 1e-9,
+    'versions stack (ore +35%, Smelter +30%, research +18%, buildings −11%)');
+  const all = RS.effectsOf(RS.KEYS);
+  check(all.market_fee >= -0.3 && all.build_cost >= -0.2 && all.bank === 300, 'the whole tree: fees −28%, buildings −18%, +300 bank');
+  check(RS.effectsOf(new Set(['prospecting', 'engineering', 'record_keeping'])).ore === 0.1 && RS.effectsOf(['engineering']).build_cost === -0.04, 'effects add up');
 
   console.log('Effects on crafting');
   const crafting = require('../lib/crafting');
   const C0 = require('../lib/careers/classes');
   const tc = crafting.townCraft(new Set(['furnaces', 'swift_benches', 'guild_marks', 'apprenticeship']), 'smelter');
-  check(Math.abs(tc.speed - 0.25) < 1e-9 && tc.quality === 3 && tc.xp === 0.1, 'at the Smelter: Hotter Furnaces + Swift Benches speed, Guild Marks quality, Apprenticeship XP');
+  check(Math.abs(tc.speed - 0.25) < 1e-9 && tc.quality === 2 && tc.xp === 0.1, 'at the Smelter: Hotter Furnaces + Swift Benches speed, Guild Marks quality, Apprenticeship XP');
   check(crafting.townCraft(new Set(['furnaces', 'swift_benches']), 'smithy').speed === 0.1, 'Hotter Furnaces only speeds the Smelter');
   const plain = crafting.benchOf(null, C0.CLASSES.smelter, null, 1), fast = crafting.benchOf(null, C0.CLASSES.smelter, null, 1, tc);
   const M0 = require('../lib/career_math');
-  check(fast.quality === plain.quality + 3 && M0.craftSeconds(1200, fast.speed, 1) < M0.craftSeconds(1200, plain.speed, 1), 'the bench is faster and finer (the panel shows the same numbers)');
+  check(fast.quality === plain.quality + 2 && M0.craftSeconds(1200, fast.speed, 1) < M0.craftSeconds(1200, plain.speed, 1), 'the bench is faster and finer (the panel shows the same numbers)');
 
   console.log('Scholars');
   const C = require('../lib/careers/classes');
@@ -111,8 +124,8 @@ async function part2() {
   console.log('No Library');
   const none = await user('nolib');
   let r = await api(none, 'GET', '/api/research');
-  check(r.status === 200 && r.body.library_level === 0 && r.body.per_hour === 0 && r.body.projects.length === 23 && r.body.branches && r.body.eras.length === 5
-    && r.body.projects.every(p => p.branch && p.tier && Array.isArray(p.requires) && p.unlocks), 'GET /api/research works without a Library (whole tree, with paths and eras)');
+  check(r.status === 200 && r.body.library_level === 0 && r.body.per_hour === 0 && r.body.projects.length === 46 && r.body.branches && r.body.eras.length === 8
+    && r.body.projects.every(p => p.branch && p.tier && Array.isArray(p.requires) && (p.hidden || p.unlocks)), 'GET /api/research works without a Library (whole tree, with paths and eras)');
   r = await api(none, 'POST', '/api/research/start', { project: 'prospecting' });
   check(r.status === 400 && /Library/.test(r.body.error), 'you need a Library to study');
 
@@ -125,8 +138,15 @@ async function part2() {
   check(r.body.seats === 2 && r.body.scholars.length === 2, 'a Lv2 Library seats two Scholars (the third waits)');
   const per = research.BASE_PER_HOUR * 2 * 1.1;
   check(Math.abs(r.body.per_hour - per) < 0.05, `two average Scholars at a Lv2 Library: ${per.toFixed(1)} points/hr`);
+  r = await api(a, 'GET', '/api/research');
+  const hid = r.body.projects.filter(p => p.hidden);
+  check(hid.length > 30 && hid.every(p => p.label === '??' && !p.desc && p.cost == null && !p.unlocks && /^unknown_\d+$/.test(p.key)) && !JSON.stringify(r.body.projects).includes('starmetal'),
+    `${hid.length} distant projects arrive as ?? — no names, costs or unlocks`);
+  check(hid.every(p => p.requires.every(x => r.body.projects.some(y => y.key === x))), '…their arrows still connect');
   r = await api(a, 'POST', '/api/research/start', { project: 'deep_veins' });
-  check(r.status === 400 && /Prospecting II/.test(r.body.error), 'Deep Veins needs Prospecting II first');
+  check(r.status === 400 && /understand/.test(r.body.error), 'a distant project can\'t be studied');
+  r = await api(a, 'POST', '/api/research/queue', { project: 'deep_veins' });
+  check(r.status === 400 && /understand/.test(r.body.error), '…or queued');
   r = await api(a, 'POST', '/api/research/start', { project: 'prospecting' });
   check(r.status === 200 && r.body.active === 'prospecting' && r.body.eta_hours > 0, 'start Prospecting: it is active, with an ETA');
   await back(a.sid, 10);
@@ -140,7 +160,7 @@ async function part2() {
   r = await api(a, 'GET', '/api/research');
   check(r.body.projects.find(p => p.key === 'prospecting').status === 'done' && r.body.active === null, 'enough hours: Prospecting is done');
   check(r.body.bank > 0 && r.body.bank <= research.BANK_CAP, `leftover points bank (${r.body.bank})`);
-  check(r.body.effects.ore === 0.15, 'its effect is live: +15% ore');
+  check(r.body.effects.ore === 0.1, 'its effect is live: +10% ore');
   const ev = (await q("SELECT message FROM settlement_events WHERE settlement_id=$1 AND type='research'", [a.sid])).rows;
   check(ev.length === 1 && /Prospecting/.test(ev[0].message), 'a settlement event says so');
   check((await research.doneSet(null, a.sid)).has('prospecting'), 'doneSet knows it');
@@ -176,10 +196,10 @@ async function part2() {
   await research.adminComplete(u.sid, 'engineering');
   b = await api(u, 'GET', '/api/buildings');
   const lib1 = (b.body.buildings || []).find(x => x.id === 'library');
-  check(lib1.cost.timber === Math.ceil(lib0.cost.timber * 0.95) && lib1.discount && lib1.discount[0].label === 'Research', `Engineering: buildings cost 5% less (${lib0.cost.timber} → ${lib1.cost.timber} timber)`);
+  check(lib1.cost.timber === Math.ceil(lib0.cost.timber * 0.96) && lib1.discount && lib1.discount[0].label === 'Research', `Engineering: buildings cost 4% less (${lib0.cost.timber} → ${lib1.cost.timber} timber)`);
   const market = require('../lib/market');
   const mods = await market.loadModifiers({ query: q }, u.sid);
-  check(Math.abs(mods.feeRate - 0.05 * 0.9) < 1e-9, 'Record Keeping: Market fees fall by a tenth');
+  check(Math.abs(mods.feeRate - 0.05 * 0.94) < 1e-9, 'Record Keeping: Market fees fall by 6%');
   await research.adminComplete(u.sid, 'master_recipes');
   const learned = (await q("SELECT recipe_key, source FROM settlement_recipes WHERE settlement_id=$1 AND recipe_key IN ('falchion','tower_shield')", [u.sid])).rows;
   check(learned.length === 2 && learned.every(x => x.source === 'research'), 'Master Recipes teaches the town the Falchion and the Tower Shield');
@@ -190,11 +210,43 @@ async function part2() {
   const per0 = (await research.scholarsOf(u.sid, 'prospecting')).perHour;
   await research.adminComplete(u.sid, 'scriptorium');
   const per1 = (await research.scholarsOf(u.sid, 'prospecting')).perHour;
-  check(Math.abs(per1 - per0 * 1.1) < 0.06, `Scriptorium: research 10% faster (${per0} → ${per1}/hr)`);
+  check(Math.abs(per1 - per0 * 1.08) < 0.06, `Scriptorium: research 8% faster (${per0} → ${per1}/hr)`);
   const carry0 = (await market.loadModifiers({ query: q }, u.sid)).carryWeight;
   await research.adminComplete(u.sid, 'caravan_routes');
   const carry1 = (await market.loadModifiers({ query: q }, u.sid)).carryWeight;
   check(carry1 > carry0, `Caravan Routes: porters carry more (${carry0} → ${carry1})`);
+
+  console.log('Queue');
+  const qt = await user('queue', [['library', 1]]);
+  await scholar(qt, 'Leaf');
+  await api(qt, 'GET', '/api/research');
+  r = await api(qt, 'POST', '/api/research/queue', { project: 'shoring' });
+  check(r.status === 200 && r.body.active === 'prospecting' && r.body.queue.join() === 'shoring', 'queueing Shoring adds Prospecting I first — and with nothing studied, it starts');
+  r = await api(qt, 'POST', '/api/research/queue', { project: 'masonry' });
+  r = await api(qt, 'POST', '/api/research/queue', { project: 'surveying' });
+  check(r.body.queue.join() === 'shoring,masonry,surveying' && r.body.projects.find(p => p.key === 'surveying').queued === 3, 'later projects go to the end; each knows its place');
+  r = await api(qt, 'POST', '/api/research/queue', { project: 'masonry' });
+  check(r.status === 409, 'already planned');
+  r = await api(qt, 'DELETE', '/api/research/queue/masonry');
+  check(r.status === 200 && r.body.queue.join() === 'shoring', 'removing Masonry also drops Surveying, which needed it');
+  r = await api(qt, 'POST', '/api/research/start', { project: 'scriptorium' });
+  check(r.body.active === 'scriptorium' && r.body.queue.join() === 'prospecting,shoring', 'Study now: the old project goes back to the front of the queue');
+  r = await api(qt, 'DELETE', '/api/research/queue/scriptorium');
+  check(r.body.active === 'prospecting' && r.body.queue.join() === 'shoring', 'stopping the active project starts the next');
+  await back(qt.sid, 400);
+  await research.settle(qt.sid);
+  r = await api(qt, 'GET', '/api/research');
+  const doneNow = r.body.projects.filter(p => p.status === 'done').map(p => p.key);
+  check(doneNow.includes('prospecting') && doneNow.includes('shoring') && r.body.active === null && r.body.queue.length === 0, 'a long absence finishes the queue in order');
+  const evs = (await q("SELECT message FROM settlement_events WHERE settlement_id=$1 AND type='research' ORDER BY id", [qt.sid])).rows;
+  check(evs.length === 2 && /Prospecting I/.test(evs[0].message) && /Shoring/.test(evs[1].message), '…with an event for each');
+  check(r.body.bank > 0, 'and the leftover banks');
+  for (const k of ['masonry', 'scriptorium', 'record_keeping', 'apprenticeship', 'smelting']) await api(qt, 'POST', '/api/research/queue', { project: k });
+  r = await api(qt, 'POST', '/api/research/queue', { project: 'grand_works' });
+  check(r.status === 400, 'too distant, or too many, is refused');
+  await research.adminComplete(qt.sid, 'quills');
+  r = await api(qt, 'GET', '/api/research');
+  check(r.body.bank_cap === research.BANK_CAP + 100, 'Quills & Ink: more points can bank');
 
   console.log('Through the settlement tick');
   const t = await user('tick', [['library', 1]]);

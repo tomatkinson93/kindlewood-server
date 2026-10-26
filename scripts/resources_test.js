@@ -183,12 +183,18 @@ async function part2() {
 
   console.log('Expedition samples');
   const e = await user('exp');
-  await q("INSERT INTO expeditions (settlement_id, user_id, target_q, target_r, completes_at, path) VALUES ($1,$2,1,1,NOW() - interval '1 minute',$3)",
-    [e.sid, e.id, JSON.stringify(Array.from({ length: 20 }, (_, i) => ({ q: i, r: 0 })))]);
-  const realRandom = Math.random;
-  Math.random = () => 0.001;
-  try { await require('../routes/expeditions').completeExpeditions(e.sid, e.id); } finally { Math.random = realRandom; }
-  const es = (await q('SELECT * FROM settlements WHERE id=$1', [e.sid])).rows[0];
+  // The server's own worker also finishes due expeditions (with real luck);
+  // if it claims ours first, send another.
+  let es = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await q("INSERT INTO expeditions (settlement_id, user_id, target_q, target_r, completes_at, path) VALUES ($1,$2,1,1,NOW() - interval '1 minute',$3)",
+      [e.sid, e.id, JSON.stringify(Array.from({ length: 20 }, (_, i) => ({ q: i, r: 0 })))]);
+    const realRandom = Math.random;
+    Math.random = () => 0.001;
+    try { await require('../routes/expeditions').completeExpeditions(e.sid, e.id); } finally { Math.random = realRandom; }
+    es = (await q('SELECT * FROM settlements WHERE id=$1', [e.sid])).rows[0];
+    if (RD.EXTRA.some(k => es[k] > 0)) break;
+  }
   const got = RD.EXTRA.filter(k => es[k] > 0);
   check(got.length === 1 && es[got[0]] >= 5 && es[got[0]] <= 15, `a long expedition brought back a sample (${got[0]} ×${es[got[0]]})`);
   check(got.length === 1 && RD.def(got[0]).discovery === 'mining' && (await resources.discoveredKeys(null, e.sid)).includes(got[0]),
