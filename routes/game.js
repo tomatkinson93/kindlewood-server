@@ -362,6 +362,22 @@ router.get('/resource-breakdown', requireAuth, async (req, res) => {
       console.error('[outposts] upkeep breakdown error:', opErr.message);
     }
 
+    // Ores, rares and alloys from mines and outposts (lib/ores.js) — research
+    // bonuses already folded into each row; seasons don't touch them. Miners
+    // collapse into one row with their names, like citizen_role.
+    const ore = require('../lib/ores').oreRates(buildingsResult.rows, workforce, outpostsResult.rows, await research.doneSet(null, settlement.id));
+    for (const [k, list] of Object.entries(ore.sources)) {
+      const sources = [];
+      const miners = list.filter(x => x.kind === 'citizen');
+      if (miners.length) sources.push({
+        kind: 'citizen_role', role: 'miner', label: 'Miners',
+        value: Math.round(miners.reduce((a, x) => a + x.value, 0) * 100) / 100,
+        citizens: miners.map(x => ({ id: x.citizenIds[0], name: x.label, value: x.value })),
+      });
+      for (const x of list) if (x.kind === 'outpost') sources.push({ kind: 'outpost', terrain: x.terrain, label: x.label, value: x.value });
+      breakdown[k] = { total: ore.rates[k], sources };
+    }
+
     res.json({
       ok: true,
       breakdown,
@@ -1268,7 +1284,7 @@ const TIER_REQUIREMENTS = {
   },
   // To upgrade FROM village → town
   town: {
-    resources: { food: 2500, timber: 2000, stone: 1500, metal: 400, wealth: 800 },
+    resources: { food: 2500, timber: 2000, stone: 1500, metal: 400, wealth: 800, bronze: 40 },
     population: 40,
     buildings: 6,
     label: 'Town',
@@ -1278,7 +1294,7 @@ const TIER_REQUIREMENTS = {
   },
   // To upgrade FROM town → city
   city: {
-    resources: { food: 8000, timber: 6000, stone: 5000, metal: 1500, wealth: 3000 },
+    resources: { food: 8000, timber: 6000, stone: 5000, metal: 1500, wealth: 3000, steel: 100, silver: 50 },
     population: 80,
     buildings: 9,
     label: 'City',
@@ -1309,7 +1325,7 @@ router.get('/tier-info', requireAuth, async (req, res) => {
     let canUpgrade = false;
     let requirementsMet = {};
     if (req2) {
-      const resOk = Object.entries(req2.resources).every(([r, v]) => (s[r] || 0) >= v);
+      const resOk = Object.entries(req2.resources).every(([r, v]) => (Number(s[r]) || 0) >= v);
       const popOk = s.population >= req2.population;
       const bldOk = buildingCount >= req2.buildings;
       canUpgrade = resOk && popOk && bldOk;
@@ -1318,8 +1334,7 @@ router.get('/tier-info', requireAuth, async (req, res) => {
         population: popOk,
         buildings: bldOk,
         current: {
-          food: s.food, timber: s.timber, stone: s.stone,
-          metal: s.metal, wealth: s.wealth,
+          ...Object.fromEntries(Object.keys(req2.resources).map(r => [r, Number(s[r]) || 0])),
           population: s.population,
           buildings: buildingCount,
         },
@@ -1367,11 +1382,10 @@ router.post('/upgrade-tier', requireAuth, async (req, res) => {
 
     // Validate all requirements
     const errors = [];
-    if (s.food   < reqs.resources.food)   errors.push(`Need ${reqs.resources.food} food (have ${s.food})`);
-    if (s.timber < reqs.resources.timber) errors.push(`Need ${reqs.resources.timber} timber (have ${s.timber})`);
-    if (s.stone  < reqs.resources.stone)  errors.push(`Need ${reqs.resources.stone} stone (have ${s.stone})`);
-    if (s.metal  < reqs.resources.metal)  errors.push(`Need ${reqs.resources.metal} iron (have ${s.metal})`);
-    if (s.wealth < reqs.resources.wealth) errors.push(`Need ${reqs.resources.wealth} wealth (have ${s.wealth})`);
+    for (const [r, v] of Object.entries(reqs.resources)) {
+      const have = Number(s[r]) || 0;
+      if (have < v) errors.push(`Need ${v} ${RD.label(r).toLowerCase()} (have ${have})`);
+    }
     if (s.population < reqs.population)   errors.push(`Need ${reqs.population} citizens (have ${s.population})`);
     if (buildingCount < reqs.buildings)    errors.push(`Need ${reqs.buildings} buildings (have ${buildingCount})`);
 
@@ -1381,21 +1395,13 @@ router.post('/upgrade-tier', requireAuth, async (req, res) => {
 
     // Deduct resources. Conditional on the tier we checked, so two
     // concurrent upgrades can't both charge (or both award clan prestige).
-    const upgraded = await query(`
-      UPDATE settlements SET
-        food   = food   - $1,
-        timber = timber - $2,
-        stone  = stone  - $3,
-        metal  = metal  - $4,
-        wealth = wealth - $5,
-        tier   = $6,
-        population_cap = $7
-      WHERE id = $8 AND tier = $9
-    `, [
-      reqs.resources.food, reqs.resources.timber, reqs.resources.stone,
-      reqs.resources.metal, reqs.resources.wealth,
-      nextTier, reqs.popBonus, s.id, s.tier,
-    ]);
+    const keys = Object.keys(reqs.resources).filter(r => RD.isResource(r));
+    const n = keys.length;
+    const upgraded = await query(
+      `UPDATE settlements SET ${keys.map((r, i) => `${r} = ${r} - $${i + 1}`).join(', ')},
+              tier = $${n + 1}, population_cap = $${n + 2}
+        WHERE id = $${n + 3} AND tier = $${n + 4}`,
+      [...keys.map(r => reqs.resources[r]), nextTier, reqs.popBonus, s.id, s.tier]);
     if (!upgraded.rowCount) return res.status(409).json({ error: 'Your settlement was already upgraded.' });
 
     gameEvents.emit('tier_upgraded', { settlementId: s.id, userId: req.user.userId, tier: nextTier });

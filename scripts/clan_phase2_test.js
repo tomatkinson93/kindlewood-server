@@ -154,7 +154,7 @@ async function httpUser(name, tier = 'camp') {
   const r = await api(null, 'POST', '/api/auth/register', { username, email: username + '@t.l', password: 'password123', species: 'Mice' });
   const u = (await q('SELECT id FROM users WHERE username=$1', [username])).rows[0];
   const s = (await q(`UPDATE settlements SET tile_q=2, tile_r=2, world_version=2, tier=$2, food=9000, timber=9000,
-    stone=9000, metal=9000, wealth=9000, population=50 WHERE user_id=$1 RETURNING id`, [u.id, tier])).rows[0];
+    stone=9000, metal=9000, wealth=9000, bronze=500, steel=500, silver=500, population=50 WHERE user_id=$1 RETURNING id`, [u.id, tier])).rows[0];
   for (const b of ['granary', 'farm', 'market', 'tavern', 'forager_hut', 'lumber_camp']) await q('INSERT INTO buildings (settlement_id,type,level) VALUES ($1,$2,1)', [s.id, b]);
   return { username, token: r.data.token, id: u.id, settlementId: s.id };
 }

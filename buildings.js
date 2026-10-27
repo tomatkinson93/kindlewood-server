@@ -3,7 +3,8 @@
 // Optional fields: requires (building ids that must exist), levelTierReq
 // ({ level: tier } — the tier needed to build that level), tierCaps
 // (per-tier count cap for housing), minTier (lowest settlement tier that may
-// build it — compared through TIER_ORDER).
+// build it — compared through TIER_ORDER), levelCost ({ level: { resource: n } }
+// — extra ores/alloys that level costs on top of the scaled base cost).
 
 // Settlement tiers, lowest first. Shared by routes/game.js (tier upgrades)
 // and routes/buildings.js (minTier gating).
@@ -91,6 +92,7 @@ const BUILDINGS = {
     icon: '⚖️',
     cost: { timber: 60, food: 30 },
     maxLevel: 5,
+    levelCost: { 4: { bronze: 30 }, 5: { silver: 30, steel: 30 } },
     // Settlement tier needed to build each level (lib/market.js caps).
     levelTierReq: { 2: 'village', 3: 'town', 4: 'city', 5: 'city' },
     effect: (level) => ({ wealth: level * 8 }),
@@ -148,6 +150,7 @@ const BUILDINGS = {
     icon: '⛏️',
     cost: { timber: 60, food: 30 },
     maxLevel: 3,
+    levelCost: { 3: { bronze: 15 } },
     effect: (level) => ({ stone: level * 4, metal: level * 2 }),
     citizenSlots: (level) => level * 2,
     requires: [],
@@ -161,6 +164,7 @@ const BUILDINGS = {
     icon: '⚒️',
     cost: { timber: 120, stone: 80, metal: 40 },
     maxLevel: 3,
+    levelCost: { 3: { steel: 20 } },
     effect: () => ({}),
     citizenSlots: () => 1,           // the shopkeeper
     stallSlots: (level) => level * 4,
@@ -175,6 +179,7 @@ const BUILDINGS = {
     icon: '💍',
     cost: { stone: 60, metal: 30, wealth: 120 },
     maxLevel: 3,
+    levelCost: { 3: { silver: 15 } },
     effect: () => ({}),
     citizenSlots: () => 1,
     stallSlots: (level) => level * 4,
@@ -204,6 +209,7 @@ const BUILDINGS = {
     icon: '🔥',
     cost: { timber: 80, stone: 120, metal: 40 },
     maxLevel: 3,
+    levelCost: { 2: { bronze: 10 } },
     effect: () => ({}),
     citizenSlots: (level) => level,
     craftSlots: (level) => level,
@@ -219,6 +225,7 @@ const BUILDINGS = {
     icon: '📚',
     cost: { timber: 100, stone: 80, wealth: 60 },
     maxLevel: 3,
+    levelCost: { 3: { bronze: 20 } },
     effect: () => ({}),
     citizenSlots: (level) => level,
     requires: [],

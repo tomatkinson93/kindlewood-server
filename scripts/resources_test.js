@@ -200,6 +200,43 @@ async function part2() {
   check(got.length === 1 && RD.def(got[0]).discovery === 'mining' && (await resources.discoveredKeys(null, e.sid)).includes(got[0]),
     '…of an ore the town can find without research, now discovered');
 
+  console.log('Ore breakdown');
+  const bd = await api(m, 'GET', '/api/game/resource-breakdown');
+  const cu = (bd.body.breakdown || {}).copper;
+  check(bd.status === 200 && cu && Math.abs(cu.total - rt.copper) < 0.01, `the resource breakdown has a copper entry matching its rate (${cu && cu.total}/hr)`);
+  check(cu && cu.sources[0].kind === 'citizen_role' && cu.sources[0].citizens[0].name === 'Dig', '…crediting the miner by name');
+  check(!(bd.body.breakdown || {}).gems, '…and nothing for ores the Mine is too shallow for');
+
+  console.log('Level costs in metal');
+  const lc = await user('lvl');
+  await q("INSERT INTO buildings (settlement_id, type, level) VALUES ($1,'mine',2)", [lc.sid]);
+  await q('UPDATE settlements SET timber = 5000, food = 5000, bronze = 0 WHERE id=$1', [lc.sid]);
+  const lb = await api(lc, 'GET', '/api/buildings');
+  const mineRow = (lb.body.buildings || []).find(b => b.id === 'mine');
+  check(mineRow && mineRow.cost.bronze === 15 && mineRow.cost.timber === 180, 'a Mine Lv3 costs 15 bronze on top of timber and food');
+  check((lb.body.buildings || []).find(b => b.id === 'smithy').cost.steel === undefined, '…while Lv1 buildings cost no metals');
+  let br = await api(lc, 'POST', '/api/buildings/build', { buildingId: 'mine' });
+  check(br.status === 400 && /bronze/i.test(br.body.error), 'without bronze the upgrade is refused');
+  await q('UPDATE settlements SET bronze = 20 WHERE id=$1', [lc.sid]);
+  br = await api(lc, 'POST', '/api/buildings/build', { buildingId: 'mine' });
+  const lcs = (await q("SELECT s.bronze, b.level FROM settlements s JOIN buildings b ON b.settlement_id = s.id AND b.type = 'mine' WHERE s.id=$1", [lc.sid])).rows[0];
+  check(br.status === 200 && lcs.level === 3 && lcs.bronze === 5, 'with it, the Mine reaches Lv3 and 15 bronze is spent');
+
+  console.log('Tier upgrades in metal');
+  const t = await user('tier');
+  await q("UPDATE settlements SET tier = 'village', population = 50, food = 9000, timber = 9000, stone = 9000, metal = 9000, wealth = 9000, bronze = 0 WHERE id=$1", [t.sid]);
+  for (const b of ['farm', 'lumber_camp', 'granary', 'mine', 'market', 'smithy']) await q('INSERT INTO buildings (settlement_id, type, level) VALUES ($1,$2,1)', [t.sid, b]);
+  const ti = await api(t, 'GET', '/api/game/tier-info');
+  check(ti.body.requirements.resources.bronze === 40 && ti.body.requirementsMet.current.bronze === 0 && !ti.body.canUpgrade, 'Village → Town needs 40 bronze, and says how much you have');
+  let tu = await api(t, 'POST', '/api/game/upgrade-tier', {});
+  check(tu.status === 400 && /40 bronze/.test(tu.body.error), 'without it the upgrade is refused');
+  await q('UPDATE settlements SET bronze = 45 WHERE id=$1', [t.sid]);
+  tu = await api(t, 'POST', '/api/game/upgrade-tier', {});
+  const ts = (await q('SELECT tier, bronze, food FROM settlements WHERE id=$1', [t.sid])).rows[0];
+  check(tu.status === 200 && ts.tier === 'town' && ts.bronze === 5 && ts.food === 6500, 'with it: a Town, 40 bronze and the usual costs spent');
+  const tc = await api(t, 'GET', '/api/game/tier-info');
+  check(tc.body.requirements.resources.steel === 100 && tc.body.requirements.resources.silver === 50, 'Town → City needs 100 steel and 50 silver');
+
   if (ADMIN) {
     console.log('Dev Tools grant');
     const adm = await user('resadm', ADMIN);

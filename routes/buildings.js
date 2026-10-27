@@ -25,7 +25,13 @@ async function buildDiscount(sid, done) {
   const total = Math.max(-MAX_BUILD_DISCOUNT, parts.reduce((a, p) => a + p.pct, 0));
   return { mult: 1 + total, parts };
 }
-const scaledCost = (def, level, mult) => Object.fromEntries(Object.entries(def.cost).map(([r, v]) => [r, Math.ceil(v * level * mult)]));
+// Base cost × level, plus that level's levelCost extras (ores and alloys, not scaled
+// by level), all less any discount.
+function scaledCost(def, level, mult) {
+  const out = Object.fromEntries(Object.entries(def.cost).map(([r, v]) => [r, Math.ceil(v * level * mult)]));
+  for (const [r, v] of Object.entries((def.levelCost && def.levelCost[level]) || {})) out[r] = (out[r] || 0) + Math.ceil(v * mult);
+  return out;
+}
 
 // True when a settlement at `tier` may build `def` (its optional minTier).
 function tierMetFor(def, tier) {
