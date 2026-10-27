@@ -7,6 +7,8 @@
 -- player's use of them is stored.
 --   npc_trade_usage: units of a village's order a settlement took that day
 --   npc_trade_trust: trust gained from trading that day (capped)
+--   npc_request_alerts: a village request a settlement has been told about
+--     (once each, by village and the request's start day — the bell entry)
 -- market_runs kind 'npc': a porter trading with a village; side is the
 -- player's side ('buy' = the player buys from the village).
 BEGIN;
@@ -23,6 +25,12 @@ CREATE TABLE IF NOT EXISTS npc_trade_trust (
   npc_id         INTEGER NOT NULL REFERENCES npc_settlements(id) ON DELETE CASCADE,
   day            DATE    NOT NULL,
   gained         INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (settlement_id, npc_id, day)
+);
+CREATE TABLE IF NOT EXISTS npc_request_alerts (
+  settlement_id  INTEGER NOT NULL REFERENCES settlements(id) ON DELETE CASCADE,
+  npc_id         INTEGER NOT NULL REFERENCES npc_settlements(id) ON DELETE CASCADE,
+  day            DATE    NOT NULL,
   PRIMARY KEY (settlement_id, npc_id, day)
 );
 ALTER TABLE market_runs ADD COLUMN IF NOT EXISTS npc_id INTEGER REFERENCES npc_settlements(id) ON DELETE SET NULL;
