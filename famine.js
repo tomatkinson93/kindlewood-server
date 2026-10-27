@@ -136,7 +136,8 @@ function simulateConsumption(state, nQuanta, startMs) {
   let foodF = Number(state.foodF) || 0;
   const events = [];
 
-  // Outposts (010): each outpost consumes OUTPOST_FOOD_UPKEEP_PER_HR,
+  // Outposts (010): each outpost level consumes OUTPOST_FOOD_UPKEEP_PER_HR
+  // (state.outpostCount is the sum of levels),
   // SEASON-FLAT (winter squeezes yields, not upkeep — spec §5), deducted
   // AFTER the citizen feeding loop each quantum (citizens eat first;
   // unfed outposts carry no penalty in v1). Stays pure & deterministic.
@@ -287,9 +288,10 @@ async function applyConsumption(settlementId) {
   );
   await require('./lib/careers').attachUpkeep(settlementId, cRes.rows);
 
-  // Outposts (010) — count for season-flat upkeep. .catch → 0 pre-migration.
+  // Outposts (010) — season-flat upkeep, OUTPOST_FOOD_UPKEEP_PER_HR per
+  // outpost LEVEL (an upgraded outpost eats more). .catch → 0 pre-migration.
   const oCountRes = await query(
-    'SELECT COUNT(*)::int AS n FROM outposts WHERE settlement_id=$1',
+    'SELECT COALESCE(SUM(GREATEST(level, 1)), 0)::int AS n FROM outposts WHERE settlement_id=$1',
     [settlementId]
   ).catch(() => ({ rows: [{ n: 0 }] }));
   const outpostCount = oCountRes.rows[0]?.n || 0;
@@ -421,8 +423,9 @@ async function getFamineSummary(settlementId, foodProductionPerHour = 0) {
 
   // Outposts (010) — season-flat upkeep joins the consumption side so
   // hours-to-empty and the warning banner see the real burn rate.
+  // Per outpost level, like the tick.
   const oCountRes = await query(
-    'SELECT COUNT(*)::int AS n FROM outposts WHERE settlement_id=$1',
+    'SELECT COALESCE(SUM(GREATEST(level, 1)), 0)::int AS n FROM outposts WHERE settlement_id=$1',
     [settlementId]
   ).catch(() => ({ rows: [{ n: 0 }] }));
   const outpostCount = oCountRes.rows[0]?.n || 0;
@@ -483,12 +486,12 @@ async function buildUpkeepBreakdownSource(settlementId) {
 // design (spec §5) — no seasonNote, the number never moves with the year.
 async function buildOutpostUpkeepBreakdownSource(settlementId) {
   const oRes = await query(
-    'SELECT COUNT(*)::int AS n FROM outposts WHERE settlement_id=$1',
+    'SELECT COUNT(*)::int AS n, COALESCE(SUM(GREATEST(level, 1)), 0)::int AS lv FROM outposts WHERE settlement_id=$1',
     [settlementId]
-  ).catch(() => ({ rows: [{ n: 0 }] }));
+  ).catch(() => ({ rows: [{ n: 0, lv: 0 }] }));
   const n = oRes.rows[0]?.n || 0;
   if (n < 1) return null;
-  const total = n * OUTPOST_FOOD_UPKEEP_PER_HR;
+  const total = (oRes.rows[0]?.lv || n) * OUTPOST_FOOD_UPKEEP_PER_HR;   // per level
   return {
     kind: 'outpost_upkeep',
     label: `Outpost upkeep (×${n})`,

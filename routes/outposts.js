@@ -7,6 +7,7 @@
 //    GET    /          — my outposts + cap/used/range + display config
 //    POST   /build     — { q, r } claim + build in ONE transaction (the button)
 //    POST   /claim     — { q, r } territory only (10 wealth; API completeness)
+//    POST   /:id/upgrade — next level (max 3): more yield and ores, more upkeep
 //    DELETE /:id       — dismantle, clears the tile claim, no refund
 //
 //  Contested-tile arbiter: UNIQUE (tile_q, tile_r) on outposts — the DB, not
@@ -25,8 +26,10 @@ const mapgen = require('../mapgen');
 const {
   OUTPOST_CONFIG, OUTPOST_COST, CLAIM_COST,
   rangeForTier, capForTier, outpostYields, publicConfig,
-  OUTPOST_FOOD_UPKEEP_PER_HR,
+  OUTPOST_FOOD_UPKEEP_PER_HR, OUTPOST_MAX_LEVEL, OUTPOST_LEVEL_TIER, upgradeCost,
 } = require('../outposts_config');
+const { TIER_ORDER } = require('../buildings');
+const RD = require('../lib/resource_defs');
 
 const router = express.Router();
 
@@ -73,8 +76,29 @@ function decorate(o) {
     name: cfg.name || 'Outpost',
     icon: cfg.icon || '⛺',
     yields: outpostYields(o.terrain, o.level),
-    upkeep_food_per_hr: OUTPOST_FOOD_UPKEEP_PER_HR,
+    ores: oresAt(o.terrain, o.level),
+    upkeep_food_per_hr: OUTPOST_FOOD_UPKEEP_PER_HR * Math.max(1, o.level || 1),
+    max_level: OUTPOST_MAX_LEVEL,
     built_at: o.built_at,
+  };
+}
+// Ores per hour at a level (before research, which can gate or raise them).
+function oresAt(terrain, level) {
+  const cfg = OUTPOST_CONFIG[terrain] || {};
+  const lvl = Math.max(1, Math.floor(level) || 1);
+  return Object.fromEntries(Object.entries(cfg.ores || {}).map(([k, v]) => [k, Math.round(v * lvl * 100) / 100]));
+}
+// The next level for one of my outposts: { level, cost, yields, ores, upkeep,
+// tier (needed), tierMet } or null at the top.
+function nextLevel(o, tier, mult) {
+  const level = (o.level || 1) + 1;
+  if (level > OUTPOST_MAX_LEVEL) return null;
+  const need = OUTPOST_LEVEL_TIER[level] || null;
+  return {
+    level, cost: upgradeCost(level, mult),
+    yields: outpostYields(o.terrain, level), ores: oresAt(o.terrain, level),
+    upkeep_food_per_hr: OUTPOST_FOOD_UPKEEP_PER_HR * level,
+    tier: need, tierMet: !need || TIER_ORDER.indexOf(tier || 'camp') >= TIER_ORDER.indexOf(need),
   };
 }
 
@@ -170,9 +194,10 @@ router.get('/', requireAuth, async (req, res) => {
     ).catch(() => ({ rows: [] })); // table missing pre-migration → empty
 
     const tier = settlement.tier || 'camp';
+    const mult = (await require('./buildings').buildDiscount(settlement.id)).mult;
     res.json({
       ok: true,
-      outposts: oRes.rows.map(decorate),
+      outposts: oRes.rows.map(o => ({ ...decorate(o), next: nextLevel(o, tier, mult) })),
       used: oRes.rows.length,
       cap: capForTier(tier),
       range: rangeForTier(tier),
@@ -350,6 +375,41 @@ router.post('/claim', requireAuth, async (req, res) => {
     await client.query('ROLLBACK').catch(() => {});
     console.error('[outposts] claim', err);
     res.status(500).json({ error: 'Failed to claim tile.' });
+  } finally {
+    client.release();
+  }
+});
+
+// ── POST /:id/upgrade — next level ─────────────────────────────────────────
+router.post('/:id/upgrade', requireAuth, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Bad outpost id.' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const settlement = (await client.query('SELECT * FROM settlements WHERE user_id=$1 FOR UPDATE', [req.user.userId])).rows[0];
+    const o = settlement && (await client.query('SELECT * FROM outposts WHERE id=$1 AND settlement_id=$2 FOR UPDATE', [id, settlement.id])).rows[0];
+    const fail = async (status, error) => { await client.query('ROLLBACK'); return res.status(status).json({ error }); };
+    if (!o) return fail(404, 'Outpost not found.');
+    const mult = (await require('./buildings').buildDiscount(settlement.id)).mult;
+    const next = nextLevel(o, settlement.tier, mult);
+    if (!next) return fail(400, `This outpost is already level ${OUTPOST_MAX_LEVEL}.`);
+    if (!next.tierMet) return fail(400, `A level ${next.level} outpost needs a ${next.tier.charAt(0).toUpperCase() + next.tier.slice(1)}.`);
+    for (const [r, v] of Object.entries(next.cost)) {
+      if (v > (Number(settlement[r]) || 0)) return fail(400, `Not enough ${RD.label(r).toLowerCase()}. Need ${v}.`);
+    }
+    const keys = Object.keys(next.cost).filter(r => RD.isResource(r) && next.cost[r] > 0);
+    await client.query(`UPDATE settlements SET ${keys.map((r, i) => `${r} = ${r} - $${i + 1}`).join(', ')} WHERE id = $${keys.length + 1}`,
+      [...keys.map(r => next.cost[r]), settlement.id]);
+    const up = (await client.query('UPDATE outposts SET level = $2 WHERE id = $1 RETURNING *', [id, next.level])).rows[0];
+    await client.query('COMMIT');
+
+    const { resources, rates } = await freshResourcesAndRates(settlement.id, req.user.userId);
+    res.json({ ok: true, outpost: { ...decorate(up), next: nextLevel(up, settlement.tier, mult) }, spent: next.cost, resources, rates });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[outposts] upgrade', err);
+    res.status(500).json({ error: 'Failed to upgrade the outpost.' });
   } finally {
     client.release();
   }
