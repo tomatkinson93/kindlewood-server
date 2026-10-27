@@ -107,7 +107,7 @@ router.get('/', requireAuth, async (req, res) => {
         requiresMet,
         tierMet,
         research: def.research || null,
-        researchLabel: def.research ? RS.label(def.research) : null,
+        researchLabel: def.research ? RS.labelFor(def.research, done) : null,
         researchMet: !def.research || done.has(def.research),
         minTier: def.minTier || null,
         nextLevelTier,
@@ -177,7 +177,7 @@ router.post('/build', requireAuth, async (req, res) => {
       return res.status(400).json({ error: `Level ${currentLevel + 1} ${def.label} requires a ${tierLabel(levelTierFor(def, currentLevel + 1))} settlement.` });
 
     if (def.research && !(await require('../lib/research').doneSet(null, settlement.id)).has(def.research))
-      return res.status(400).json({ error: `Study ${RS.label(def.research)} at a Library first.` });
+      return res.status(400).json({ error: `Study ${RS.labelFor(def.research, await require('../lib/research').doneSet(null, settlement.id))} at a Library first.` });
 
     // Check requirements
     for (const req of def.requires) {

@@ -85,8 +85,8 @@ function part1() {
   check(require('../lib/careers/traits').APTITUDES.bookish.classes.includes('scholar'), 'hidden talent: Bookish');
 
   const fe = process.env.KW_FRONTEND_DIR || path.join(__dirname, '..', '..', 'kindlewood-frontend');
-  const twin = path.join(fe, 'js', 'research-defs.js');
-  if (fs.existsSync(twin)) check(fs.readFileSync(twin, 'utf8') === fs.readFileSync(path.join(__dirname, '..', 'lib', 'research_defs.js'), 'utf8'), 'frontend js/research-defs.js is byte-identical');
+  if (fs.existsSync(path.join(fe, 'js'))) check(!fs.existsSync(path.join(fe, 'js', 'research-defs.js')), 'the frontend ships no research-defs.js (distant names stay on the server)');
+  check(RS.labelFor('starmetal', []) === RS.UNKNOWN_RESEARCH && RS.labelFor('prospecting', []) === 'Prospecting I', 'labelFor hides distant names');
 }
 
 async function part2() {
@@ -171,6 +171,21 @@ async function part2() {
   check(r.status === 200 && r.body.projects.find(p => p.key === 'smelting').progress === research.BANK_CAP && r.body.bank === 0, 'the bank goes straight into the next project');
   r = await api(a, 'POST', '/api/research/start', { project: 'prospecting' });
   check(r.status === 400 && /Already/.test(r.body.error), 'a finished project can\'t be studied again');
+
+  console.log('No names leak');
+  const doneA = await research.doneSet(null, a.sid);
+  const dist = RS.distances(doneA);
+  const shown = RS.KEYS.filter(k => dist[k] <= RS.HIDE_BEYOND || doneA.has(k)).map(k => RS.PROJECTS[k].label);
+  const secret = RS.KEYS.filter(k => dist[k] > RS.HIDE_BEYOND && !doneA.has(k)).map(k => RS.PROJECTS[k].label)
+    .filter(l => !shown.some(v => v.includes(l)));
+  const leaks = [];
+  for (const pth of ['/api/buildings', '/api/crafting/station/smelter', '/api/crafting/station/smithy', '/api/crafting/station/jeweller', '/api/research']) {
+    const txt = JSON.stringify((await api(a, 'GET', pth)).body);
+    for (const l of secret) if (txt.includes(l)) leaks.push(`${pth}: ${l}`);
+  }
+  check(secret.length > 20 && !leaks.length, `no distant project names in buildings, workshops or the Library (${secret.length} secret)${leaks.length ? ' — ' + leaks.join(', ') : ''}`);
+  r = await api(a, 'GET', '/api/research/admin/defs');
+  check(r.status === 403, 'players can\'t read the full tree');
 
   console.log('Fields and talent');
   const f = await user('field', [['library', 1]]);
@@ -267,6 +282,15 @@ async function part2() {
     check(r.status === 200 && r.body.projects.every(p => p.status !== 'done'), 'Dev Tools: reset research');
     r = await api(a, 'POST', '/api/research/admin/reset', {});
     check(r.status === 403, 'players can\'t use the Dev Tools routes');
+    r = await api(adm, 'GET', '/api/research/admin/defs');
+    check(r.status === 200 && r.body.projects.length === 46 && r.body.projects.some(p => p.label === RS.PROJECTS.starmetal.label), 'Dev Tools: the full tree, names and all');
+    const tile = (await q('SELECT q, r, terrain FROM tiles ORDER BY q, r LIMIT 1')).rows[0];
+    if (tile) {
+      r = await api(a, 'POST', '/api/map/tile-terrain', { q: tile.q, r: tile.r, terrain: 'mountain' });
+      check(r.status === 403, 'players can\'t repaint terrain');
+      r = await api(adm, 'POST', '/api/map/tile-terrain', { q: tile.q, r: tile.r, terrain: tile.terrain });
+      check(r.status === 200 && r.body.tile.terrain === tile.terrain, 'admins still can');
+    }
   } else console.log('  (admin checks skipped — set CRAFTING_TEST_ADMIN_ID)');
 
   void s1;

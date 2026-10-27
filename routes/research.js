@@ -8,6 +8,8 @@
 //  Dev Tools (admin):
 //  POST  /admin/complete       { project }  finish it for your town now
 //  POST  /admin/reset          forget all your town's research
+//  GET   /admin/defs           every project's key and name (the browser
+//                              never gets the whole tree otherwise)
 // ══════════════════════════════════════════════════════════════════════════
 
 'use strict';
@@ -54,6 +56,11 @@ router.delete('/queue/:project', requireAuth, async (req, res) => {
 router.post('/admin/complete', requireAuth, requireAdmin, async (req, res) => {
   try { res.json({ ok: true, ...(await research.adminComplete(await mySettlementId(req.user.userId), String((req.body || {}).project || ''))) }); }
   catch (e) { send(res, e, 'Could not finish it.'); }
+});
+
+router.get('/admin/defs', requireAuth, requireAdmin, (req, res) => {
+  const RS = require('../lib/research_defs');
+  res.json({ ok: true, projects: RS.KEYS.map(k => ({ key: k, label: RS.PROJECTS[k].label, branch: RS.PROJECTS[k].branch, tier: RS.PROJECTS[k].tier })) });
 });
 
 router.post('/admin/reset', requireAuth, requireAdmin, async (req, res) => {
