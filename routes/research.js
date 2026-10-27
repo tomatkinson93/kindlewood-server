@@ -4,6 +4,8 @@
 //  GET   /                     the Library: projects, scholars, points/hr, ETA
 //  POST  /start                { project }  study it now (keeps its progress)
 //  POST  /queue                { project }  add to the queue (with missing prerequisites)
+//  POST  /queue/move           { project, to }  move it to place `to` (0 = next up),
+//                              never ahead of what it needs
 //  DELETE /queue/:project                   remove from the queue (and what needed it)
 //  Dev Tools (admin):
 //  POST  /admin/complete       { project }  finish it for your town now
@@ -46,6 +48,12 @@ router.post('/start', requireAuth, async (req, res) => {
 router.post('/queue', requireAuth, async (req, res) => {
   try { res.json({ ok: true, ...(await research.queueAdd(await mySettlementId(req.user.userId), String((req.body || {}).project || ''))) }); }
   catch (e) { send(res, e, 'Could not queue that project.'); }
+});
+
+// Body: { project, to } — to is the new 0-based place in the queue.
+router.post('/queue/move', requireAuth, async (req, res) => {
+  try { const b = req.body || {}; res.json({ ok: true, ...(await research.queueMove(await mySettlementId(req.user.userId), String(b.project || ''), b.to)) }); }
+  catch (e) { send(res, e, 'Could not change the queue.'); }
 });
 
 router.delete('/queue/:project', requireAuth, async (req, res) => {
