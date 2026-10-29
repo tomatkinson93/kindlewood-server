@@ -42,6 +42,18 @@ const OUTPOST_FOOD_UPKEEP_PER_HR = 1;
 // Payback ≈ 210 resource-units / ~5 net units·hr⁻¹ ≈ 1.75 days.
 const OUTPOST_COST = { timber: 120, stone: 60, wealth: 30 };
 
+// Upgrades (POST /api/game/outposts/:id/upgrade): up to Lv3. Going to level
+// L costs OUTPOST_COST × L × 1.5 (less building discounts), plus bronze at
+// Lv3, which also needs a Town. Yields, ores and food upkeep scale with level.
+const OUTPOST_MAX_LEVEL = 3;
+const OUTPOST_LEVEL_EXTRA = { 3: { bronze: 15 } };
+const OUTPOST_LEVEL_TIER = { 3: 'town' };
+function upgradeCost(level, mult = 1) {
+  const out = Object.fromEntries(Object.entries(OUTPOST_COST).map(([r, v]) => [r, Math.ceil(v * level * 1.5 * mult)]));
+  for (const [r, v] of Object.entries(OUTPOST_LEVEL_EXTRA[level] || {})) out[r] = (out[r] || 0) + Math.ceil(v * mult);
+  return out;
+}
+
 // Standalone claim (territory without an outpost) — API completeness; the v1
 // UI only exposes build-which-auto-claims.
 const CLAIM_COST = { wealth: 10 };
@@ -90,6 +102,9 @@ module.exports = {
   SECONDARY_YIELDS_ENABLED,
   OUTPOST_FOOD_UPKEEP_PER_HR,
   OUTPOST_COST,
+  OUTPOST_MAX_LEVEL,
+  OUTPOST_LEVEL_TIER,
+  upgradeCost,
   CLAIM_COST,
   OUTPOST_RANGE_BY_TIER,
   OUTPOST_CAP_BY_TIER,

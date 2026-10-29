@@ -13,6 +13,7 @@
 
 const npcTrade = require('../lib/npc_trade');
 const market = require('../lib/market');
+const RD = require('../lib/resource_defs');
 
 let passed = 0, failed = 0;
 function check(cond, msg) {
@@ -93,6 +94,24 @@ async function part2() {
   const row = (r.body.wants || []).find(w => w.npc && w.npc.id === villa.id && w.order_key === 'req');
   check(row && row.request && row.request.by && row.qty_open === req.qty && row.expires_at === req.request.ends_at, `the request shows with its deadline: ${req.qty} ${req.resource} by ${req.request.by}`);
 
+  console.log('Request alerts');
+  r = await api('GET', '/api/market/requests');
+  const al = (r.body.requests || []).find(x => x.npc.id === villa.id);
+  check(r.status === 200 && r.body.has_market === true && al && al.kind === 'resource' && al.resource === req.resource && al.qty === req.qty && al.remaining === req.qty
+    && al.day === req.request.day && al.by === req.request.by && al.trust_bonus === npcTrade.REQUEST_TRUST, `GET /requests lists it: ${al && al.npc.name} needs ${req.qty} ${req.resource} by ${req.request.by}`);
+  check((r.body.requests || []).every(x => x.npc && x.day && x.ends_at), 'every entry names its village and deadline');
+  check(al && al.fresh === true && al.message === `📣 ${villa.name} needs ${req.qty} ${RD.label(req.resource).toLowerCase()} by ${req.request.by} — +${npcTrade.REQUEST_TRUST} trust.`, 'the first look is fresh, with its message');
+  let bell = (await q("SELECT message FROM settlement_events WHERE settlement_id=$1 AND type='village_request_new'", [s.id])).rows;
+  check(bell.length === 1 && bell[0].message === al.message, '…and a bell entry');
+  await q("DELETE FROM settlement_events WHERE settlement_id=$1 AND type='village_request_new'", [s.id]);
+  r = await api('GET', '/api/market/requests');
+  bell = (await q("SELECT 1 FROM settlement_events WHERE settlement_id=$1 AND type='village_request_new'", [s.id])).rows;
+  check(r.body.requests.find(x => x.npc.id === villa.id).fresh === false && bell.length === 0, 'once only — even after the bell entry is dismissed');
+  await q('UPDATE diplomacy_relations SET trust = 10 WHERE settlement_id=$1 AND npc_id=$2', [s.id, villa.id]);
+  r = await api('GET', '/api/market/requests');
+  check(r.status === 200 && !(r.body.requests || []).some(x => x.npc.id === villa.id), 'a village you aren\'t Familiar with sends none');
+  await q('UPDATE diplomacy_relations SET trust = 30 WHERE settlement_id=$1 AND npc_id=$2', [s.id, villa.id]);
+
   console.log('Filling it');
   const half = Math.max(10, Math.floor(req.qty / 2 / 10) * 10);
   r = await api('POST', `/api/market/npc/${villa.id}/req`, { qty: half, citizen_id: porters[0] });
@@ -111,6 +130,8 @@ async function part2() {
   check(done.order_key === 'req!', 'the finishing trip is marked');
   r = await api('POST', `/api/market/npc/${villa.id}/req`, { qty: 10, citizen_id: porters[0] });
   check(r.status === 409 || r.status === 400, 'a filled request takes no more');
+  r = await api('GET', '/api/market/requests');
+  check(((r.body.requests || []).find(x => x.npc.id === villa.id) || {}).remaining === 0, 'GET /requests: nothing left to bring');
 
   console.log('The porters come home');
   const g0 = Number((await q('SELECT wealth FROM settlements WHERE id=$1', [s.id])).rows[0].wealth);

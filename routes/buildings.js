@@ -25,7 +25,13 @@ async function buildDiscount(sid, done) {
   const total = Math.max(-MAX_BUILD_DISCOUNT, parts.reduce((a, p) => a + p.pct, 0));
   return { mult: 1 + total, parts };
 }
-const scaledCost = (def, level, mult) => Object.fromEntries(Object.entries(def.cost).map(([r, v]) => [r, Math.ceil(v * level * mult)]));
+// Base cost × level, plus that level's levelCost extras (ores and alloys, not scaled
+// by level), all less any discount.
+function scaledCost(def, level, mult) {
+  const out = Object.fromEntries(Object.entries(def.cost).map(([r, v]) => [r, Math.ceil(v * level * mult)]));
+  for (const [r, v] of Object.entries((def.levelCost && def.levelCost[level]) || {})) out[r] = (out[r] || 0) + Math.ceil(v * mult);
+  return out;
+}
 
 // True when a settlement at `tier` may build `def` (its optional minTier).
 function tierMetFor(def, tier) {
@@ -107,7 +113,7 @@ router.get('/', requireAuth, async (req, res) => {
         requiresMet,
         tierMet,
         research: def.research || null,
-        researchLabel: def.research ? RS.label(def.research) : null,
+        researchLabel: def.research ? RS.labelFor(def.research, done) : null,
         researchMet: !def.research || done.has(def.research),
         minTier: def.minTier || null,
         nextLevelTier,
@@ -177,7 +183,7 @@ router.post('/build', requireAuth, async (req, res) => {
       return res.status(400).json({ error: `Level ${currentLevel + 1} ${def.label} requires a ${tierLabel(levelTierFor(def, currentLevel + 1))} settlement.` });
 
     if (def.research && !(await require('../lib/research').doneSet(null, settlement.id)).has(def.research))
-      return res.status(400).json({ error: `Study ${RS.label(def.research)} at a Library first.` });
+      return res.status(400).json({ error: `Study ${RS.labelFor(def.research, await require('../lib/research').doneSet(null, settlement.id))} at a Library first.` });
 
     // Check requirements
     for (const req of def.requires) {

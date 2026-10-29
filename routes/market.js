@@ -644,6 +644,42 @@ function wantView(w, me) {
 
 // ── NPC village traders (lib/npc_trade.js) ────────────────────────────────
 
+// GET /api/market/requests — today's village requests ("Burrowmere needs 120
+// copper by Friday") from villages that trade with you (Familiar+), with how
+// much you still have to bring. For alerts and the diplomacy panel; filling
+// them still happens in the Market's Wanted tab (needs a Market).
+// The first time a town sees a request it gets a settlement event (the bell)
+// and the entry comes back with fresh: true (the browser toasts it).
+router.get('/requests', requireAuth, async (req, res) => {
+  try {
+    const me = await mySettlement(req.user.userId);
+    const mods = await market.loadModifiers({ query }, me.id);
+    const out = [];
+    for (const t of await npcTrade.npcTradersFor({ query }, me)) {
+      for (const o of t.orders) {
+        if (o.key !== 'req') continue;
+        const what = o.kind === 'item' ? `${o.qty} ${o.item.name}` : `${o.qty} ${RD.label(o.resource).toLowerCase()}`;
+        const message = `📣 ${t.npc.name} needs ${what} by ${o.request.by} — +${o.request.trust} trust.`;
+        let fresh = false;
+        if (o.remaining > 0) {
+          fresh = (await query('INSERT INTO npc_request_alerts (settlement_id, npc_id, day) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING RETURNING 1',
+            [me.id, t.npc.id, o.request.day])).rowCount > 0;
+          if (fresh) await query("INSERT INTO settlement_events (settlement_id, type, message) VALUES ($1,'village_request_new',$2)", [me.id, message]);
+        }
+        out.push({
+          npc: { id: t.npc.id, name: t.npc.name, species: t.npc.species },
+          trust: t.trust, tier: t.tier.label,
+          kind: o.kind, resource: o.resource || null, item: o.item || null,
+          qty: o.qty, remaining: o.remaining, price: o.price, per: o.per,
+          day: o.request.day, ends_at: o.request.ends_at, by: o.request.by, trust_bonus: o.request.trust,
+          message, fresh,
+        });
+      }
+    }
+    res.json({ ok: true, requests: out, has_market: !!mods.marketLevel });
+  } catch (e) { sendError(res, e, 'Could not load village requests.'); }
+});
+
 // Rows for villages' orders on one side ('sell' = they sell, for the Buy
 // tab; 'buy' = they buy, for Wanted), shaped like player rows plus `npc`.
 // Filters as the player lists: resource / item_key / category.

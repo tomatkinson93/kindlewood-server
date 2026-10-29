@@ -4,10 +4,14 @@
 //  GET   /                     the Library: projects, scholars, points/hr, ETA
 //  POST  /start                { project }  study it now (keeps its progress)
 //  POST  /queue                { project }  add to the queue (with missing prerequisites)
+//  POST  /queue/move           { project, to }  move it to place `to` (0 = next up),
+//                              never ahead of what it needs
 //  DELETE /queue/:project                   remove from the queue (and what needed it)
 //  Dev Tools (admin):
 //  POST  /admin/complete       { project }  finish it for your town now
 //  POST  /admin/reset          forget all your town's research
+//  GET   /admin/defs           every project's key and name (the browser
+//                              never gets the whole tree otherwise)
 // ══════════════════════════════════════════════════════════════════════════
 
 'use strict';
@@ -46,6 +50,12 @@ router.post('/queue', requireAuth, async (req, res) => {
   catch (e) { send(res, e, 'Could not queue that project.'); }
 });
 
+// Body: { project, to } — to is the new 0-based place in the queue.
+router.post('/queue/move', requireAuth, async (req, res) => {
+  try { const b = req.body || {}; res.json({ ok: true, ...(await research.queueMove(await mySettlementId(req.user.userId), String(b.project || ''), b.to)) }); }
+  catch (e) { send(res, e, 'Could not change the queue.'); }
+});
+
 router.delete('/queue/:project', requireAuth, async (req, res) => {
   try { res.json({ ok: true, ...(await research.queueRemove(await mySettlementId(req.user.userId), String(req.params.project || ''))) }); }
   catch (e) { send(res, e, 'Could not change the queue.'); }
@@ -54,6 +64,11 @@ router.delete('/queue/:project', requireAuth, async (req, res) => {
 router.post('/admin/complete', requireAuth, requireAdmin, async (req, res) => {
   try { res.json({ ok: true, ...(await research.adminComplete(await mySettlementId(req.user.userId), String((req.body || {}).project || ''))) }); }
   catch (e) { send(res, e, 'Could not finish it.'); }
+});
+
+router.get('/admin/defs', requireAuth, requireAdmin, (req, res) => {
+  const RS = require('../lib/research_defs');
+  res.json({ ok: true, projects: RS.KEYS.map(k => ({ key: k, label: RS.PROJECTS[k].label, branch: RS.PROJECTS[k].branch, tier: RS.PROJECTS[k].tier })) });
 });
 
 router.post('/admin/reset', requireAuth, requireAdmin, async (req, res) => {

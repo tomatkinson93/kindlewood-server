@@ -1,6 +1,7 @@
 const express = require('express');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/admin');
 const mapgen = require('../mapgen');
 const { TERRAIN_BONUSES, hexDistanceWrapped, hexDisk } = mapgen;
 const { generateStartingCitizens } = require('../citizens');
@@ -532,12 +533,11 @@ router.post('/arrive', requireAuth, async (req, res) => {
 
 // ── POST /api/map/tile-terrain — change a single tile's terrain ─────────
 //   Body: { q, r, terrain }
-//   Used by the dev/test tile-edit dropdown. Currently open to any logged-in
-//   user for testing convenience; should be admin-gated before launch.
-//   TODO: gate behind admin role check before going live.
+//   Used by the Dev Tools tile-edit dropdown. Admins only: terrain decides
+//   what outposts yield (hills → copper, mountains → silver and rarer).
 const VALID_TERRAINS = new Set(['plains','forest','hills','river','ruins','mountain','marsh']);
 
-router.post('/tile-terrain', requireAuth, async (req, res) => {
+router.post('/tile-terrain', requireAuth, requireAdmin, async (req, res) => {
   try {
     const q = parseInt(req.body && req.body.q, 10);
     const r = parseInt(req.body && req.body.r, 10);

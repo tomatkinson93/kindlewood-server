@@ -85,8 +85,8 @@ function part1() {
   check(require('../lib/careers/traits').APTITUDES.bookish.classes.includes('scholar'), 'hidden talent: Bookish');
 
   const fe = process.env.KW_FRONTEND_DIR || path.join(__dirname, '..', '..', 'kindlewood-frontend');
-  const twin = path.join(fe, 'js', 'research-defs.js');
-  if (fs.existsSync(twin)) check(fs.readFileSync(twin, 'utf8') === fs.readFileSync(path.join(__dirname, '..', 'lib', 'research_defs.js'), 'utf8'), 'frontend js/research-defs.js is byte-identical');
+  if (fs.existsSync(path.join(fe, 'js'))) check(!fs.existsSync(path.join(fe, 'js', 'research-defs.js')), 'the frontend ships no research-defs.js (distant names stay on the server)');
+  check(RS.labelFor('starmetal', []) === RS.UNKNOWN_RESEARCH && RS.labelFor('prospecting', []) === 'Prospecting I', 'labelFor hides distant names');
 }
 
 async function part2() {
@@ -172,6 +172,21 @@ async function part2() {
   r = await api(a, 'POST', '/api/research/start', { project: 'prospecting' });
   check(r.status === 400 && /Already/.test(r.body.error), 'a finished project can\'t be studied again');
 
+  console.log('No names leak');
+  const doneA = await research.doneSet(null, a.sid);
+  const dist = RS.distances(doneA);
+  const shown = RS.KEYS.filter(k => dist[k] <= RS.HIDE_BEYOND || doneA.has(k)).map(k => RS.PROJECTS[k].label);
+  const secret = RS.KEYS.filter(k => dist[k] > RS.HIDE_BEYOND && !doneA.has(k)).map(k => RS.PROJECTS[k].label)
+    .filter(l => !shown.some(v => v.includes(l)));
+  const leaks = [];
+  for (const pth of ['/api/buildings', '/api/crafting/station/smelter', '/api/crafting/station/smithy', '/api/crafting/station/jeweller', '/api/research']) {
+    const txt = JSON.stringify((await api(a, 'GET', pth)).body);
+    for (const l of secret) if (txt.includes(l)) leaks.push(`${pth}: ${l}`);
+  }
+  check(secret.length > 20 && !leaks.length, `no distant project names in buildings, workshops or the Library (${secret.length} secret)${leaks.length ? ' — ' + leaks.join(', ') : ''}`);
+  r = await api(a, 'GET', '/api/research/admin/defs');
+  check(r.status === 403, 'players can\'t read the full tree');
+
   console.log('Fields and talent');
   const f = await user('field', [['library', 1]]);
   const phil = await scholar(f, 'Sage', 8);
@@ -227,6 +242,19 @@ async function part2() {
   check(r.body.queue.join() === 'shoring,masonry,surveying' && r.body.projects.find(p => p.key === 'surveying').queued === 3, 'later projects go to the end; each knows its place');
   r = await api(qt, 'POST', '/api/research/queue', { project: 'masonry' });
   check(r.status === 409, 'already planned');
+  r = await api(qt, 'POST', '/api/research/queue/move', { project: 'surveying', to: 0 });
+  check(r.status === 400 && /Surveying needs Masonry first/.test(r.body.error), 'reorder: a project can\'t jump ahead of what it needs');
+  r = await api(qt, 'POST', '/api/research/queue/move', { project: 'masonry', to: 0 });
+  check(r.status === 200 && r.body.queue.join() === 'masonry,shoring,surveying' && r.body.active === 'prospecting', 'reorder: Masonry moves to next up (the active project stays put)');
+  r = await api(qt, 'POST', '/api/research/queue/move', { project: 'shoring', to: 2 });
+  check(r.status === 200 && r.body.queue.join() === 'masonry,surveying,shoring', 'reorder: Shoring to the back');
+  r = await api(qt, 'POST', '/api/research/queue/move', { project: 'masonry', to: 2 });
+  check(r.status === 400 && r.body.error === 'Surveying needs Masonry first.', '…and nothing goes behind something that needs it');
+  r = await api(qt, 'POST', '/api/research/queue/move', { project: 'prospecting', to: 1 });
+  check(r.status === 404, 'the active project isn\'t part of the queue');
+  r = await api(qt, 'POST', '/api/research/queue/move', { project: 'shoring', to: 3 });
+  check(r.status === 400, 'no such place');
+  check((await api(qt, 'GET', '/api/research')).body.queue.join() === 'masonry,surveying,shoring', 'refused moves change nothing');
   r = await api(qt, 'DELETE', '/api/research/queue/masonry');
   check(r.status === 200 && r.body.queue.join() === 'shoring', 'removing Masonry also drops Surveying, which needed it');
   r = await api(qt, 'POST', '/api/research/start', { project: 'scriptorium' });
@@ -267,6 +295,15 @@ async function part2() {
     check(r.status === 200 && r.body.projects.every(p => p.status !== 'done'), 'Dev Tools: reset research');
     r = await api(a, 'POST', '/api/research/admin/reset', {});
     check(r.status === 403, 'players can\'t use the Dev Tools routes');
+    r = await api(adm, 'GET', '/api/research/admin/defs');
+    check(r.status === 200 && r.body.projects.length === 46 && r.body.projects.some(p => p.label === RS.PROJECTS.starmetal.label), 'Dev Tools: the full tree, names and all');
+    const tile = (await q('SELECT q, r, terrain FROM tiles ORDER BY q, r LIMIT 1')).rows[0];
+    if (tile) {
+      r = await api(a, 'POST', '/api/map/tile-terrain', { q: tile.q, r: tile.r, terrain: 'mountain' });
+      check(r.status === 403, 'players can\'t repaint terrain');
+      r = await api(adm, 'POST', '/api/map/tile-terrain', { q: tile.q, r: tile.r, terrain: tile.terrain });
+      check(r.status === 200 && r.body.tile.terrain === tile.terrain, 'admins still can');
+    }
   } else console.log('  (admin checks skipped — set CRAFTING_TEST_ADMIN_ID)');
 
   void s1;
