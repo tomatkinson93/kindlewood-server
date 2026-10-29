@@ -564,36 +564,6 @@ router.get('/:npcId/quests', requireAuth, async (req, res) => {
   }
 });
 
-// ── POST /api/diplomacy/:npcId/interact — legacy log endpoint ──
-//    Kept for backward compatibility; the new UI uses /goodwill and /gift.
-//    No envoy is sent, no gold is deducted; effect is immediate. Frontend does
-//    not call this anymore but a tool/admin script might.
-router.post('/:npcId/interact', requireAuth, async (req, res) => {
-  try {
-    const { type, trust_gain } = req.body; // type: 'gift'|'trade'|'quest'|'visit'
-    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
-    const sett = settRes.rows[0];
-    if (!sett) return res.status(404).json({ error: 'No settlement.' });
-
-    const rel = await query('SELECT * FROM diplomacy_relations WHERE settlement_id=$1 AND npc_id=$2', [sett.id, req.params.npcId]);
-    if (!rel.rows.length || rel.rows[0].status === 'unknown' || rel.rows[0].status === 'contact_sent') {
-      return res.status(400).json({ error: 'Must establish contact first.' });
-    }
-
-    const gain = Math.min(trust_gain || 5, 20);
-    const newTrust = Math.min(100, rel.rows[0].trust + gain);
-    const newLevel = getTrustLevel(newTrust);
-
-    await query(`
-      UPDATE diplomacy_relations
-      SET trust=$1, status=$2, interactions=interactions+1, last_interaction=NOW()
-      WHERE settlement_id=$3 AND npc_id=$4
-    `, [newTrust, newLevel.status, sett.id, req.params.npcId]);
-
-    res.json({ ok: true, trust: newTrust, trust_level: newLevel, levelled_up: newLevel.status !== rel.rows[0].status });
-  } catch(e) { console.error('Diplomacy route error:', e.message); res.status(500).json({ error: e.message }); }
-});
-
 module.exports = router;
 module.exports.TRUST_LEVELS = TRUST_LEVELS;
 module.exports.getTrustLevel = getTrustLevel;

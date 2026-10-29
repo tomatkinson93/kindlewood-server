@@ -6,21 +6,18 @@
  *     const feedbackRoutes = require('./routes/feedback');
  *     app.use('/api/feedback', feedbackRoutes);
  *
- * User-submitted bug reports & suggestions. For now any logged-in user can
- * list/delete (small trusted player base). To lock this down later, gate the
- * GET/DELETE/PATCH handlers behind an admin check — submission (POST) can stay
- * open. The single `isAdmin` helper below is where that switch will live.
+ * User-submitted bug reports & suggestions. Anyone signed in can submit and
+ * see their own reports; admins (ADMIN_USER_IDS, middleware/admin) see all of
+ * them and can resolve or delete them.
  */
 const express = require('express');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
+const { isAdminUser } = require('../middleware/admin');
 const router = express.Router();
 
-// Placeholder admin gate. Today: everyone may view/manage. Later: replace the
-// body with a real check (e.g. users.is_admin) and the rest of the routes keep
-// working unchanged.
-async function isAdmin(/* req */) {
-  return true;
+async function isAdmin(req) {
+  return isAdminUser(req.user);
 }
 
 // ── POST /api/feedback — submit a bug/suggestion ──
@@ -44,12 +41,14 @@ router.post('/', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── GET /api/feedback — list reports ──
+// ── GET /api/feedback — list reports (players: their own) ──
 router.get('/', requireAuth, async (req, res) => {
   try {
-    if (!(await isAdmin(req))) return res.status(403).json({ error: 'Not permitted.' });
-    const r = await query('SELECT * FROM bug_reports ORDER BY created_at DESC LIMIT 500');
-    res.json({ ok: true, reports: r.rows });
+    const admin = await isAdmin(req);
+    const r = admin
+      ? await query('SELECT * FROM bug_reports ORDER BY created_at DESC LIMIT 500')
+      : await query('SELECT * FROM bug_reports WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100', [req.user.userId]);
+    res.json({ ok: true, reports: r.rows, admin });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

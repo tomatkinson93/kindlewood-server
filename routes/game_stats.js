@@ -26,22 +26,10 @@ function user(req) {
   catch { return null; }
 }
 
-// ── Record a finished game: { game, won, mode } ──
-// We only count human players (a logged-in user). Solo + multiplayer both
-// recorded; the leaderboard can filter later if desired.
-router.post('/record', async (req, res) => {
-  const u = user(req);
-  if (!u) return res.status(401).json({ error: 'Not signed in' });
-  const game = String((req.body && req.body.game) || '').slice(0, 40) || 'briar';
-  const won = !!(req.body && req.body.won);
-  try {
-    await store.record(u.id, game, won);
-    res.json({ ok: true });
-  } catch (e) {
-    console.error('stats record error:', e);
-    res.status(500).json({ error: 'Could not record result' });
-  }
-});
+// ── Retired: POST /record ──
+// Results are recorded by the server now — lib/game_rooms.js for multiplayer,
+// lib/tavern_pay.js (POST /api/game/tavern/solo-finish) for solo games.
+router.post('/record', (req, res) => res.status(410).json({ error: 'Game results are recorded by the server.' }));
 
 // ── This user's own stats ──
 router.get('/me', async (req, res) => {

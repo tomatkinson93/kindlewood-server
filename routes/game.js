@@ -418,27 +418,8 @@ router.post('/cheat/citizen', requireAuth, requireAdmin, async (req, res) => {
 });
 
 
-// Award gold from card games
-router.post('/award-gold', requireAuth, async (req, res) => {
-  try {
-    const userResult = await query('SELECT * FROM users WHERE id=$1', [req.user.userId]);
-    const user = userResult.rows[0];
-    if (!user) return res.status(404).json({ error: 'User not found.' });
-    const settlementRes = await query('SELECT * FROM settlements WHERE user_id=$1', [user.id]);
-    if (!settlementRes.rows.length) return res.status(404).json({ error: 'No settlement.' });
-    const settlement = settlementRes.rows[0];
-    const { amount } = req.body;
-    if (!amount || amount < 0 || amount > 10) return res.status(400).json({ error: 'Invalid amount.' });
-    await query(
-      'UPDATE settlements SET wealth = wealth + $1 WHERE id = $2',
-      [amount, settlement.id]
-    );
-    res.json({ ok: true, awarded: amount });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to award gold.' });
-  }
-});
+// Tavern card-game winnings are paid by the server: lib/tavern_pay.js
+// (routes/tavern.js for solo games, lib/game_rooms.js for multiplayer).
 
 // ── Cheat: simulate event ─────────────────────────────────────────────────────
 router.post('/cheat/simulate-event', requireAuth, requireAdmin, async (req, res) => {
@@ -1218,8 +1199,8 @@ router.post('/items/:key/spawn', requireAuth, requireAdmin, async (req, res) => 
 module.exports = router;
 module.exports._addToAwayLedger = addToAwayLedger;
 
-// Dev-only: reset placement for testing
-router.post('/reset-placement', requireAuth, async (req, res) => {
+// Dev Tools: reset placement for testing (admins only)
+router.post('/reset-placement', requireAuth, requireAdmin, async (req, res) => {
   try {
     await query(
       'UPDATE settlements SET tile_q=NULL, tile_r=NULL, world_version=0, rerolls_used=0 WHERE user_id=$1',
