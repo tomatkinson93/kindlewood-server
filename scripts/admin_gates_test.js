@@ -38,7 +38,7 @@ const GATED = [
   ['POST', '/api/card-admin'], ['PATCH', '/api/card-admin/x'], ['DELETE', '/api/card-admin/x'], ['POST', '/api/card-admin/validate'],
   ['GET', '/api/item-admin'], ['POST', '/api/item-admin'], ['PATCH', '/api/item-admin/x'], ['DELETE', '/api/item-admin/x'], ['POST', '/api/item-admin/x/spawn'],
   ['POST', '/api/clans/cheat/prestige'], ['POST', '/api/clan-quests/cheat/finish'],
-  ['POST', '/api/game/time/debug'],
+  ['POST', '/api/game/time/debug'], ['POST', '/api/game/reset-placement'],
 ];
 const OPEN = [['GET', '/api/combat/enemies'], ['GET', '/api/card-admin']];   // (player item adds are gone: scripts/fishing_test.js)
 
@@ -57,6 +57,10 @@ const OPEN = [['GET', '/api/combat/enemies'], ['GET', '/api/card-admin']];   // 
   app.use('/api/item-admin', require('../routes/item_admin'));
   app.use('/api/clans', require('../routes/clans'));
   app.use('/api/clan-quests', require('../routes/clan_quests'));
+  app.use('/api/diplomacy', require('../routes/diplomacy'));
+  app.use('/api/stats', require('../routes/game_stats'));
+  app.use('/api/feedback', require('../routes/feedback'));
+  app.use('/api/game/tavern', require('../routes/tavern'));
   const srv = http.createServer(app);
   await new Promise(r => srv.listen(0, '127.0.0.1', r));
   const base = 'http://127.0.0.1:' + srv.address().port;
@@ -93,6 +97,17 @@ const OPEN = [['GET', '/api/combat/enemies'], ['GET', '/api/card-admin']];   // 
   check('5. /combat/resolve without a quest → 403 for players, open to admins; quest battles stay open',
         testBattlePlayer === 403 && testBattleAdmin !== 403 && questBattlePlayer !== 403,
         `player ${testBattlePlayer} · admin ${testBattleAdmin} · quest ${questBattlePlayer}`);
+
+  // Exploits closed: client-set gold, client-set trust, client-reported wins.
+  const st = async (m, p, userId, body) => (await fetch(base + p, { method: m,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok(userId) }, body: JSON.stringify(body || {}) })).status;
+  check('6. POST /game/award-gold is gone (tavern wins are paid by the server)', await st('POST', '/api/game/award-gold', 2, { amount: 10 }) === 404);
+  check('7. the legacy free-trust POST /diplomacy/:id/interact is gone', await st('POST', '/api/diplomacy/1/interact', 2, { trust_gain: 20 }) === 404);
+  check('8. POST /stats/record is retired (410)', await st('POST', '/api/stats/record', 2, { game: 'briar', won: true }) === 410);
+  const fbList = await (await fetch(base + '/api/feedback', { headers: { Authorization: 'Bearer ' + tok(2) } })).json();
+  check('9. feedback: players can\'t resolve or delete reports, and see only their own',
+        await st('PATCH', '/api/feedback/1', 2, { status: 'resolved' }) === 403 && await st('DELETE', '/api/feedback/1', 2) === 403 && fbList.admin === false);
+  check('10. feedback: admins still can', await st('PATCH', '/api/feedback/1', 1, { status: 'resolved' }) === 200 && await st('DELETE', '/api/feedback/1', 1) === 200);
 
   srv.close();
   console.log(`\n${pass} passed, ${fail} failed`);

@@ -44,6 +44,7 @@ app.use('/api/map', mapRoutes);
 app.use('/api/citizens', citizenRoutes);
 app.use('/api/buildings', buildingRoutes);
 app.use('/api/game/outposts', require('./routes/outposts'));
+app.use('/api/game/tavern', require('./routes/tavern'));
 const expeditionRoutes = require('./routes/expeditions');
 app.use('/api/expeditions', expeditionRoutes);
 const questRoutes = require('./routes/quests');
