@@ -548,6 +548,7 @@ router.get('/reports', requireAuth, requireStaff, async (req, res) => {
               ft.title AS thread_title,
               (r.target_type = 'post' AND r.target_id = (SELECT MIN(id) FROM forum_posts fp WHERE fp.thread_id = r.thread_id)) AS is_opening,
               CASE WHEN r.target_type = 'message' THEN EXISTS (SELECT 1 FROM chat_messages m WHERE m.id = r.target_id)
+                   WHEN r.target_type = 'mail' THEN EXISTS (SELECT 1 FROM mail_messages ml WHERE ml.id = r.target_id AND ml.removed_at IS NULL)
                    ELSE EXISTS (SELECT 1 FROM forum_posts p WHERE p.id = r.target_id) END AS still_there,
               (SELECT until FROM user_mutes um WHERE um.user_id = r.reported_user_id
                   AND (um.until IS NULL OR um.until > NOW())) AS muted_until,
@@ -564,7 +565,8 @@ router.get('/reports', requireAuth, requireStaff, async (req, res) => {
         ORDER BY ${resolved ? 'r.resolved_at DESC' : 'r.created_at'} LIMIT ${resolved ? 50 : 500}`)).rows;
     const view = r => ({
       target_type: r.target_type, target_id: r.target_id, channel_id: r.channel_id, thread_id: r.thread_id,
-      channel: { kind: r.channel_kind, name: r.channel_kind === 'clan' ? r.clan_name : r.channel_name },
+      channel: r.target_type === 'mail' ? { kind: 'mail', name: 'Letter' }   // routes/mail.js
+        : { kind: r.channel_kind, name: r.channel_kind === 'clan' ? r.clan_name : r.channel_name },
       thread_title: r.thread_title, is_opening: !!r.is_opening,
       reported_user: r.reported_user_id ? {
         id: r.reported_user_id, username: r.reported_user,
@@ -596,6 +598,9 @@ router.get('/reports', requireAuth, requireStaff, async (req, res) => {
 // Removes a reported message/post (the opening post takes its thread).
 // Returns true when something was removed.
 async function removeTarget(type, id) {
+  if (type === 'mail') {   // a letter (routes/mail.js): kept, but shown as removed
+    return (await query('UPDATE mail_messages SET removed_at = NOW() WHERE id = $1 AND removed_at IS NULL RETURNING id', [id])).rowCount > 0;
+  }
   if (type === 'message') {
     const m = (await query('DELETE FROM chat_messages WHERE id = $1 RETURNING *', [id])).rows[0];
     if (!m) return false;
@@ -767,3 +772,7 @@ router.post('/staff', requireAuth, requireAdmin, async (req, res) => {
 
 router._test = { rateLimited, cleanText, RATE };
 module.exports = router;
+// Shared with routes/mail.js (letter reports use the same queue and limits).
+module.exports.REPORT_REASONS = REPORT_REASONS;
+module.exports.REPORTS_PER_HOUR = REPORTS_PER_HOUR;
+module.exports.notifyStaff = notifyStaff;
