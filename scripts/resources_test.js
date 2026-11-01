@@ -236,6 +236,12 @@ async function part2() {
   check(tu.status === 200 && ts.tier === 'town' && ts.bronze === 5 && ts.food === 6500, 'with it: a Town, 40 bronze and the usual costs spent');
   const tc = await api(t, 'GET', '/api/game/tier-info');
   check(tc.body.requirements.resources.steel === 100 && tc.body.requirements.resources.silver === 50, 'Town → City needs 100 steel and 50 silver');
+  check(ti.body.requirements.unlocks.some(u => /Guild Hall/.test(u)) && ti.body.requirements.unlocks.some(u => /outposts/.test(u)), 'Town lists what it really unlocks (Guild Hall, more outposts)');
+  check(tc.body.requirements.unlocks.length > 0 && tc.body.requirements.unlocks.some(u => /Market Lv4/.test(u)), 'City is no longer an empty promise (Market Lv4–5, …)');
+  const { BUILDINGS } = require('../buildings');
+  const labels = Object.values(BUILDINGS).map(b => b.label);
+  const named = ['village', 'town', 'city'].flatMap(t => require('../routes/game')._tierUnlocks(t));
+  check(named.every(u => /outposts|Outposts/.test(u) || labels.some(l => u.includes(l))), 'every tier unlock names something that exists');
 
   if (ADMIN) {
     console.log('Dev Tools grant');

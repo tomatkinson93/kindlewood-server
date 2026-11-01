@@ -85,6 +85,8 @@ router.post('/land', requireAuth, async (req, res) => {
     if (!sett) return res.status(404).json({ error: 'No settlement.' });
     const item = F.itemFor(p.fish);
     const r = await grantItem(query, sett.id, item);
+    // Logged for the Biggest Fish / Most Fish rankings (lib/rankings.js).
+    await require('../lib/rankings').recordCatch(id, p.fish).catch(e => console.error('[fishing] catch log failed', e.message));
     res.json({ ok: true, granted: { item_key: item.item_key, name: item.name, quantity: r.quantity }, catch: F.publicCatch(p) });
   } catch (e) {
     console.error('[fishing] land failed', e.message);

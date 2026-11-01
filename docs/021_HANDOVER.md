@@ -16,7 +16,7 @@ This file and the spec are identical in both repos (`kindlewood-server/docs/` an
 | 3 Map lighting, lit windows, Time dev tab, setting | ✅ merged (frontend PR #22) | |
 | 4 HUD dial + ambient audio | ✅ merged (frontend PR #23); ambient beds fail silently until audio files exist | |
 | 5 Nocturnal/lunar creatures | ✅ merged (server PR #67, frontend PR #25) | |
-| 6 Happenings | 🔍 built on `claude/practical-euler-4x48ig`, awaiting review | |
+| 6 Happenings | ✅ built and in use (`routes/happenings.js`, Dev Tools 🏮 tab); none are seeded — admins author them | |
 
 **Also done alongside (not in the original spec):**
 - Settings modal (profile menu → ⚙️) has Audio / Graphics tabs; every map setting moved there from the season panel (`js/settings-panel.js`).
@@ -151,4 +151,8 @@ This file and the spec are identical in both repos (`kindlewood-server/docs/` an
 
 ## 6. Next step
 
-Start **Phase 3** (spec §3 plus decisions 10–14 above). Its acceptance gate is in the spec. For the visual check, you can't take real screenshots of the logged-in game, so list exactly what Scar should check with the 🕯 Time tab: dawn, day, dusk, night, full moon and new moon, in both renderers. `verify/iso_demo.html` is the no-backend visual harness if you can run a headless browser.
+All six phases are built. What the spec left out of scope is still open:
+- tavern behaviour by time of day;
+- time-gated quests;
+- weather;
+- Moontrout's "clear winter nights only" — the fish has no `phases`/`moons` yet, though the hook exists (`lib/fishing.js`, the phase/moon filter in the pool).

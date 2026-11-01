@@ -1,6 +1,7 @@
 // ══════════════════════════════════════════════════════════════════════════
 //  OUTPOSTS — config & tunables (server root, alongside buildings.js)
-//  Implements outposts_v1_spec.md §§3–4.
+//  (The original outposts_v1_spec.md isn't in the repo; this file is now
+//  the reference for outposts.)
 //
 //  Single source of truth for yields, costs, caps, ranges, and upkeep.
 //  Requires nothing → safe to require from buildings.js, famine.js, and
@@ -9,8 +10,8 @@
 //  v1 contract:
 //    • primary yields only; `secondary` slots are documented and DISABLED.
 //      Turning them on later = set the object + flip SECONDARY_YIELDS_ENABLED.
-//    • level is read (yield = primary × level) but nothing writes level > 1
-//      yet — the upgrade route is reserved, not built.
+//    • level (1–OUTPOST_MAX_LEVEL) scales yields, ores and food upkeep;
+//      POST /api/game/outposts/:id/upgrade raises it (routes/outposts.js).
 //    • `ores` (per hour × level): extra resources a terrain turns up
 //      (lib/ores.js). Research-gated ones (resource_defs) only once studied.
 //    • Upkeep is SEASON-FLAT (no winter ×1.20) by design — winter already

@@ -58,4 +58,18 @@ router.get('/leaderboard', async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Could not load leaderboard' }); }
 });
 
+// ── The Rankings boards (lib/rankings.js): settlements, citizens, fishing,
+// Squirrel's Stash. Public numbers only; marks your own row when signed in.
+router.get('/board/:id', async (req, res) => {
+  try {
+    const u = user(req);
+    const b = await require('../lib/rankings').board(String(req.params.id), u ? u.id : null);
+    if (!b) return res.status(404).json({ error: 'No such board.' });
+    res.json({ ok: true, ...b });
+  } catch (e) {
+    console.error('[rankings]', e);
+    res.status(500).json({ error: 'Could not load the board.' });
+  }
+});
+
 module.exports = router;

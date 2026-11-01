@@ -1,6 +1,6 @@
 // ══════════════════════════════════════════════
 //  QUEST ADMIN ROUTES
-//  All endpoints require auth (any logged-in user for now; restrict to admin later)
+//  Dev Tools only: every endpoint requires an admin (requireAdmin).
 // ══════════════════════════════════════════════
 
 const express    = require('express');
