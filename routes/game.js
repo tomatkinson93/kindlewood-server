@@ -15,6 +15,7 @@ const gameEvents = require('../lib/game_events');
 const awayReport = require('../lib/away_report');
 const RD = require('../lib/resource_defs');
 const resourcesLib = require('../lib/resources');
+const townMods = require('../lib/town_mods');
 const research = require('../lib/research');
 
 const router = express.Router();
@@ -101,6 +102,11 @@ async function applyTick(settlement, species, workforce) {
   ]);
   const wf = workforce || await loadWorkforce(settlement.id);
   const baseRates = calculateRates(bRes.rows, wf, species, oRes.rows, { research: await research.doneSet(null, settlement.id) });
+  // The town's own bonuses (festival for the hours it ran, wonders) and the
+  // upkeep its treasury pays (lib/town_mods).
+  const town = await townMods.load(null, settlement, now);
+  const tf = townMods.productionFactors(town, settlement, lastTick, now);
+  for (const k of Object.keys(baseRates)) baseRates[k] *= tf[k] ?? tf[(RD.def(k) || {}).follows] ?? 1;
   // Effective production hours per resource over exactly [last_tick, now]:
   // each season multiplier applies only to the hours it covered (seasons are
   // 7h, so a long absence spans several), and Happening modifiers are
@@ -114,6 +120,17 @@ async function applyTick(settlement, species, workforce) {
     const hours = effHours[res] ?? effHours[RD.def(res).follows] ?? 0;
     updated[res] = Math.floor((Number(settlement[res]) || 0) + (baseRates[res] || 0) * hours + (extra[res] || 0));
     delta[res] = updated[res] - (Number(settlement[res]) || 0);
+  }
+  // Upkeep (wonders, a City's upper building levels) comes out of wealth; the
+  // treasury stops at 0 and the town falls into arrears.
+  const upkeepDue = town.upkeep.total * hoursElapsed;
+  let unpaid = false, upkeepPaid = 0;
+  if (upkeepDue > 0) {
+    upkeepPaid = Math.min(upkeepDue, Math.max(0, updated.wealth));
+    const raw = updated.wealth - upkeepDue;
+    unpaid = raw < 0;
+    updated.wealth = Math.max(0, Math.floor(raw));
+    delta.wealth = updated.wealth - (Number(settlement.wealth) || 0);
   }
 
   // Deltas, not absolutes, and only if nobody ticked since we read: a spend
@@ -138,6 +155,8 @@ async function applyTick(settlement, species, workforce) {
     RD.KEYS.map(res => ['produced_' + res, Math.max(0, delta[res])])));
   // The first ore a mine or outpost turns up is a discovery.
   for (const res of RD.EXTRA) if (delta[res] > 0) await resourcesLib.discover(null, settlement.id, res, 'mine').catch(() => {});
+  if (upkeepPaid > 0) await addToAwayLedger(settlement.id, { upkeep_wealth: upkeepPaid });
+  updated.arrears_since = await townMods.settleArrears(settlement, unpaid, updated.wealth, upkeepDue > 0).catch(() => settlement.arrears_since);
 
   // ── Consumption & famine tick ──
   // MUST run AFTER the production write above: applyConsumption deducts food
@@ -219,6 +238,14 @@ router.get('/settlement', requireAuth, async (req, res) => {
     const know = citizenContributions(buildingsResult.rows, workforce).seasonal[season.id] || {};
     for (const [res, v] of Object.entries(know)) if (typeof rates[res] === 'number') rates[res] = Math.round(rates[res] + v);
     for (const res of Object.keys(baseRates)) baseRates[res] = Math.round(baseRates[res] * 10) / 10;
+    // The town's own bonuses right now, and upkeep off the wealth rate.
+    const town = await townMods.load(null, settlement);
+    const tfNow = townMods.productionFactors(town, settlement, Date.now(), Date.now() + 1);
+    for (const k of Object.keys(rates)) {
+      const f = tfNow[k] ?? tfNow[(RD.def(k) || {}).follows] ?? 1;
+      if (f !== 1 && typeof rates[k] === 'number') rates[k] = Math.round(rates[k] * f * 100) / 100;
+    }
+    if (town.upkeep.total) rates.wealth = Math.round((rates.wealth - town.upkeep.total) * 100) / 100;
 
     // Famine status for the warning banner (spec Q5). rates.food is the
     // post-season production side of hours-to-empty; upkeep is computed
@@ -261,8 +288,9 @@ router.get('/settlement', requireAuth, async (req, res) => {
           // Base happiness + 10 per tavernkeep + careers (warm hearths, vigils…)
           const tavernkeepCount = workforce.filter(c => c.role === 'tavernkeep').length;
           const base = typeof settlement.happiness === 'number' ? settlement.happiness : 70;
-          return Math.min(100, base + tavernkeepCount * 10 + ((workforce.town && workforce.town.happiness) || 0));
+          return Math.max(0, Math.min(100, base + tavernkeepCount * 10 + ((workforce.town && workforce.town.happiness) || 0) + (town.mods.happiness || 0)));
         })(),
+        town: { festival: town.festival, upkeep: town.upkeep, arrears: town.arrears, sources: town.sources },
         last_tick: settlement.last_tick,
         famine,
       },
@@ -308,7 +336,7 @@ router.get('/resource-breakdown', requireAuth, async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found.' });
 
     const settlementResult = await query(
-      'SELECT id FROM settlements WHERE user_id=$1', [user.id]
+      'SELECT * FROM settlements WHERE user_id=$1', [user.id]
     );
     const settlement = settlementResult.rows[0];
     if (!settlement) return res.status(404).json({ error: 'No settlement.' });
@@ -360,6 +388,26 @@ router.get('/resource-breakdown', requireAuth, async (req, res) => {
       }
     } catch (opErr) {
       console.error('[outposts] upkeep breakdown error:', opErr.message);
+    }
+
+    // The town's own bonuses (festival, wonders) as one multiplier row per
+    // resource, and upkeep as negative wealth rows (lib/town_mods).
+    const town = await townMods.load(null, settlement);
+    const tfNow = townMods.productionFactors(town, settlement, Date.now(), Date.now() + 1);
+    for (const r of townMods.BASIC) {
+      const f = tfNow[r], b = breakdown[r];
+      if (!b || f === 1) continue;
+      const value = Math.round(b.total * (f - 1) * 10) / 10;
+      b.sources.push({ kind: 'town_bonus', label: `🏛 Town bonuses (×${f.toFixed(2)})`, value, delta: value });
+      b.total = Math.round((b.total + value) * 10) / 10;
+    }
+    if (town.upkeep.wonders) {
+      breakdown.wealth.sources.push({ kind: 'wonder_upkeep', label: '🏛 Wonder upkeep', value: -town.upkeep.wonders });
+      breakdown.wealth.total = Math.round((breakdown.wealth.total - town.upkeep.wonders) * 10) / 10;
+    }
+    if (town.upkeep.city) {
+      breakdown.wealth.sources.push({ kind: 'city_upkeep', label: `🏗 City upkeep (building levels above ${townMods.CITY_FREE_LEVELS})`, value: -town.upkeep.city });
+      breakdown.wealth.total = Math.round((breakdown.wealth.total - town.upkeep.city) * 10) / 10;
     }
 
     // Ores, rares and alloys from mines and outposts (lib/ores.js) — research
