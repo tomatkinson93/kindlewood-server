@@ -29,10 +29,19 @@ const HFX = require('./lib/happening_effects');
 // The season with any Happening food_upkeep modifier folded into its
 // foodConsumption (×(1 + value)), so upkeepPerHour needs no new argument.
 // happeningDefs [] → the season unchanged (pure: the defs are passed in).
-function seasonWithUpkeep(season, happeningDefs, ms) {
+// townUpkeep: the town's own food_upkeep (lib/town_mods — the Granary of Ages).
+function seasonWithUpkeep(season, happeningDefs, ms, townUpkeep = 0) {
   const mods = happeningDefs && happeningDefs.length ? HFX.modifiersAt(happeningDefs, ms) : null;
-  if (!mods || !mods.food_upkeep) return season;
-  return { ...season, foodConsumption: (season.foodConsumption || 1) * (1 + mods.food_upkeep) };
+  const f = (1 + ((mods && mods.food_upkeep) || 0)) * (1 + (townUpkeep || 0));
+  if (f === 1) return season;
+  return { ...season, foodConsumption: (season.foodConsumption || 1) * f };
+}
+// The town's food_upkeep modifier (0 when it has none, or on any error).
+async function townFoodUpkeep(settlementId) {
+  try {
+    const s = (await query('SELECT * FROM settlements WHERE id = $1', [settlementId])).rows[0];
+    return s ? ((await require('./lib/town_mods').load(null, s)).mods.food_upkeep || 0) : 0;
+  } catch (e) { return 0; }
 }
 const { FAMINE_NARRATIVES } = require('./lib/injury_table');
 const { writeDeathEvent } = require('./deaths');
@@ -155,7 +164,7 @@ function simulateConsumption(state, nQuanta, startMs) {
   for (let q = 0; q < nQuanta; q++) {
     const quantumStartMs = startMs + q * QUANTUM_MS;
     const quantumIndex = Math.floor(quantumStartMs / QUANTUM_MS); // global index — the seed
-    const season = seasonWithUpkeep(seasonAt(quantumStartMs), state.happenings, quantumStartMs);
+    const season = seasonWithUpkeep(seasonAt(quantumStartMs), state.happenings, quantumStartMs, state.townFoodUpkeep);
 
     // Feeding order (spec Q3, DECIDED): children first, then most desperate,
     // id ascending as total-order tie-break. Re-sorted every quantum as
@@ -311,6 +320,7 @@ async function applyConsumption(settlementId) {
     foodF: (Number(s.food) || 0) + (Number(s.consumption_carry) || 0),
     outpostCount,
     happenings: await require('./lib/happenings').loadLive(),   // food_upkeep per quantum
+    townFoodUpkeep: await townFoodUpkeep(settlementId),
     citizens: cRes.rows.map(c => ({
       id: c.id,
       name: c.name,
@@ -412,7 +422,7 @@ async function getFamineSummary(settlementId, foodProductionPerHour = 0) {
     [settlementId]
   );
   await require('./lib/careers').attachUpkeep(settlementId, cRes.rows);
-  const season = seasonWithUpkeep(seasonAt(Date.now()), await require('./lib/happenings').loadLive(), Date.now());
+  const season = seasonWithUpkeep(seasonAt(Date.now()), await require('./lib/happenings').loadLive(), Date.now(), await townFoodUpkeep(settlementId));
   let upkeep = 0, unfed = 0, starving = 0;
   for (const c of cRes.rows) {
     upkeep += upkeepPerHour(c, season);
@@ -460,7 +470,7 @@ async function buildUpkeepBreakdownSource(settlementId) {
     [settlementId]
   );
   await require('./lib/careers').attachUpkeep(settlementId, cRes.rows);
-  const season = seasonWithUpkeep(seasonAt(Date.now()), await require('./lib/happenings').loadLive(), Date.now());
+  const season = seasonWithUpkeep(seasonAt(Date.now()), await require('./lib/happenings').loadLive(), Date.now(), await townFoodUpkeep(settlementId));
   let total = 0;
   const citizens = cRes.rows.map(c => {
     const u = upkeepPerHour(c, season);
