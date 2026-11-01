@@ -49,9 +49,25 @@ function _rollCombatScheduling(questDef, durationSecs, autoResolve) {
 // authored without a specific encounter still produce *something*. Gated by
 // time of day / moon (lib/time_gates.js) at the quest owner's gameplay clock,
 // so an admin's debug offset moves only their own creatures.
-async function _pickFallbackEnemy(ownerUserId) {
+async function _pickFallbackEnemy(ownerUserId, run) {
   const at = ownerUserId ? gameplayNow({ userId: ownerUserId }) : wallNow();
-  return timeGates.pickRandomEnemy(at, query);
+  return timeGates.pickRandomEnemy(at, query, null, run ? await questBiome(run) : null);
+}
+// The land a quest plays out in: the giving village's tile for a village
+// quest, otherwise the settlement's own tile (its terrain picks the
+// creatures met — lib/time_gates).
+async function questBiome(run) {
+  try {
+    const r = await query(
+      `SELECT COALESCE(nt.terrain, st.terrain) AS terrain
+         FROM settlements s
+         LEFT JOIN quest_definitions qd ON qd.id = $2
+         LEFT JOIN npc_settlements n ON n.id = qd.given_by_npc_id
+         LEFT JOIN tiles nt ON nt.q = n.tile_q AND nt.r = n.tile_r
+         LEFT JOIN tiles st ON st.q = s.tile_q AND st.r = s.tile_r
+        WHERE s.id = $1`, [run.settlement_id, run.quest_id]);
+    return (r.rows[0] && r.rows[0].terrain) || null;
+  } catch (e) { return null; }
 }
 
 const router = express.Router();
@@ -888,9 +904,16 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
         }
       }
 
+      // …and a small chance of a new combat card (lib/cards).
+      let card = null;
+      if (run.status === 'completed' && Math.random() < require('../lib/cards').QUEST_CHANCE) {
+        card = await require('../lib/cards').grantRandom(client, run.settlement_id, Math.random, 'quest');
+        if (card) after.push([run.settlement_id, { type: 'card_unlocked', source: 'quest', card }]);
+      }
+
       await client.query("UPDATE settlement_quests SET status='collected' WHERE id=$1", [run.id]);
       return { ok: true, gold_awarded: goldAwarded, status: run.status, bonus: bonusReward,
-        schematic: schematic ? { name: schematic.name, icon: schematic.icon } : null };
+        schematic: schematic ? { name: schematic.name, icon: schematic.icon } : null, card };
     });
     for (const [sid, ev] of after) eventBus.publish(sid, ev);
     res.json(out);
@@ -944,7 +967,7 @@ async function processCombatTriggers(settlementId) {
         const o = await client.query('SELECT user_id FROM settlements WHERE id=$1', [settlementId]);
         ownerUserId = o.rows.length ? o.rows[0].user_id : null;
       }
-      if (!encounter.length) encounter = await _pickFallbackEnemy(ownerUserId);
+      if (!encounter.length) encounter = await _pickFallbackEnemy(ownerUserId, run);
       // Happening combat modifiers at the owner's gameplay clock, frozen for
       // this battle (stored on the run; every replay reuses them).
       // Careers: the party's perks and gear, frozen with the Happening mods.
@@ -995,6 +1018,18 @@ async function processCombatTriggers(settlementId) {
             });
           } catch (e) {
             console.error('auto-resolve aftermath (victory) failed for run', run.id, e);
+          }
+          // Spoils from the auto-resolved fight: loot into the stores, maybe a
+          // new card (lib/spoils). This transaction holds the run's lock, so
+          // it is granted once.
+          try {
+            const sp = await require('../lib/spoils').grant(client, settlementId, {
+              drops: (battleResult.battle && battleResult.battle.reward && battleResult.battle.reward.drops) || [],
+              enemies: encounter, seedKey: `q${run.id}:${run.combat_seed}`,
+            });
+            if (sp.items.length || sp.card) pendingEvents.push({ type: 'battle_spoils', quest_run_id: run.id, items: sp.items, card: sp.card });
+          } catch (e) {
+            console.error('auto-resolve spoils failed for run', run.id, e);
           }
           // Buffer: combat finished. The quest keeps ticking, so we don't
           // publish quest_resolved here — that'll come from resolveCompletedQuests
@@ -1258,5 +1293,6 @@ module.exports.PARTY_QUEST_POOL = PARTY_QUEST_POOL;
 module.exports.resolveCompletedQuests = resolveCompletedQuests;
 module.exports.processCombatTriggers = processCombatTriggers;
 module.exports.getDailyQuests = getDailyQuests;
+module.exports.questBiome = questBiome;
 module.exports._board = { boardFrom, gateOpen, BOARD_SOLO, BOARD_PARTY };
 module.exports._happeningHelpers = { moddedDuration, moddedSuccess, moddedReward };

@@ -48,6 +48,7 @@ app.use('/api/game/tavern', require('./routes/tavern'));
 app.use('/api/mail', require('./routes/mail'));
 app.use('/api/town', require('./routes/town'));
 app.use('/api/wonders', require('./routes/wonders'));
+app.use('/api/cards', require('./routes/cards'));
 const expeditionRoutes = require('./routes/expeditions');
 app.use('/api/expeditions', expeditionRoutes);
 const questRoutes = require('./routes/quests');
