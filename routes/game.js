@@ -1252,6 +1252,31 @@ router.post('/discoveries/seen', requireAuth, async (req, res) => {
 
 const TIER_LABELS = { camp: 'Camp', village: 'Village', town: 'Town', city: 'City' };
 
+// What reaching a tier opens up, read from the data that actually gates it:
+// buildings' minTier and levelTierReq, housing tierCaps (buildings.js), and
+// the outpost cap, range and level gates (outposts_config.js).
+function tierUnlocks(tier) {
+  const { BUILDINGS } = require('../buildings');
+  const OC = require('../outposts_config');
+  const prev = TIER_ORDER[TIER_ORDER.indexOf(tier) - 1];
+  const out = [];
+  for (const b of Object.values(BUILDINGS)) if (b.minTier === tier) out.push(`${b.icon} ${b.label}`);
+  for (const b of Object.values(BUILDINGS)) {
+    const lv = Object.entries(b.levelTierReq || {}).filter(([, t]) => t === tier).map(([l]) => Number(l)).sort((x, y) => x - y);
+    if (lv.length) out.push(`${b.icon} ${b.label} Lv${lv.length > 1 ? `${lv[0]}–${lv[lv.length - 1]}` : lv[0]}`);
+  }
+  for (const b of Object.values(BUILDINGS)) {
+    const caps = b.tierCaps;
+    if (caps && caps[tier] && caps[tier] !== caps[prev]) out.push(`${b.icon} Up to ${caps[tier]} ${b.label}s`);
+  }
+  const cap = OC.OUTPOST_CAP_BY_TIER, range = OC.OUTPOST_RANGE_BY_TIER;
+  if (cap[tier] !== cap[prev] || range[tier] !== range[prev]) out.push(`⛺ ${cap[tier]} outposts, up to ${range[tier]} tiles away`);
+  for (const [lv, t] of Object.entries(OC.OUTPOST_LEVEL_TIER || {})) if (t === tier) out.push(`⛺ Outposts up to Lv${lv}`);
+  return out;
+}
+
+module.exports._tierUnlocks = tierUnlocks;
+
 const TIER_REQUIREMENTS = {
   // To upgrade FROM camp → village
   village: {
@@ -1259,7 +1284,7 @@ const TIER_REQUIREMENTS = {
     population: 20,
     buildings: 3,  // must have at least 3 buildings
     label: 'Village',
-    unlocks: ['quarry', 'market', 'inn'],
+    get unlocks() { return tierUnlocks('village'); },
     desc: 'Expand your humble camp into a proper village.',
     popBonus: 50,   // new population cap
   },
@@ -1269,7 +1294,7 @@ const TIER_REQUIREMENTS = {
     population: 40,
     buildings: 6,
     label: 'Town',
-    unlocks: ['forge', 'scout_post'],
+    get unlocks() { return tierUnlocks('town'); },
     desc: 'From village to bustling town — a true settlement.',
     popBonus: 120,
   },
@@ -1279,7 +1304,7 @@ const TIER_REQUIREMENTS = {
     population: 80,
     buildings: 9,
     label: 'City',
-    unlocks: [],
+    get unlocks() { return tierUnlocks('city'); },
     desc: 'A great city rises — seat of power in the woodland realm.',
     popBonus: 300,
   },
