@@ -290,6 +290,7 @@ router.get('/settlement', requireAuth, async (req, res) => {
           return Math.max(0, Math.min(100, base + tavernkeepCount * 10 + ((workforce.town && workforce.town.happiness) || 0) + (town.mods.happiness || 0)));
         })(),
         town: { festival: town.festival, upkeep: town.upkeep, arrears: town.arrears, sources: town.sources, watch: town.watch || null },
+        raid: await require('../lib/raids').activeFor(settlement.id),   // a Withered raid on its way (banner)
         last_tick: settlement.last_tick,
         famine,
       },
@@ -787,6 +788,7 @@ router.post('/migrate', requireAuth, requireAdmin, async (req, res) => {
     UNIQUE (tile_q, tile_r)
   )`, "outposts table");
   await run("CREATE INDEX IF NOT EXISTS idx_outposts_settlement ON outposts (settlement_id)", "outposts settlement index");
+  await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS raided_until TIMESTAMPTZ", "outposts raided_until (soft raids)");
   await run("CREATE INDEX IF NOT EXISTS idx_tiles_claimed_by ON tiles (claimed_by) WHERE claimed_by IS NOT NULL", "tiles claimed_by index");
   await run("ALTER TABLE archive_meta ADD COLUMN IF NOT EXISTS outposts JSONB DEFAULT '[]'", "archive outposts snapshot");
 

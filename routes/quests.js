@@ -904,6 +904,10 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
         }
       }
 
+      // A village's quest done is contact with that village (lib/trust_decay).
+      if (quest && quest.given_by_npc_id) {
+        await client.query('UPDATE diplomacy_relations SET last_interaction = NOW() WHERE settlement_id=$1 AND npc_id=$2', [run.settlement_id, quest.given_by_npc_id]);
+      }
       // …and a small chance of a new combat card (lib/cards).
       let card = null;
       if (run.status === 'completed' && Math.random() < require('../lib/cards').QUEST_CHANCE) {

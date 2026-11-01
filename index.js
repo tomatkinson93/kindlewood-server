@@ -49,6 +49,7 @@ app.use('/api/mail', require('./routes/mail'));
 app.use('/api/town', require('./routes/town'));
 app.use('/api/wonders', require('./routes/wonders'));
 app.use('/api/cards', require('./routes/cards'));
+app.use('/api/raids', require('./routes/raids'));
 const expeditionRoutes = require('./routes/expeditions');
 app.use('/api/expeditions', expeditionRoutes);
 const questRoutes = require('./routes/quests');
