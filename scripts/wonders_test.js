@@ -56,7 +56,9 @@ async function part2() {
   check(r.status === 200 && r.body.wonders.length === 5 && /City/.test(r.body.locked) && r.body.wonders.every(w => !w.can_build), 'a Town sees the wonders but can\'t start one');
   const c = await town('wcity', 'city');
   r = await api(c, 'GET', '/api/wonders');
-  check(/Monuments/.test(r.body.locked), 'a City still needs Monuments');
+  check(/scholars must learn more|Monuments/.test(r.body.locked), 'a City still needs the research (named only once its scholars can see it)');
+  await research.adminComplete(c.sid, 'architecture');
+  check(/Study Monuments/.test((await api(c, 'GET', '/api/wonders')).body.locked), '…then it says which');
   await research.adminComplete(c.sid, 'monuments');
   r = await api(c, 'GET', '/api/wonders');
   check(!r.body.locked && r.body.wonders.every(w => w.can_build) && r.body.wonders[0].next.hours === 12, 'with Monuments: every wonder can start; stage 1 takes 12h');
