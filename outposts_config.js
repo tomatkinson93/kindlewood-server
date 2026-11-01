@@ -7,9 +7,9 @@
 //  Requires nothing → safe to require from buildings.js, famine.js, and
 //  any route without circular-dependency risk.
 //
-//  v1 contract:
-//    • primary yields only; `secondary` slots are documented and DISABLED.
-//      Turning them on later = set the object + flip SECONDARY_YIELDS_ENABLED.
+//  Yields: `primary` plus a small `secondary` (SECONDARY_YIELDS_ENABLED),
+//    both × level × the outpost's multiplier (lib/outpost_state: a worker
+//    +25%/+50%, unfed upkeep ×0.5), rounded to whole units per hour.
 //    • level (1–OUTPOST_MAX_LEVEL) scales yields, ores and food upkeep;
 //      POST /api/game/outposts/:id/upgrade raises it (routes/outposts.js).
 //    • `ores` (per hour × level): extra resources a terrain turns up
@@ -22,18 +22,18 @@
 'use strict';
 
 const OUTPOST_CONFIG = {
-  plains:   { name: 'Farmstead',      icon: '🌾', primary: { food: 6 },   secondary: null /* { wealth: 1 } */ },
-  forest:   { name: 'Logging Camp',   icon: '🪓', primary: { timber: 6 }, secondary: null /* { food: 1 }   */ },
-  hills:    { name: 'Quarry',         icon: '⛏️', primary: { stone: 5 },  secondary: null /* { metal: 1 }  */,
+  plains:   { name: 'Farmstead',      icon: '🌾', primary: { food: 6 },   secondary: { wealth: 1 } },
+  forest:   { name: 'Logging Camp',   icon: '🪓', primary: { timber: 6 }, secondary: { food: 1 } },
+  hills:    { name: 'Quarry',         icon: '⛏️', primary: { stone: 5 },  secondary: { metal: 1 },
               ores: { copper: 0.6, tin: 0.5, coal: 0.8 } },
-  mountain: { name: 'Mine',           icon: '⚒️', primary: { metal: 5 },  secondary: null /* { stone: 1 }  */,
+  mountain: { name: 'Mine',           icon: '⚒️', primary: { metal: 5 },  secondary: { stone: 1 },
               ores: { silver: 0.4, goldore: 0.25, gems: 0.06, obsidian: 0.2, mithril: 0.03, moonsilver: 0.03 } },
-  river:    { name: 'Fishing Wharf',  icon: '🎣', primary: { wealth: 4 }, secondary: null /* { food: 2 }   */ },
-  marsh:    { name: "Forager's Camp", icon: '🌿', primary: { food: 4 },   secondary: null /* { timber: 1 } */ },
-  ruins:    { name: 'Excavation',     icon: '🏺', primary: { wealth: 4 }, secondary: null /* { metal: 1 }  */ },
+  river:    { name: 'Fishing Wharf',  icon: '🎣', primary: { wealth: 4 }, secondary: { food: 2 } },
+  marsh:    { name: "Forager's Camp", icon: '🌿', primary: { food: 4 },   secondary: { timber: 1 } },
+  ruins:    { name: 'Excavation',     icon: '🏺', primary: { wealth: 4 }, secondary: { metal: 1 } },
 };
 
-const SECONDARY_YIELDS_ENABLED = false;
+const SECONDARY_YIELDS_ENABLED = true;
 
 // One outpost eats like one adult citizen (UPKEEP_BY_STAGE.adult = 1.0 in
 // famine.js) — a legible unit. Fallback knob if playtests say it stings: 0.5.
@@ -72,20 +72,28 @@ function capForTier(tier) {
 // Per-outpost yield table for a terrain at a level. Integer rates only —
 // the production tick floors running totals, and integer /hr yields add no
 // new fractional residue (spec §5, floor-loss note).
-function outpostYields(terrain, level = 1) {
+function outpostYields(terrain, level = 1, mult = 1) {
   const cfg = OUTPOST_CONFIG[terrain];
   if (!cfg) return {};
   const lvl = Math.max(1, Math.floor(level) || 1);
+  const m = Number.isFinite(mult) ? Math.max(0, mult) : 1;
   const out = {};
-  for (const [res, val] of Object.entries(cfg.primary || {})) {
-    out[res] = (out[res] || 0) + val * lvl;
-  }
-  if (SECONDARY_YIELDS_ENABLED && cfg.secondary) {
-    for (const [res, val] of Object.entries(cfg.secondary)) {
-      out[res] = (out[res] || 0) + val * lvl;
-    }
-  }
+  const add = obj => { for (const [res, val] of Object.entries(obj || {})) out[res] = (out[res] || 0) + val * lvl; };
+  add(cfg.primary);
+  if (SECONDARY_YIELDS_ENABLED) add(cfg.secondary);
+  for (const res of Object.keys(out)) out[res] = Math.round(out[res] * m);
   return out;
+}
+
+// What a dismantle gives back: half of the build cost and of every upgrade
+// paid (at list price — discounts aren't remembered), rounded down.
+const DISMANTLE_REFUND = 0.5;
+function dismantleRefund(level = 1) {
+  const paid = { ...OUTPOST_COST };
+  for (let L = 2; L <= Math.max(1, Math.floor(level) || 1); L++) {
+    for (const [r, v] of Object.entries(upgradeCost(L))) paid[r] = (paid[r] || 0) + v;
+  }
+  return Object.fromEntries(Object.entries(paid).map(([r, v]) => [r, Math.floor(v * DISMANTLE_REFUND)]).filter(([, v]) => v > 0));
 }
 
 // Public (client-safe) subset for GET /api/game/outposts — display config so
@@ -112,5 +120,7 @@ module.exports = {
   rangeForTier,
   capForTier,
   outpostYields,
+  dismantleRefund,
+  DISMANTLE_REFUND,
   publicConfig,
 };

@@ -216,6 +216,50 @@ const QUEST_POOL = [
     flavour_success: 'has the wheel turning again before sundown. The miller pays promptly.',
     flavour_fail: 'couldn\'t identify the fault in time. The miller found someone else.',
   },
+  // ── Time-limited (only on the board inside their window) ──
+  {
+    id: 'q_night_lanterns',
+    title: 'Lantern Watch',
+    description: 'Something prowls the lanes after dark. Walk the lantern route until dawn.',
+    icon: '🏮',
+    category: 'combat',
+    skill_key: 'combat',
+    base_success: 0.5,
+    duration_s: 150,
+    reward_gold: 14,
+    combat_chance: 40,
+    active_phases: ['dusk', 'night'],
+    flavour_success: 'walks the last lantern home at dawn. The lanes are quiet again.',
+    flavour_fail: 'ran from a shape in the dark and lost the lantern on the way.',
+  },
+  {
+    id: 'q_night_moths',
+    title: 'Catch Glowmoths',
+    description: 'Glowmoths only rise at night. The apothecary pays well for a jarful.',
+    icon: '🦋',
+    category: 'gathering',
+    skill_key: 'farming',
+    base_success: 0.55,
+    duration_s: 120,
+    reward_gold: 12,
+    active_phases: ['night'],
+    flavour_success: 'comes back with a jar of softly glowing moths.',
+    flavour_fail: 'chased lights all night and caught only a cold.',
+  },
+  {
+    id: 'q_full_moon_pool',
+    title: 'The Moonlit Pool',
+    description: 'On the night of a full moon, the old pool is said to show where things were lost.',
+    icon: '🌕',
+    category: 'exploration',
+    skill_key: 'scouting',
+    base_success: 0.45,
+    duration_s: 180,
+    reward_gold: 30,
+    moon_phases: ['full'],
+    flavour_success: 'stares into the silver water and finds an old coin purse on the bank.',
+    flavour_fail: 'saw only their own face, tired and wet.',
+  },
 ];
 
 
@@ -333,7 +377,40 @@ const PARTY_QUEST_POOL = [
 // IMPORTANT: This powers the *tavern noticeboard* — NPC-village quests
 // (quest_source='settlement') are deliberately filtered out and surfaced via
 // /api/diplomacy/:npcId/quests instead.
+// Today's tavern board (per player, rotating at 00:00 UTC): BOARD_SOLO solo
+// and BOARD_PARTY party quests picked with an RNG seeded by user + day, plus
+// any time-gated quest (active_phases / moon_phases, the same gates enemies
+// use — lib/time_gates) whose window is open right now. Accept re-checks
+// the board, so a quest off today's board can't be taken through the API.
+const BOARD_SOLO = 5, BOARD_PARTY = 3;
+const _gates = q => ({ ph: Array.isArray(q.active_phases) && q.active_phases.length ? q.active_phases : null,
+                       mo: Array.isArray(q.moon_phases) && q.moon_phases.length ? q.moon_phases : null });
+const isGated = q => { const g = _gates(q); return !!(g.ph || g.mo); };
+function gateOpen(q, ctx) {
+  const g = _gates(q);
+  return (!g.ph || g.ph.includes(ctx.phase)) && (!g.mo || g.mo.includes(ctx.moon));
+}
+function rotate(list, n, rng) {
+  const a = list.map((q, i) => ({ q, i }));
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a.slice(0, n).sort((x, y) => (x.q.sort_order ?? x.i) - (y.q.sort_order ?? y.i) || x.i - y.i).map(x => x.q);
+}
+function boardFrom(soloAll, partyAll, userId, now) {
+  const day = new Date(now).toISOString().slice(0, 10);
+  const ctx = timeGates.timeContext(now);
+  const rng = require('../lib/clan_quests').seededRng(`tavern:${userId}:${day}`);
+  const mark = q => ({ ...q, time_limited: true });
+  const next = new Date(`${day}T00:00:00Z`); next.setUTCDate(next.getUTCDate() + 1);
+  return {
+    solo:  [...rotate(soloAll.filter(q => !isGated(q)), BOARD_SOLO, rng),  ...soloAll.filter(q => isGated(q) && gateOpen(q, ctx)).map(mark)],
+    party: [...rotate(partyAll.filter(q => !isGated(q)), BOARD_PARTY, rng), ...partyAll.filter(q => isGated(q) && gateOpen(q, ctx)).map(mark)],
+    rotates_at: next.toISOString(),
+    phase: ctx.phase, moon: ctx.moon,
+  };
+}
+
 async function getDailyQuests(userId) {
+  const now = userId ? gameplayNow({ userId }) : wallNow();
   try {
     const r = await query(`
       SELECT * FROM quest_definitions
@@ -342,20 +419,15 @@ async function getDailyQuests(userId) {
       ORDER BY sort_order ASC, created_at ASC
     `);
     if (r.rows.length > 0) {
-      // Return ALL non-archived tavern quests — rotation/filtering added later
-      const soloAll  = r.rows.filter(q => q.quest_type === 'solo');
-      const partyAll = r.rows.filter(q => q.quest_type === 'party');
-      return { solo: soloAll, party: partyAll };
+      return boardFrom(r.rows.filter(q => q.quest_type === 'solo'), r.rows.filter(q => q.quest_type === 'party'), userId, now);
     }
   } catch(e) {
     console.error('getDailyQuests DB error, falling back to hardcoded:', e.message);
   }
 
   // Fallback: hardcoded pools (before first seed)
-  return {
-    solo:  QUEST_POOL.map(q => ({ ...q, quest_type: 'solo' })),
-    party: PARTY_QUEST_POOL.map(q => ({ ...q, quest_type: 'party' })),
-  };
+  return boardFrom(QUEST_POOL.map(q => ({ ...q, quest_type: 'solo' })),
+                   PARTY_QUEST_POOL.map(q => ({ ...q, quest_type: 'party' })), userId, now);
 }
 
 // ── GET /api/quests — notice board + active quests ──
@@ -412,6 +484,7 @@ router.get('/', requireAuth, async (req, res) => {
       ok: true,
       available: dailyQuests.solo,
       available_party: dailyQuests.party,
+      rotates_at: dailyQuests.rotates_at,
       active: activeWithDefs,
     });
   } catch (err) {
@@ -474,7 +547,7 @@ router.post('/accept', requireAuth, async (req, res) => {
     if ((await require('../lib/clan_quests').busyCitizenIds([citizen.id])).length)
       return res.status(400).json({ error: `${citizen.name} is on a clan quest.` });
     if ((await require('../lib/market').merchantCitizenIds([citizen.id])).length)
-      return res.status(400).json({ error: `${citizen.name} is busy at work (Market or workshop).` });
+      return res.status(400).json({ error: `${citizen.name} is busy at work (Market, workshop or outpost).` });
 
     // Check citizen isn't on a scouting expedition
     const scoutRes = await query(
@@ -512,6 +585,10 @@ router.post('/accept', requireAuth, async (req, res) => {
         return res.status(400).json({ error: 'Your relations with this settlement no longer meet the requirement.' });
       }
     }
+
+    if ((quest.quest_source || 'tavern') === 'tavern'
+        && !(await getDailyQuests(req.user.userId)).solo.some(x => x.id === quest_id))
+      return res.status(400).json({ error: "That quest isn't on the board today." });
 
     const durationS = moddedDuration(quest.duration_s, await questMods(req.user.userId));   // Happening quest_duration
     const completesAt = new Date(Date.now() + durationS * 1000);
@@ -604,7 +681,7 @@ router.post('/accept-party', requireAuth, async (req, res) => {
     const tradeBusy = await require('../lib/market').merchantCitizenIds(citizen_ids);
     if (tradeBusy.length) {
       const busy = citizenRes.rows.find(c => c.id === tradeBusy[0]);
-      return res.status(400).json({ error: `${busy?.name || 'A citizen'} is busy at work (Market or workshop).` });
+      return res.status(400).json({ error: `${busy?.name || 'A citizen'} is busy at work (Market, workshop or outpost).` });
     }
 
     // Check none are scouting
@@ -646,6 +723,10 @@ router.post('/accept-party', requireAuth, async (req, res) => {
       }
     }
 
+    if ((quest.quest_source || 'tavern') === 'tavern'
+        && !(await getDailyQuests(req.user.userId)).party.some(x => x.id === quest_id))
+      return res.status(400).json({ error: "That quest isn't on the board today." });
+
     const durationS = moddedDuration(quest.duration_s, await questMods(req.user.userId));   // Happening quest_duration
     const completesAt = new Date(Date.now() + durationS * 1000);
     const auto = req.body.auto_resolve_combat === true;
@@ -671,6 +752,34 @@ router.post('/accept-party', requireAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to accept party quest.' });
+  }
+});
+
+// ── POST /api/quests/:id/abandon — call a solo quest off ──
+// Only while it's still under way and no battle has started (a rolled but
+// not yet triggered fight is fine). The citizen comes home empty-handed and
+// the quest can be taken again.
+router.post('/:id/abandon', requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Bad quest id.' });
+    const r = await query(
+      `UPDATE settlement_quests SET status='abandoned', combat_status='none'
+        WHERE id=$1 AND user_id=$2 AND status='active' AND quest_type='solo'
+          AND COALESCE(combat_status,'none') IN ('none','rolled')
+        RETURNING id, citizen_id, settlement_id`, [id, req.user.userId]);
+    if (!r.rows.length) {
+      const row = (await query('SELECT status, quest_type, combat_status FROM settlement_quests WHERE id=$1 AND user_id=$2', [id, req.user.userId])).rows[0];
+      if (!row) return res.status(404).json({ error: 'Quest not found.' });
+      if (row.status !== 'active') return res.status(400).json({ error: 'That quest is already over.' });
+      if (row.quest_type !== 'solo') return res.status(400).json({ error: 'Party quests can’t be abandoned.' });
+      return res.status(400).json({ error: 'A battle has begun — it’s too late to turn back.' });
+    }
+    const cit = (await query('SELECT name FROM citizens WHERE id=$1', [r.rows[0].citizen_id])).rows[0];
+    res.json({ ok: true, id, citizen_name: cit ? cit.name : null });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to abandon the quest.' });
   }
 });
 
@@ -1148,4 +1257,6 @@ module.exports.QUEST_POOL = QUEST_POOL;
 module.exports.PARTY_QUEST_POOL = PARTY_QUEST_POOL;
 module.exports.resolveCompletedQuests = resolveCompletedQuests;
 module.exports.processCombatTriggers = processCombatTriggers;
+module.exports.getDailyQuests = getDailyQuests;
+module.exports._board = { boardFrom, gateOpen, BOARD_SOLO, BOARD_PARTY };
 module.exports._happeningHelpers = { moddedDuration, moddedSuccess, moddedReward };

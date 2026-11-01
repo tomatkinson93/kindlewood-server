@@ -156,7 +156,7 @@ async function loadAvailableCitizen(citizenId, settlementId) {
     return { ok: false, error: cit.name + ' is on a clan quest.' };
   }
   if ((await require('../lib/market').merchantCitizenIds([citizenId])).length) {
-    return { ok: false, error: cit.name + ' is busy at work (Market or workshop).' };
+    return { ok: false, error: cit.name + ' is busy at work (Market, workshop or outpost).' };
   }
 
   const onDiplo = await query(

@@ -26,6 +26,18 @@ function part1() {
   check(C.upgradeCost(2, 0.9).timber === 324, 'building discounts apply');
   check(C.OUTPOST_LEVEL_TIER[3] === 'town' && !C.OUTPOST_LEVEL_TIER[2], 'Lv3 needs a Town; Lv2 doesn\'t');
   check(C.outpostYields('hills', 2).stone === 2 * C.outpostYields('hills', 1).stone, 'yields scale with level');
+
+  console.log('Second yields, multipliers, refunds');
+  check(C.SECONDARY_YIELDS_ENABLED && C.outpostYields('hills', 1).metal === 1 && C.outpostYields('river', 2).food === 4, 'a second, smaller yield per terrain (× level)');
+  check(C.outpostYields('plains', 1, 1.5).food === 9 && C.outpostYields('plains', 1, 0.5).food === 3 && C.outpostYields('plains', 2, 0).food === 0, 'a multiplier scales every yield, in whole units');
+  check(JSON.stringify(C.dismantleRefund(1)) === JSON.stringify({ timber: 60, stone: 30, wealth: 15 }), 'dismantling Lv1 gives back half the build cost');
+  const r3 = C.dismantleRefund(3);
+  check(r3.timber === Math.floor((120 + 360 + 540) / 2) && r3.bronze === 7, '…and half of each upgrade paid (Lv3: bronze too)');
+  const S = require('../lib/outpost_state');
+  const w = S.annotate({ terrain: 'hills', assigned_citizen_id: 1, worker_name: 'Bo', worker_role: 'miner' }, {});
+  const w2 = S.annotate({ terrain: 'hills', assigned_citizen_id: 1, worker_name: 'Bo', worker_role: 'farmer' }, { outposts_unfed_since: new Date() });
+  check(w.mult === 1.5 && w.worker.fit, 'a Miner at a Quarry: +50%');
+  check(w2.mult === 0.625 && w2.notes.some(n => n.key === 'unfed'), 'a Farmer there +25%, and unfed halves it (×0.625)');
 }
 
 async function part2() {
@@ -99,6 +111,51 @@ async function part2() {
   await q('UPDATE settlements SET timber = 10 WHERE id=$1', [b.sid]);
   r = await api(b, 'POST', `/api/game/outposts/${theirs}/upgrade`);
   check(r.status === 400 && /timber/i.test(r.body.error), 'short of timber: refused, nothing spent');
+
+  console.log('Workers');
+  const wk = await user('opwork', 'village');
+  const wid = await outpost(wk, 'hills');
+  const cit = async (name, role) => (await q(`INSERT INTO citizens (settlement_id, name, gender, role, skills, life_stage) VALUES ($1,$2,'female',$3,'{}','adult') RETURNING id`, [wk.sid, name + RUN, role])).rows[0].id;
+  const miner = await cit('Pick', 'miner'), farmer = await cit('Hoe', 'farmer');
+  const rate = async () => (await api(wk, 'GET', '/api/game/outposts')).body.outposts.find(x => x.id === wid);
+  const base = await rate();
+  r = await api(wk, 'POST', `/api/game/outposts/${wid}/assign`, { citizen_id: miner });
+  check(r.status === 200 && r.body.outpost.worker && r.body.outpost.worker.fit && r.body.outpost.yields.stone === Math.round(base.yields.stone * 1.5),
+    'post a Miner at a Quarry: +50% stone' + (r.status === 200 ? '' : ' — ' + JSON.stringify(r.body)));
+  const wid2 = await outpost(wk, 'plains');
+  r = await api(wk, 'POST', `/api/game/outposts/${wid2}/assign`, { citizen_id: miner });
+  check(r.status === 400 && /busy at work|already/i.test(r.body.error), 'one outpost at a time');
+  const qa = await api(wk, 'GET', '/api/quests');
+  const qid = qa.body.available && qa.body.available[0] && qa.body.available[0].id;
+  r = await api(wk, 'POST', '/api/quests/accept', { quest_id: qid, citizen_id: miner });
+  check(r.status === 400 && /outpost/.test(r.body.error), 'a posted worker can\'t go questing');
+  const bd2 = await api(wk, 'GET', '/api/game/resource-breakdown');
+  const opRow = ((bd2.body.breakdown || {}).stone || { sources: [] }).sources.find(x => x.kind === 'outpost' && x.outpost_id === wid);
+  check(opRow && /\+50%/.test(opRow.label), 'the breakdown names the worker');
+  r = await api(wk, 'POST', `/api/game/outposts/${wid2}/assign`, { citizen_id: farmer });
+  check(r.status === 200 && r.body.outpost.worker && r.body.outpost.worker.fit, 'a Farmer at a Farmstead knows the land too');
+  r = await api(wk, 'POST', `/api/game/outposts/${wid}/unassign`);
+  check(r.status === 200 && !r.body.outpost.worker && r.body.outpost.yields.stone === base.yields.stone, 'bring them home: back to the base yield');
+  check((await api(a, 'POST', `/api/game/outposts/${wid}/assign`, { citizen_id: miner })).status === 404, 'not someone else\'s outpost');
+
+  console.log('Unfed');
+  await q('UPDATE settlements SET outposts_unfed_since = NOW() WHERE id=$1', [wk.sid]);
+  const hungry = await api(wk, 'GET', '/api/game/outposts');
+  const h1 = hungry.body.outposts.find(x => x.id === wid);
+  check(hungry.body.unfed === true && h1.yields.stone === Math.round(base.yields.stone * 0.5) && h1.notes.some(n => n.key === 'unfed'), 'unfed outposts work at half pace');
+  const F = require('../famine');
+  const sim = F.simulateConsumption({ foodF: 0.1, outpostCount: 2, citizens: [] }, 1, Date.now());
+  const sim2 = F.simulateConsumption({ foodF: 50, outpostCount: 2, citizens: [] }, 1, Date.now());
+  check(sim.outpostsUnfed === true && sim2.outpostsUnfed === false, 'the famine step knows when outposts go unfed');
+  await q('UPDATE settlements SET outposts_unfed_since = NULL WHERE id=$1', [wk.sid]);
+
+  console.log('Dismantle refund');
+  const pre = await res(wk.sid);
+  r = await api(wk, 'DELETE', `/api/game/outposts/${wid}`);
+  const post = await res(wk.sid);
+  check(r.status === 200 && r.body.refund && r.body.refund.timber === 60, 'dismantle says what came back');
+  check(post.timber - pre.timber === 60 && post.stone - pre.stone === 30 && post.wealth - pre.wealth >= 15, '…and it lands in the stores');
+  check((await api(wk, 'DELETE', `/api/game/outposts/${wid}`)).status === 404, 'only once');
 
   await pool.end();
 }
