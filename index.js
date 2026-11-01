@@ -85,6 +85,7 @@ app.use('/api/stats', gameStatsRoutes);
 const presenceRoutes = require('./routes/presence');
 app.use('/api/presence', presenceRoutes);
 app.use('/api/rooms', roomRoutes);
+app.use('/api/clans', require('./routes/clan_extras'));   // treasury, boons, goals, land release
 app.use('/api/clans', require('./routes/clans'));
 app.use('/api/chat', require('./routes/chat'));
 app.use('/api/clan-quests', require('./routes/clan_quests'));

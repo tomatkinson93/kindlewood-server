@@ -89,7 +89,7 @@ async function main() {
   check(pub.data.clan.territory.count === 1 && pub.data.clan.territory.hq && pub.data.clan.territory.hq.name, 'territory count and HQ settlement');
   check(pub.data.clan.standing >= 1 && pub.data.clan.clan_count >= pub.data.clan.standing, 'standing on the prestige board');
   check(pub.data.milestones.some(m => m.type === 'clan_founded'), 'milestones include the founding');
-  check(pub.data.honors && pub.data.honors.live === false, 'honors stubbed (CLAN_HONORS_LIVE = false)');
+  check(pub.data.honors && pub.data.honors.live === true && Array.isArray(pub.data.honors.items), 'honors are live (an array of earned honors)');
   check(pub.data.viewer.member === false && (await api(M.token, 'GET', `/api/clans/${clanId}`)).data.viewer.member === true, 'viewer.member');
   check(!('permissions' in pub.data) && !('outgoing_invites' in pub.data), 'no private panel data');
   check((await api(X.token, 'GET', '/api/clans/99999999')).status === 404, 'unknown clan → 404');

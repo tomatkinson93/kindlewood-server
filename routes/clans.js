@@ -991,7 +991,7 @@ router.get('/:id', requireAuth, async (req, res) => {
         territory: { count: c.territory_count, hq: c.hq_q != null ? { q: c.hq_q, r: c.hq_r, name: c.hq_name } : null },
       },
       roster, milestones,
-      honors: { live: palette.CLAN_HONORS_LIVE, items: [] },
+      honors: { live: palette.CLAN_HONORS_LIVE, items: await require('../lib/clan_goals').honorsOf(c.id) },
       viewer: { member: mine, in_clan: !!myClan, request_pending: pending },
     });
   } catch (e) {
