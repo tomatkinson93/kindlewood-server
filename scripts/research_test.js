@@ -23,7 +23,7 @@ function check(cond, msg) {
 
 function part1() {
   console.log('The tree');
-  check(RS.KEYS.length === 46 && RS.ERAS.length === 8, '46 projects across 8 eras');
+  check(RS.KEYS.length === 48 && RS.ERAS.length === 8, '48 projects across 8 eras');
   check(['prospecting', 'smelting', 'record_keeping', 'deep_veins', 'steelworking', 'engineering', 'volcanic_lore', 'master_recipes', 'starmetal'].every(k => RS.PROJECTS[k]),
     'every key a town may already have finished still exists');
   console.log('Layout');
@@ -124,7 +124,7 @@ async function part2() {
   console.log('No Library');
   const none = await user('nolib');
   let r = await api(none, 'GET', '/api/research');
-  check(r.status === 200 && r.body.library_level === 0 && r.body.per_hour === 0 && r.body.projects.length === 46 && r.body.branches && r.body.eras.length === 8
+  check(r.status === 200 && r.body.library_level === 0 && r.body.per_hour === 0 && r.body.projects.length === 48 && r.body.branches && r.body.eras.length === 8
     && r.body.projects.every(p => p.branch && p.tier && Array.isArray(p.requires) && (p.hidden || p.unlocks)), 'GET /api/research works without a Library (whole tree, with paths and eras)');
   r = await api(none, 'POST', '/api/research/start', { project: 'prospecting' });
   check(r.status === 400 && /Library/.test(r.body.error), 'you need a Library to study');
@@ -296,7 +296,7 @@ async function part2() {
     r = await api(a, 'POST', '/api/research/admin/reset', {});
     check(r.status === 403, 'players can\'t use the Dev Tools routes');
     r = await api(adm, 'GET', '/api/research/admin/defs');
-    check(r.status === 200 && r.body.projects.length === 46 && r.body.projects.some(p => p.label === RS.PROJECTS.starmetal.label), 'Dev Tools: the full tree, names and all');
+    check(r.status === 200 && r.body.projects.length === 48 && r.body.projects.some(p => p.label === RS.PROJECTS.starmetal.label), 'Dev Tools: the full tree, names and all');
     const tile = (await q('SELECT q, r, terrain FROM tiles ORDER BY q, r LIMIT 1')).rows[0];
     if (tile) {
       r = await api(a, 'POST', '/api/map/tile-terrain', { q: tile.q, r: tile.r, terrain: 'mountain' });
