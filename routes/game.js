@@ -727,7 +727,7 @@ router.post('/migrate', requireAuth, requireAdmin, async (req, res) => {
 
   // 010_tiles_outposts — tile claims + outposts. Yields go through
   // calculateRates (production/last_tick path); food upkeep goes through
-  // famine consumption (quantized carry) — see outposts_v1_spec.md §5.
+  // famine consumption (quantized carry) — see famine.js.
   // level + assigned_citizen_id are reserved for future upgrades/workers.
   await run("ALTER TABLE tiles ADD COLUMN IF NOT EXISTS claimed_by INTEGER DEFAULT NULL REFERENCES settlements(id) ON DELETE SET NULL", "tiles claimed_by");
   await run("ALTER TABLE tiles ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ DEFAULT NULL", "tiles claimed_at");

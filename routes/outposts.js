@@ -1,7 +1,8 @@
 // ══════════════════════════════════════════════════════════════════════════
 //  OUTPOSTS — routes (mount at /api/game/outposts in server index.js:
 //      app.use('/api/game/outposts', require('./routes/outposts'));
-//  Implements outposts_v1_spec.md §6.
+//  (Built from outposts_v1_spec.md, which isn't in the repo; outposts_config.js
+//  is the reference.)
 //
 //  Endpoints:
 //    GET    /          — my outposts + cap/used/range + display config
