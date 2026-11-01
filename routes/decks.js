@@ -138,8 +138,10 @@ router.post('/', requireAuth, async (req, res) => {
     if (!v.ok) return res.status(400).json({ error: v.error });
 
     const r = await query(
+      // A settlement's first deck is the one its battles use.
       `INSERT INTO settlement_deck_templates (settlement_id, name, cards, is_active)
-       VALUES ($1, $2, $3, false) RETURNING id, name, cards, is_active`,
+       VALUES ($1, $2, $3, NOT EXISTS (SELECT 1 FROM settlement_deck_templates WHERE settlement_id = $1))
+       RETURNING id, name, cards, is_active`,
       [sett.id, (name || 'Untitled').slice(0, 60), JSON.stringify(v.clean)]
     );
     res.json({ ok: true, template: r.rows[0] });
