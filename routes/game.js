@@ -202,6 +202,22 @@ async function applyTick(settlement, species, workforce) {
   return { ...settlement, ...updated };
 }
 
+// First steps — a checklist for a new town (lib/first_steps).
+router.get('/first-steps', requireAuth, async (req, res) => {
+  try {
+    const s = (await query('SELECT * FROM settlements WHERE user_id=$1', [req.user.userId])).rows[0];
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+    res.json({ ok: true, ...(await require('../lib/first_steps').forSettlement(s)) });
+  } catch (e) { console.error('[first-steps]', e); res.status(500).json({ error: 'Failed to load first steps.' }); }
+});
+router.post('/first-steps/dismiss', requireAuth, async (req, res) => {
+  try {
+    const r = await query('UPDATE settlements SET first_steps_dismissed = TRUE WHERE user_id=$1 RETURNING id', [req.user.userId]);
+    if (!r.rows.length) return res.status(404).json({ error: 'No settlement.' });
+    res.json({ ok: true });
+  } catch (e) { console.error('[first-steps] dismiss', e); res.status(500).json({ error: 'Failed.' }); }
+});
+
 router.get('/settlement', requireAuth, async (req, res) => {
   console.log(`SETTLEMENT fetched: user=${req.user.userId} time=${Date.now()}`);
   try {
