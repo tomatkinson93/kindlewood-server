@@ -169,6 +169,39 @@ async function part2() {
     x = await api(adm, 'POST', '/api/raids/admin/resolve', {});
     check(x.status === 200 && x.body.raid && x.body.raid.outcome, 'resolve it now');
     check((await api(a, 'POST', '/api/raids/admin/send', {})).status === 403, 'players can\'t');
+
+    // Target an outpost, set the time and strength; status shows the exact number.
+    const ao = (await q("INSERT INTO outposts (settlement_id, tile_q, tile_r, terrain, level) VALUES ($1,$2,0,'hills',1) RETURNING id", [adm.sid, adm.q + 1])).rows[0].id;
+    x = await api(adm, 'POST', '/api/raids/admin/send', { outpost_id: ao, minutes: 30, strength: 77 });
+    const mins = x.body.raid ? (Date.parse(x.body.raid.arrives_at) - Date.now()) / 60000 : 0;
+    check(x.status === 200 && x.body.raid.outpost_id === ao && x.body.strength === 77 && mins > 28 && mins < 31, 'send at a chosen outpost, in 30 minutes, strength 77');
+    let st = await api(adm, 'GET', '/api/raids/admin/status');
+    check(st.status === 200 && st.body.active && st.body.active.strength === 77 && st.body.outposts.some(o => o.id === ao) && st.body.why_not.some(r => /already on its way/.test(r)), 'status: the exact strength, your outposts, why the check would skip you');
+    x = await api(adm, 'POST', '/api/raids/admin/cancel', {});
+    const left = (await q('SELECT COUNT(*)::int AS n FROM settlement_raids WHERE settlement_id=$1 AND resolved_at IS NULL', [adm.sid])).rows[0].n;
+    st = await api(adm, 'GET', '/api/raids/admin/status');
+    check(x.status === 200 && left === 0 && !st.body.active, 'cancel: the raid is gone');
+    check((await api(adm, 'POST', '/api/raids/admin/cancel', {})).status === 400, '…and there is nothing left to cancel');
+    // The resolved one earlier is a cooldown; clearing it makes the town raidable.
+    check(!!st.body.cooldown_until && st.body.why_not.some(r => /Cooling down/.test(r)), 'the earlier raid leaves a cooldown');
+    x = await api(adm, 'POST', '/api/raids/admin/check', { boost: 100 });
+    check(x.status === 200 && x.body.started === false && x.body.reasons.some(r => /Cooling down/.test(r)), 'the normal check says why nothing starts');
+    await q("UPDATE settlements SET raid_peace_until = NOW() + interval '1 day' WHERE id=$1", [adm.sid]);
+    await api(adm, 'POST', '/api/raids/admin/clear-cooldown', {});
+    st = await api(adm, 'GET', '/api/raids/admin/status');
+    check(!st.body.cooldown_until && !st.body.peace_until && st.body.why_not.length === 0, `clear cooldown and peace: eligible again (${st.body.why_not.join(' | ')})`);
+    x = await api(adm, 'POST', '/api/raids/admin/check', { boost: 100000 });
+    check(x.status === 200 && x.body.started === true && x.body.raid, 'the normal check, boosted, starts a raid');
+    await api(adm, 'POST', '/api/raids/admin/cancel', {});
+    x = await api(adm, 'POST', '/api/raids/admin/send', { outpost_id: 'town', minutes: 0 });
+    check(x.status === 200 && x.body.raid.outpost_id === null, 'send at the town even with an outpost nearer');
+    await api(adm, 'POST', '/api/raids/admin/cancel', {});
+    check((await api(adm, 'POST', '/api/raids/admin/send', { outpost_id: out1 })).status === 404, 'not someone else\'s outpost');
+    for (const p of ['/api/raids/admin/cancel', '/api/raids/admin/check', '/api/raids/admin/clear-cooldown', '/api/raids/admin/camps/clear']) {
+      check((await api(a, 'POST', p, {})).status === 403, `players can't: ${p}`);
+    }
+    check((await api(a, 'GET', '/api/raids/admin/status')).status === 403, 'players can\'t: status');
+    await q('DELETE FROM outposts WHERE id=$1', [ao]);
   }
 
   await pool.end();

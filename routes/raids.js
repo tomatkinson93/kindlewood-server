@@ -8,9 +8,16 @@
 //  POST /:id/sally      { citizen_ids } meet them in a card battle first
 //  GET  /camps          Withered camps you have found · POST /camps/:id/assault { citizen_ids }
 //  POST /tribute        24 hours of peace (escalating; turns back a raid on its way at double)
-//  POST /admin/send     Dev Tools: raiders gather now ({ minutes } to arrival, default 6h)
-//  POST /admin/peace-clear  Dev Tools: forget tribute peace
-//  POST /admin/resolve  Dev Tools: the raid on its way strikes now
+//  Dev Tools (admins):
+//  GET  /admin/status   the raid on its way (exact strength), peace, cooldown,
+//                       why the normal check would skip you, your outposts
+//  POST /admin/send     raiders gather now { outpost_id | 'town', minutes, strength }
+//  POST /admin/cancel   call the raid off: no outcome, no loss, no cooldown
+//  POST /admin/resolve  the raid on its way strikes now
+//  POST /admin/check    roll the normal raid check for you { boost } (×chance)
+//  POST /admin/clear-cooldown  forget the cooldown and tribute peace
+//  POST /admin/peace-clear     forget tribute peace
+//  POST /admin/camps · /admin/camps/clear   spawn / clear Withered camps
 // ══════════════════════════════════════════════════════════════════════════
 'use strict';
 
@@ -110,11 +117,80 @@ router.post('/admin/send', requireAuth, requireAdmin, async (req, res) => {
   try {
     const s = await mine(req.user.userId);
     if (!s) return res.status(404).json({ error: 'No settlement.' });
-    const minutes = Number(req.body && req.body.minutes);
-    const raid = await R.start(s, { force: true, arriveInMs: Number.isFinite(minutes) ? Math.max(0, minutes) * 60000 : undefined });
+    const b = req.body || {};
+    const minutes = b.minutes === '' || b.minutes == null ? NaN : Number(b.minutes);
+    const strength = Math.max(0, Math.round(Number(b.strength) || 0)) || undefined;
+    const outpostId = b.outpost_id && b.outpost_id !== 'town' ? parseInt(b.outpost_id, 10) : null;
+    if (outpostId && !(await query('SELECT 1 FROM outposts WHERE id=$1 AND settlement_id=$2', [outpostId, s.id])).rows.length) return res.status(404).json({ error: 'That is not one of your outposts.' });
+    const raid = await R.start(s, { force: true, outpostId, town: b.outpost_id === 'town', strength, arriveInMs: Number.isFinite(minutes) ? Math.max(0, minutes) * 60000 : undefined });
     if (!raid) return res.status(400).json({ error: 'A raid is already on its way (or your town has no home tile).' });
-    res.json({ ok: true, raid: R.view(raid) });
+    res.json({ ok: true, raid: R.view(raid), strength: raid.strength });
   } catch (e) { console.error('[raids] send', e); res.status(500).json({ error: 'Failed.' }); }
+});
+
+router.post('/admin/cancel', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const s = await mine(req.user.userId);
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+    const open = await R.activeFor(s.id);
+    if (!open) return res.status(400).json({ error: 'No raid on its way.' });
+    await R.cancel(open.id);
+    res.json({ ok: true, cancelled: open.id });
+  } catch (e) { console.error('[raids] cancel', e); res.status(500).json({ error: 'Failed.' }); }
+});
+
+router.get('/admin/status', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const s = await mine(req.user.userId);
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+    const raw = (await query('SELECT * FROM settlement_raids WHERE settlement_id=$1 AND resolved_at IS NULL ORDER BY id DESC LIMIT 1', [s.id])).rows[0];
+    const last = (await query('SELECT MAX(resolved_at) AS t FROM settlement_raids WHERE settlement_id=$1', [s.id])).rows[0].t;
+    const { OUTPOST_CONFIG } = require('../outposts_config');
+    const outposts = (await query('SELECT id, terrain, level FROM outposts WHERE settlement_id=$1 ORDER BY id', [s.id])).rows
+      .map(o => ({ id: o.id, name: `${(OUTPOST_CONFIG[o.terrain] || {}).name || 'Outpost'} (Lv ${o.level || 1})` }));
+    const C = require('../lib/raid_camps');
+    res.json({
+      ok: true,
+      active: raw ? { id: raw.id, target: raw.target_name, from: raw.from_name, strength: raw.strength, arrives_at: raw.arrives_at, outpost_id: raw.outpost_id } : null,
+      peace_until: s.raid_peace_until && Date.parse(s.raid_peace_until) > Date.now() ? s.raid_peace_until : null,
+      cooldown_until: R.cooldownUntil(last), why_not: await R.whyNot(s), chance: R.CHECK_CHANCE,
+      camps: (await C.openCamps()).length, outposts,
+    });
+  } catch (e) { console.error('[raids] status', e); res.status(500).json({ error: 'Failed.' }); }
+});
+
+// POST /admin/check { boost } — the normal check, for you, with the chance × boost.
+router.post('/admin/check', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const s = await mine(req.user.userId);
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+    const reasons = await R.whyNot(s);
+    if (reasons.length) return res.json({ ok: true, started: false, reasons });
+    const boost = Math.max(1, Math.min(10000, Number(req.body && req.body.boost) || 1));
+    const chance = Math.min(1, R.CHECK_CHANCE * boost);
+    const roll = Math.random();
+    if (roll >= chance) return res.json({ ok: true, started: false, chance, roll, reasons: [`The dice said no (rolled ${roll.toFixed(3)}, needed under ${chance.toFixed(3)}).`] });
+    const raid = await R.start(s, {});
+    res.json({ ok: true, started: !!raid, chance, roll, raid: raid ? R.view(raid) : null, reasons: raid ? [] : ['The raid could not set out.'] });
+  } catch (e) { console.error('[raids] check', e); res.status(500).json({ error: 'Failed.' }); }
+});
+
+// POST /admin/clear-cooldown — push past raids beyond the cooldown and drop tribute peace.
+router.post('/admin/clear-cooldown', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const s = await mine(req.user.userId);
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+    await query(`UPDATE settlement_raids SET resolved_at = NOW() - make_interval(hours => $2 + 1)
+                  WHERE settlement_id=$1 AND resolved_at > NOW() - make_interval(hours => $2 + 1)`, [s.id, R.COOLDOWN_H]);
+    await query('UPDATE settlements SET raid_peace_until = NULL, raid_tribute_at = NULL, raid_tribute_streak = 0 WHERE id=$1', [s.id]);
+    res.json({ ok: true });
+  } catch (e) { console.error('[raids] clear-cooldown', e); res.status(500).json({ error: 'Failed.' }); }
+});
+
+// POST /admin/camps/clear — remove every Withered camp (they respawn on the next spawn).
+router.post('/admin/camps/clear', requireAuth, requireAdmin, async (req, res) => {
+  try { const r = await query('DELETE FROM withered_camps'); res.json({ ok: true, cleared: r.rowCount }); }
+  catch (e) { console.error('[raids] camps clear', e); res.status(500).json({ error: 'Failed.' }); }
 });
 
 router.post('/admin/resolve', requireAuth, requireAdmin, async (req, res) => {
