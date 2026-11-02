@@ -202,6 +202,22 @@ async function applyTick(settlement, species, workforce) {
   return { ...settlement, ...updated };
 }
 
+// First steps — a checklist for a new town (lib/first_steps).
+router.get('/first-steps', requireAuth, async (req, res) => {
+  try {
+    const s = (await query('SELECT * FROM settlements WHERE user_id=$1', [req.user.userId])).rows[0];
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+    res.json({ ok: true, ...(await require('../lib/first_steps').forSettlement(s)) });
+  } catch (e) { console.error('[first-steps]', e); res.status(500).json({ error: 'Failed to load first steps.' }); }
+});
+router.post('/first-steps/dismiss', requireAuth, async (req, res) => {
+  try {
+    const r = await query('UPDATE settlements SET first_steps_dismissed = TRUE WHERE user_id=$1 RETURNING id', [req.user.userId]);
+    if (!r.rows.length) return res.status(404).json({ error: 'No settlement.' });
+    res.json({ ok: true });
+  } catch (e) { console.error('[first-steps] dismiss', e); res.status(500).json({ error: 'Failed.' }); }
+});
+
 router.get('/settlement', requireAuth, async (req, res) => {
   console.log(`SETTLEMENT fetched: user=${req.user.userId} time=${Date.now()}`);
   try {
@@ -290,7 +306,9 @@ router.get('/settlement', requireAuth, async (req, res) => {
           return Math.max(0, Math.min(100, base + tavernkeepCount * 10 + ((workforce.town && workforce.town.happiness) || 0) + (town.mods.happiness || 0)));
         })(),
         town: { festival: town.festival, upkeep: town.upkeep, arrears: town.arrears, sources: town.sources, watch: town.watch || null },
-        raid: await require('../lib/raids').activeFor(settlement.id),   // a Withered raid on its way (banner)
+        raid: await require('../lib/raids').activeFor(settlement.id),   // a Withered raid on its way (top-bar countdown)
+        defence: await require('../lib/defences').townDefence(settlement).then(d => ({ walls: d.walls, walls_level: d.walls_level, watch: d.watch, own: d.own })).catch(() => null),
+        raid_peace_until: settlement.raid_peace_until && Date.parse(settlement.raid_peace_until) > Date.now() ? settlement.raid_peace_until : null,
         last_tick: settlement.last_tick,
         famine,
       },
@@ -789,6 +807,7 @@ router.post('/migrate', requireAuth, requireAdmin, async (req, res) => {
   )`, "outposts table");
   await run("CREATE INDEX IF NOT EXISTS idx_outposts_settlement ON outposts (settlement_id)", "outposts settlement index");
   await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS raided_until TIMESTAMPTZ", "outposts raided_until (soft raids)");
+  await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS fort_level INTEGER NOT NULL DEFAULT 0", "outposts fort_level (defences)");
   await run("CREATE INDEX IF NOT EXISTS idx_tiles_claimed_by ON tiles (claimed_by) WHERE claimed_by IS NOT NULL", "tiles claimed_by index");
   await run("ALTER TABLE archive_meta ADD COLUMN IF NOT EXISTS outposts JSONB DEFAULT '[]'", "archive outposts snapshot");
 

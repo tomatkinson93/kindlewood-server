@@ -247,6 +247,24 @@ const BUILDINGS = {
     requires: [],
     minTier: 'village',
   },
+  // Town walls (lib/defences): 15 raid defence a level, no crew. Palisades
+  // to build; levels 3+ need Stone Forts (levelResearch).
+  walls: {
+    id: 'walls',
+    label: 'Walls',
+    desc: 'A ring of stakes, then stone, around the town. Each level adds to its defence against raids — no one needs to man them.',
+    icon: '🧱',
+    cost: { timber: 150, stone: 150, wealth: 30 },
+    maxLevel: 5,
+    levelCost: { 3: { bronze: 20 }, 4: { steel: 20 }, 5: { steel: 40 } },
+    levelTierReq: { 4: 'town', 5: 'city' },
+    levelResearch: { 3: 'stone_forts', 4: 'stone_forts', 5: 'stone_forts' },
+    effect: () => ({}),
+    citizenSlots: () => 0,
+    requires: [],
+    minTier: 'village',
+    research: 'palisades',
+  },
 };
 
 // Citizen role → building it contributes to
