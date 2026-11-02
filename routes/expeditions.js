@@ -175,6 +175,29 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
+// POST /:id/recall — call a scout home. They turn round where they are and
+// walk back (as long as they have been out), revealing nothing new.
+router.post('/:id/recall', requireAuth, async (req, res) => {
+  try {
+    const s = (await query('SELECT id, tile_q, tile_r FROM settlements WHERE user_id=$1', [req.user.userId])).rows[0];
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+    const e = (await query("SELECT * FROM expeditions WHERE id=$1 AND settlement_id=$2 AND status='travelling'", [parseInt(req.params.id, 10), s.id])).rows[0];
+    if (!e) return res.status(404).json({ error: 'No such expedition on its way.' });
+    if (e.recalled_at) return res.status(400).json({ error: 'They are already on their way home.' });
+    const now = Date.now(), start = new Date(e.started_at).getTime(), end = new Date(e.completes_at).getTime();
+    const f = end > start ? Math.max(0, Math.min(1, (now - start) / (end - start))) : 1;
+    const path = Array.isArray(e.path) ? e.path : [];
+    const idx = path.length ? Math.round(f * (path.length - 1)) : 0;
+    const back = path.slice(0, idx + 1).reverse();
+    const homeIn = Math.max(10, Math.round((now - start) / 1000));
+    const up = (await query(
+      `UPDATE expeditions SET recalled_at = NOW(), started_at = NOW(), completes_at = NOW() + make_interval(secs => $2),
+              target_q = $3, target_r = $4, path = $5 WHERE id = $1 RETURNING *`,
+      [e.id, homeIn, s.tile_q, s.tile_r, JSON.stringify(back.length ? back : [{ q: s.tile_q, r: s.tile_r }])])).rows[0];
+    res.json({ ok: true, expedition: up, seconds: homeIn });
+  } catch (err) { console.error('[expeditions] recall', err); res.status(500).json({ error: 'Failed to recall the scout.' }); }
+});
+
 // Complete finished expeditions and reveal tiles
 // Each expedition is claimed first (status → complete), so the lazy read
 // and the worker can't both finish it.
@@ -187,6 +210,10 @@ async function completeExpeditions(settlementId, userId) {
   );
 
   for (const exp of done.rows) {
+    if (exp.recalled_at) {   // called home: nothing new seen, the scout is simply back
+      if (exp.citizen_id) require('../lib/game_events').emit('expedition_returned', { settlementId, citizenId: exp.citizen_id, hexes: 0 });
+      continue;
+    }
     const path = exp.path || [];
     // Reveal all path tiles
     for (const tile of path) {
