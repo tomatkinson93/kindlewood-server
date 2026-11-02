@@ -32,7 +32,8 @@ router.get('/world', requireAuth, async (req, res) => {
 
     // Get all player settlements for display
     const settlementsRes = await query(`
-      SELECT s.id AS settlement_id, s.tile_q, s.tile_r, s.name, s.tier, s.user_id, u.species, u.username
+      SELECT s.id AS settlement_id, s.tile_q, s.tile_r, s.name, s.tier, s.user_id, u.species, u.username,
+             (s.festival_until IS NOT NULL AND s.festival_until > NOW()) AS festival
       FROM settlements s JOIN users u ON s.user_id = u.id
       WHERE s.tile_q IS NOT NULL AND s.tile_r IS NOT NULL
     `);
@@ -173,6 +174,7 @@ router.get('/world', requireAuth, async (req, res) => {
           isOwn: settlement && t.q === settlement.tile_q && t.r === settlement.tile_r,
           settlement_id: occupant.settlement_type === 'player' ? occupant.settlement_id : null,
           can_trade: occupant.settlement_type === 'player' && tradePartners.has(occupant.settlement_id),
+          festival: !!occupant.festival,   // fireworks over the town (js/kwmap-festival.js)
           clan: occupant.user_id && clanByUser[occupant.user_id]
             ? { ...clanByUser[occupant.user_id], mine: clanByUser[occupant.user_id].id === myClanId }
             : null,
