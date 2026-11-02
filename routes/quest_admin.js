@@ -21,6 +21,10 @@ router.get('/', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // ── POST /api/quest-admin — create a quest ──
+// Time window (lib/time_gates ids; empty = always) as JSONB or NULL.
+const timeGates = require('../lib/time_gates');
+const _gateJson = v => (v ? JSON.stringify(v) : null);
+
 router.post('/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const {
@@ -28,7 +32,8 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
       skill_key, base_success, duration_s, reward_gold, rewards,
       reward_label, requires, flavour_success, flavour_fail, high_bonus, sort_order,
       quest_source, given_by_npc_id, min_trust, drops,
-      combat_chance, combat_encounter, clan_min_level, clan_prestige
+      combat_chance, combat_encounter, clan_min_level, clan_prestige,
+      active_phases, moon_phases
     } = req.body;
 
     if (!id || !title) return res.status(400).json({ error: 'id and title required.' });
@@ -43,8 +48,8 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
           base_success, duration_s, reward_gold, rewards, reward_label, requires,
           flavour_success, flavour_fail, high_bonus, sort_order,
           quest_source, given_by_npc_id, min_trust, drops,
-          combat_chance, combat_encounter, clan_min_level, clan_prestige)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)`,
+          combat_chance, combat_encounter, clan_min_level, clan_prestige, active_phases, moon_phases)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28)`,
       [
         id, title, description||'', flavour||'', icon||'📜', category||'general',
         quest_type||'solo', skill_key||null,
@@ -64,6 +69,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
         JSON.stringify(Array.isArray(combat_encounter) ? combat_encounter : []),
         Math.max(1, parseInt(clan_min_level) || 1),
         Math.max(0, parseInt(clan_prestige) || 0),
+        _gateJson(timeGates.cleanPhases(active_phases)), _gateJson(timeGates.cleanMoons(moon_phases)),
       ]
     );
     clanQuests.invalidateDefs();
@@ -79,7 +85,8 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
       'base_success','duration_s','reward_gold','rewards','reward_label','requires',
       'flavour_success','flavour_fail','high_bonus','sort_order','archived',
       'quest_source','given_by_npc_id','min_trust','drops',
-      'combat_chance','combat_encounter','clan_min_level','clan_prestige'
+      'combat_chance','combat_encounter','clan_min_level','clan_prestige',
+      'active_phases','moon_phases'
     ];
     const updates = [], vals = [];
     let i = 1;
@@ -87,6 +94,8 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
       if (req.body[f] === undefined) continue;
       let v = req.body[f];
       if (['rewards','requires','high_bonus','drops','combat_encounter'].includes(f)) v = JSON.stringify(v);
+      if (f === 'active_phases') v = _gateJson(timeGates.cleanPhases(v));
+      if (f === 'moon_phases') v = _gateJson(timeGates.cleanMoons(v));
       if (['base_success','sort_order','duration_s','reward_gold','min_trust','given_by_npc_id','combat_chance','clan_min_level','clan_prestige'].includes(f)) {
         v = f === 'base_success' ? parseFloat(v) : parseInt(v);
         // The form sends given_by_npc_id: null for non-settlement quests —

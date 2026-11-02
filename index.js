@@ -48,6 +48,8 @@ app.use('/api/game/tavern', require('./routes/tavern'));
 app.use('/api/mail', require('./routes/mail'));
 app.use('/api/town', require('./routes/town'));
 app.use('/api/wonders', require('./routes/wonders'));
+app.use('/api/cards', require('./routes/cards'));
+app.use('/api/raids', require('./routes/raids'));
 const expeditionRoutes = require('./routes/expeditions');
 app.use('/api/expeditions', expeditionRoutes);
 const questRoutes = require('./routes/quests');
@@ -83,6 +85,7 @@ app.use('/api/stats', gameStatsRoutes);
 const presenceRoutes = require('./routes/presence');
 app.use('/api/presence', presenceRoutes);
 app.use('/api/rooms', roomRoutes);
+app.use('/api/clans', require('./routes/clan_extras'));   // treasury, boons, goals, land release
 app.use('/api/clans', require('./routes/clans'));
 app.use('/api/chat', require('./routes/chat'));
 app.use('/api/clan-quests', require('./routes/clan_quests'));

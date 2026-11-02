@@ -43,17 +43,14 @@ async function getSettlement(userId) {
   return r.rows[0] || null;
 }
 
+// Owned cards: the starter set plus every unlock (lib/cards).
 async function getUnlockedSet(settlementId) {
-  const r = await query(
-    'SELECT card_key FROM settlement_unlocked_cards WHERE settlement_id=$1',
-    [settlementId]
-  );
-  return new Set(r.rows.map((row) => row.card_key));
+  return require('../lib/cards').ownedSet(settlementId);
 }
 
-// Validate a { cardKey: count } map: keys must exist as defs (unlock check is
-// currently disabled for testing — any defined card may be added). Counts must
-// be positive integers. Deck size must be 12–30. Returns { ok, clean, error }.
+// Validate a { cardKey: count } map: keys must exist as defs and be owned
+// (lib/cards — the starter set or unlocked). Counts must be positive
+// integers. Deck size must be 12–30. Returns { ok, clean, error }.
 function validateDeckMap(map, unlockedSet) {
   if (!map || typeof map !== 'object' || Array.isArray(map)) {
     return { ok: false, error: 'cards must be an object of { cardKey: count }' };
@@ -62,8 +59,9 @@ function validateDeckMap(map, unlockedSet) {
   let total = 0;
   for (const key of Object.keys(map)) {
     if (!_getCard(key)) return { ok: false, error: `unknown card: ${key}` };
-    // Unlock requirement intentionally disabled for now (testing); re-enable by
-    // uncommenting: if (!unlockedSet.has(key)) return { ok:false, error:`card not unlocked: ${key}` };
+    if (unlockedSet && !unlockedSet.has(key) && parseInt(map[key], 10) > 0) {
+      return { ok: false, error: `You haven't unlocked ${(_getCard(key) || {}).name || key} yet.` };
+    }
     const n = parseInt(map[key], 10);
     if (!Number.isFinite(n) || n < 0) return { ok: false, error: `bad count for ${key}` };
     if (n > 0) { clean[key] = n; total += n; }
@@ -109,13 +107,15 @@ router.get('/', requireAuth, async (req, res) => {
     const catalog = {};
     Object.keys(all).forEach((k) => {
       const c = all[k];
-      catalog[k] = { key: c.key, name: c.name, cost: c.cost, type: c.type, target: c.target, desc: c.desc, rarity: c.rarity, art_url: c.art_url || null };
+      catalog[k] = { key: c.key, name: c.name, cost: c.cost, type: c.type, target: c.target, desc: c.desc, rarity: c.rarity, art_url: c.art_url || null,
+                     owned: unlocked.has(k), starter: require('../lib/cards').STARTER.includes(k) };
     });
 
     res.json({
       templates: templates.rows,
       unlocked: Array.from(unlocked),
       catalog,
+      how_to_get: require('../lib/cards').HOW,
       deck_min: 12,
       deck_max: 30,
     });

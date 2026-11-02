@@ -149,9 +149,10 @@ function simulateConsumption(state, nQuanta, startMs) {
   // (state.outpostCount is the sum of levels),
   // SEASON-FLAT (winter squeezes yields, not upkeep — spec §5), deducted
   // AFTER the citizen feeding loop each quantum (citizens eat first;
-  // unfed outposts carry no penalty in v1). Stays pure & deterministic.
+  // unfed outposts produce at half rate until fed). Stays pure & deterministic.
   const outpostCount = Math.max(0, Math.floor(Number(state.outpostCount) || 0));
   const outpostRationPerQuantum = outpostCount * OUTPOST_FOOD_UPKEEP_PER_HR * QUANTUM_HOURS;
+  let outpostsUnfed = false;
 
   const livingCount = citizens.filter(c => c.life_stage !== 'deceased').length;
   const deathCap = livingCount <= FAMINE_GRACE_MIN_POP
@@ -239,13 +240,16 @@ function simulateConsumption(state, nQuanta, startMs) {
       }
     }
 
-    // Outpost upkeep (010) — after citizens are fed, clamped at zero.
+    // Outpost upkeep (010) — after citizens are fed, clamped at zero. When
+    // the stores can't cover it the outposts go unfed (half yield,
+    // lib/outpost_state) — the last quantum decides.
     if (outpostRationPerQuantum > 0) {
+      outpostsUnfed = foodF + 1e-9 < outpostRationPerQuantum;
       foodF = Math.max(0, foodF - outpostRationPerQuantum);
     }
   }
 
-  return { foodF, citizens, events, deaths };
+  return { foodF, citizens, events, deaths, outpostsUnfed };
 }
 
 // ── Tick entry point: quantized clock + compare-and-swap (spec §3) ───────
@@ -345,6 +349,19 @@ async function applyConsumption(settlementId) {
     `UPDATE settlements SET food=$1, consumption_carry=$2 WHERE id=$3`,
     [newFood, newCarry.toFixed(4), settlementId]
   );
+  // Outposts unfed → half yield until a quantum pays them in full again.
+  if (outpostCount > 0 || result.outpostsUnfed === false) {
+    const went = await query(
+      `UPDATE settlements SET outposts_unfed_since = CASE WHEN $2 THEN COALESCE(outposts_unfed_since, NOW()) ELSE NULL END
+        WHERE id=$1 AND (outposts_unfed_since IS NULL) = $2 RETURNING outposts_unfed_since`,
+      [settlementId, !!result.outpostsUnfed]).catch(() => ({ rows: [] }));
+    if (went.rows.length) {
+      await query('INSERT INTO settlement_events (settlement_id, type, message) VALUES ($1,$2,$3)', [settlementId,
+        result.outpostsUnfed ? 'outposts_unfed' : 'outposts_fed',
+        result.outpostsUnfed ? '🍂 The stores can’t feed the outposts. They work at half pace until there is food to spare.'
+                             : '🌾 The outposts are fed again and back to full work.']).catch(() => {});
+    }
+  }
 
   // Citizens: merge changed life fields (jsonb shallow merge).
   for (const c of result.citizens) {

@@ -156,7 +156,7 @@ async function loadAvailableCitizen(citizenId, settlementId) {
     return { ok: false, error: cit.name + ' is on a clan quest.' };
   }
   if ((await require('../lib/market').merchantCitizenIds([citizenId])).length) {
-    return { ok: false, error: cit.name + ' is busy at work (Market or workshop).' };
+    return { ok: false, error: cit.name + ' is busy at work (Market, workshop or outpost).' };
   }
 
   const onDiplo = await query(
@@ -240,8 +240,67 @@ router.get('/:npcId', requireAuth, async (req, res) => {
       gift_available_at: giftAvailableAt,
       goodwill_cap: GOODWILL_TRUST_CAP,
       quest_unlock_trust: QUEST_UNLOCK_TRUST,
+      // Trust fades after a week of silence (lib/trust_decay).
+      decay_warning: require('../lib/trust_decay').warning(relRow),
+      // Allied: a daily tribute, and their militia guards your outposts nearby.
+      tribute: tributeView(npc, relRow),
     });
   } catch(e) { console.error('Diplomacy route error:', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// ── Allied tribute ─────────────────────────────────────────────────────────
+// Once a UTC day an Allied village sends a little of what it makes: up to two
+// of the resources it sells (SPECIES_TRADE), TRIBUTE_BASE of a base resource
+// or TRIBUTE_ORE of an ore. Collecting counts as contact.
+const ALLIED_TRUST = 71, TRIBUTE_BASE = 120, TRIBUTE_ORE = 15;
+function tributeBundle(npc) {
+  const T = require('../lib/npc_trade');
+  const RD = require('../lib/resource_defs');
+  const trade = T.SPECIES_TRADE[String(npc.species || '').toLowerCase()] || { sells: ['r:food', 'r:timber'] };
+  const out = {};
+  for (const g of trade.sells) {
+    const [type, what] = g.split(':');
+    if (type !== 'r' || Object.keys(out).length >= 2) continue;
+    out[what] = RD.def(what) && RD.def(what).group !== 'base' ? TRIBUTE_ORE : TRIBUTE_BASE;
+  }
+  if (!Object.keys(out).length) out.food = TRIBUTE_BASE;
+  return out;
+}
+function tributeView(npc, rel) {
+  const allied = !!rel && rel.trust >= ALLIED_TRUST;
+  const today = new Date().toISOString().slice(0, 10);
+  const taken = rel && rel.tribute_day && new Date(rel.tribute_day).toISOString().slice(0, 10) === today;
+  return { allied, available: allied && !taken, bundle: tributeBundle(npc), needs_trust: ALLIED_TRUST };
+}
+
+// ── POST /api/diplomacy/:npcId/tribute — collect today's Allied tribute ──
+router.post('/:npcId/tribute', requireAuth, async (req, res) => {
+  try {
+    const sett = (await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId])).rows[0];
+    if (!sett) return res.status(404).json({ error: 'No settlement.' });
+    const npc = (await query('SELECT * FROM npc_settlements WHERE id=$1', [req.params.npcId])).rows[0];
+    if (!npc) return res.status(404).json({ error: 'NPC not found.' });
+    const bundle = tributeBundle(npc);
+    const RD = require('../lib/resource_defs');
+    const keys = Object.keys(bundle).filter(k => RD.isResource(k));
+    const out = await require('../db').withTransaction(async client => {
+      const claim = await client.query(
+        `UPDATE diplomacy_relations SET tribute_day = CURRENT_DATE, last_interaction = NOW()
+          WHERE settlement_id = $1 AND npc_id = $2 AND trust >= $3 AND (tribute_day IS NULL OR tribute_day < CURRENT_DATE)
+          RETURNING trust`, [sett.id, npc.id, ALLIED_TRUST]);
+      if (!claim.rowCount) {
+        const rel = (await client.query('SELECT trust, tribute_day FROM diplomacy_relations WHERE settlement_id=$1 AND npc_id=$2', [sett.id, npc.id])).rows[0];
+        throw Object.assign(new Error(!rel || rel.trust < ALLIED_TRUST ? `Only an Allied village (trust ${ALLIED_TRUST}+) sends tribute.` : 'Today\'s tribute has already come. Come back tomorrow.'), { status: 400 });
+      }
+      const r = await client.query(`UPDATE settlements SET ${keys.map((k, i) => `${k} = ${k} + $${i + 2}`).join(', ')} WHERE id = $1 RETURNING ${RD.KEYS.join(', ')}`,
+        [sett.id, ...keys.map(k => bundle[k])]);
+      return r.rows[0];
+    });
+    res.json({ ok: true, village: npc.name, bundle, resources: out });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    console.error('[diplomacy] tribute', e); res.status(500).json({ error: 'Failed to collect the tribute.' });
+  }
 });
 
 // ── POST /api/diplomacy/:npcId/contact — send a citizen to make first contact ──

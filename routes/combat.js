@@ -670,13 +670,49 @@ router.post('/resolve', requireAuth, async (req, res) => {
       ? Math.max(0, Math.min(MAX_BATTLE_WEALTH, serverReward))
       : Math.max(0, Math.min(MAX_BATTLE_WEALTH, claimedWealth));
 
+    // Quest battles: record the victory first (conditional on the battle
+    // still being open), and pay out only if THIS request recorded it — a
+    // second resolve (retry, double tap) gets nothing.
+    let victoryRecorded = false;   // this request moved the battle to resolved
+    if (questRun) {
+      const pausedAt = questRun.combat_clock_paused_at;
+      let pauseMs = 0;
+      if (pausedAt) {
+        pauseMs = Date.now() - new Date(pausedAt).getTime();
+        if (pauseMs < 0) pauseMs = 0;
+      }
+      const upd = await query(
+        `UPDATE settlement_quests
+         SET combat_status='resolved', combat_outcome='victory',
+             combat_resolved_at=NOW(), combat_log=$1,
+             combat_clock_paused_at=NULL,
+             completes_at = completes_at + ($2 || ' milliseconds')::interval
+         WHERE id=$3 AND combat_status IN ('pending','in_progress','rolled')`,
+        [JSON.stringify(serverLog), String(pauseMs), quest_run_id]
+      );
+      victoryRecorded = upd.rowCount === 1;
+    }
+
     let wealthAfter = sett.wealth;
-    if (wealth > 0) {
+    const paid = questRun ? (victoryRecorded ? wealth : 0) : wealth;
+    if (paid > 0) {
       const upd = await query(
         'UPDATE settlements SET wealth = wealth + $1 WHERE id=$2 RETURNING wealth',
-        [wealth, sett.id]
+        [paid, sett.id]
       );
-      wealthAfter = upd.rows[0]?.wealth ?? sett.wealth + wealth;
+      wealthAfter = upd.rows[0]?.wealth ?? sett.wealth + paid;
+    }
+    // Spoils from the server's replay: the enemies' loot into the stores, and
+    // now and then a new card (lib/spoils). Quest battles only — test battles
+    // are the client's word.
+    let spoils = null;
+    if (questRun && victoryRecorded) {
+      try {
+        spoils = await require('../lib/spoils').grant({ query }, sett.id, {
+          drops: (replayedBattle && replayedBattle.reward && replayedBattle.reward.drops) || [],
+          enemies: resolvedEncounter || [], seedKey: `q${quest_run_id}:${questRun.combat_seed}`,
+        });
+      } catch (e) { console.error('battle spoils failed', e); }
     }
 
     // Bump combat skill on surviving citizens. For quest battles we use the
@@ -702,29 +738,9 @@ router.post('/resolve', requireAuth, async (req, res) => {
       }
     }
 
-    // Quest clock resumption — extend completes_at by the pause duration so
-    // ignoring a battle for hours doesn't shorten the quest.
-    let victoryRecorded = false;   // this request moved the battle to resolved
-    if (questRun) {
-      const pausedAt = questRun.combat_clock_paused_at;
-      let pauseMs = 0;
-      if (pausedAt) {
-        pauseMs = Date.now() - new Date(pausedAt).getTime();
-        if (pauseMs < 0) pauseMs = 0;
-      }
-      // Conditional on the battle still being open, so of two concurrent
-      // resolves only one records the victory (and emits battle_won).
-      const upd = await query(
-        `UPDATE settlement_quests
-         SET combat_status='resolved', combat_outcome='victory',
-             combat_resolved_at=NOW(), combat_log=$1,
-             combat_clock_paused_at=NULL,
-             completes_at = completes_at + ($2 || ' milliseconds')::interval
-         WHERE id=$3 AND combat_status IN ('pending','in_progress','rolled')`,
-        [JSON.stringify(serverLog), String(pauseMs), quest_run_id]
-      );
-      victoryRecorded = upd.rowCount === 1;
-    }
+    // (Quest clock resumption happened above with the victory record:
+    // completes_at moves on by the pause, so ignoring a battle for hours
+    // doesn't shorten the quest.)
 
     // ── Victory aftermath: only fallen citizens roll for injury. Clean
     //    victors walk away unscathed. Test battles (no questRun) skip this
@@ -771,7 +787,8 @@ router.post('/resolve', requireAuth, async (req, res) => {
     res.json({
       ok: true,
       outcome: 'victory',
-      wealth_awarded: wealth,
+      wealth_awarded: paid,
+      spoils,
       wealth_after: wealthAfter,
       upgraded_citizens: upgraded,
       quest_resumed: !!questRun,

@@ -16,6 +16,7 @@ const awayReport = require('../lib/away_report');
 const RD = require('../lib/resource_defs');
 const resourcesLib = require('../lib/resources');
 const townMods = require('../lib/town_mods');
+const outpostState = require('../lib/outpost_state');
 const research = require('../lib/research');
 
 const router = express.Router();
@@ -98,7 +99,8 @@ async function applyTick(settlement, species, workforce) {
     query('SELECT type, level FROM buildings WHERE settlement_id=$1', [settlement.id]),
     // Outposts (010) — yields ride this same last_tick accrual; no separate
     // clock. .catch → [] so pre-migration DBs keep ticking.
-    query('SELECT id, tile_q, tile_r, terrain, level FROM outposts WHERE settlement_id=$1', [settlement.id]).catch(() => ({ rows: [] })),
+    // Workers, unfed upkeep and raids scale each one (lib/outpost_state).
+    outpostState.load(null, settlement).then(rows => ({ rows })),
   ]);
   const wf = workforce || await loadWorkforce(settlement.id);
   const baseRates = calculateRates(bRes.rows, wf, species, oRes.rows, { research: await research.doneSet(null, settlement.id) });
@@ -220,10 +222,7 @@ router.get('/settlement', requireAuth, async (req, res) => {
     );
     // Outposts (010) — same rows feed the rate calc so the topbar +N/hr
     // reflects them the moment one is founded.
-    const outpostsResult = await query(
-      'SELECT id, tile_q, tile_r, terrain, level FROM outposts WHERE settlement_id=$1',
-      [settlement.id]
-    ).catch(() => ({ rows: [] }));
+    const outpostsResult = { rows: await outpostState.load(null, settlement) };
     const season = getCurrentSeason();
     const baseRates = calculateRates(buildingsResult.rows, workforce, user.species, outpostsResult.rows, { research: await research.doneSet(null, settlement.id) });
     const hMods = await happeningModsNow();
@@ -290,7 +289,8 @@ router.get('/settlement', requireAuth, async (req, res) => {
           const base = typeof settlement.happiness === 'number' ? settlement.happiness : 70;
           return Math.max(0, Math.min(100, base + tavernkeepCount * 10 + ((workforce.town && workforce.town.happiness) || 0) + (town.mods.happiness || 0)));
         })(),
-        town: { festival: town.festival, upkeep: town.upkeep, arrears: town.arrears, sources: town.sources },
+        town: { festival: town.festival, upkeep: town.upkeep, arrears: town.arrears, sources: town.sources, watch: town.watch || null },
+        raid: await require('../lib/raids').activeFor(settlement.id),   // a Withered raid on its way (banner)
         last_tick: settlement.last_tick,
         famine,
       },
@@ -348,10 +348,7 @@ router.get('/resource-breakdown', requireAuth, async (req, res) => {
     const workforce = await loadWorkforce(settlement.id);
 
     // Outposts (010) — one source row per outpost in the modal.
-    const outpostsResult = await query(
-      'SELECT id, tile_q, tile_r, terrain, level FROM outposts WHERE settlement_id=$1',
-      [settlement.id]
-    ).catch(() => ({ rows: [] }));
+    const outpostsResult = { rows: await outpostState.load(null, settlement) };
 
     const season = getCurrentSeason();
     const base = calculateRatesBreakdown(buildingsResult.rows, workforce, user.species, outpostsResult.rows);
@@ -791,6 +788,7 @@ router.post('/migrate', requireAuth, requireAdmin, async (req, res) => {
     UNIQUE (tile_q, tile_r)
   )`, "outposts table");
   await run("CREATE INDEX IF NOT EXISTS idx_outposts_settlement ON outposts (settlement_id)", "outposts settlement index");
+  await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS raided_until TIMESTAMPTZ", "outposts raided_until (soft raids)");
   await run("CREATE INDEX IF NOT EXISTS idx_tiles_claimed_by ON tiles (claimed_by) WHERE claimed_by IS NOT NULL", "tiles claimed_by index");
   await run("ALTER TABLE archive_meta ADD COLUMN IF NOT EXISTS outposts JSONB DEFAULT '[]'", "archive outposts snapshot");
 

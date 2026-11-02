@@ -230,6 +230,23 @@ const BUILDINGS = {
     citizenSlots: (level) => level,
     requires: [],
   },
+  // Guards' and Archers' post (lib/watchtower.js): each one on watch
+  // cheers the town (+1 happiness, up to +5) and adds to its defence
+  // against raids. Two posts per level.
+  watchtower: {
+    id: 'watchtower',
+    label: 'Watchtower',
+    desc: 'A timber tower over the palisade. Guards and Archers keep watch here — the town sleeps easier and raiders think twice. Each level adds two posts and stronger walls.',
+    icon: '🗼',
+    cost: { timber: 120, stone: 100, wealth: 40 },
+    maxLevel: 5,
+    levelCost: { 3: { bronze: 15 }, 4: { steel: 15 }, 5: { steel: 30 } },
+    levelTierReq: { 4: 'town', 5: 'city' },
+    effect: () => ({}),
+    citizenSlots: (level) => level * 2,
+    requires: [],
+    minTier: 'village',
+  },
 };
 
 // Citizen role → building it contributes to
@@ -242,7 +259,8 @@ const ROLE_BUILDING_MAP = {
   miner:       ['mine'],
   crafter:     [],
   fisher:      ['fishing_post'],
-  soldier:     [],
+  soldier:     ['watchtower'],
+  archer:      ['watchtower'],
   idle:        [],
   tavernkeep:   ['tavern'],
   blacksmith:  ['smithy'],
@@ -300,7 +318,7 @@ function calculateRates(buildings, citizens, species, outposts = [], opts = {}) 
   if (Array.isArray(outposts) && outposts.length) {
     const { outpostYields } = require('./outposts_config');
     for (const o of outposts) {
-      const y = outpostYields(o.terrain, o.level);
+      const y = outpostYields(o.terrain, o.level, o.mult ?? 1);
       for (const [res, val] of Object.entries(y)) {
         if (rates[res] !== undefined) rates[res] += val;
       }
@@ -450,9 +468,10 @@ function calculateRatesBreakdown(buildings, citizens, species, outposts = []) {
     const { OUTPOST_CONFIG, outpostYields } = require('./outposts_config');
     for (const o of outposts) {
       const cfg = OUTPOST_CONFIG[o.terrain] || {};
-      const y = outpostYields(o.terrain, o.level);
+      const y = outpostYields(o.terrain, o.level, o.mult ?? 1);
+      const why = (o.notes || []).map(n => n.short).filter(Boolean).join(', ');
       for (const [res, val] of Object.entries(y)) {
-        if (breakdown[res] === undefined) continue;
+        if (breakdown[res] === undefined || !val) continue;
         breakdown[res].sources.push({
           kind: 'outpost',
           terrain: o.terrain,
@@ -460,7 +479,7 @@ function calculateRatesBreakdown(buildings, citizens, species, outposts = []) {
           tile_q: o.tile_q,
           tile_r: o.tile_r,
           level: o.level || 1,
-          label: `${cfg.name || 'Outpost'} (${o.tile_q}·${o.tile_r})${(o.level || 1) > 1 ? ` lvl ${o.level}` : ''}`,
+          label: `${cfg.name || 'Outpost'} (${o.tile_q}·${o.tile_r})${(o.level || 1) > 1 ? ` lvl ${o.level}` : ''}${why ? ` — ${why}` : ''}`,
           value: val,
         });
         breakdown[res].total += val;

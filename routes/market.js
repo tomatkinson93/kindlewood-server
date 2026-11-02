@@ -50,7 +50,7 @@ async function unavailable(settlementId, ids) {
     else if (c.life_stage === 'deceased') out[id] = `${c.name} has passed away.`;
   }
   const mark = (rows, why) => rows.forEach(id => { if (!out[id]) out[id] = `${nameOf(id)} ${why}`; });
-  mark(await market.merchantCitizenIds(ids), 'is busy at work (Market or workshop).');
+  mark(await market.merchantCitizenIds(ids), 'is busy at work (Market, workshop or outpost).');
   mark((await query("SELECT citizen_id FROM expeditions WHERE status = 'travelling' AND citizen_id = ANY($1::int[])", [ids]))
     .rows.map(r => r.citizen_id), 'is on an expedition.');
   const quests = (await query(
