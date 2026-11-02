@@ -118,6 +118,8 @@ router.get('/', requireAuth, async (req, res) => {
         minTier: def.minTier || null,
         nextLevelTier,
         nextLevelTierMet,
+        nextLevelResearch: canUpgrade && def.levelResearch && def.levelResearch[currentLevel + 1] ? RS.labelFor(def.levelResearch[currentLevel + 1], done) : null,
+        nextLevelResearchMet: !(canUpgrade && def.levelResearch && def.levelResearch[currentLevel + 1]) || done.has(def.levelResearch[currentLevel + 1]),
         levelTierReq: def.levelTierReq || null,
         cost,
         discount: discount.parts.length ? discount.parts : null,
@@ -184,6 +186,12 @@ router.post('/build', requireAuth, async (req, res) => {
 
     if (def.research && !(await require('../lib/research').doneSet(null, settlement.id)).has(def.research))
       return res.status(400).json({ error: `Study ${RS.labelFor(def.research, await require('../lib/research').doneSet(null, settlement.id))} at a Library first.` });
+    // Some levels need more research than the building itself (Walls 3+).
+    const lvlRes = def.levelResearch && def.levelResearch[currentLevel + 1];
+    if (lvlRes) {
+      const doneL = await require('../lib/research').doneSet(null, settlement.id);
+      if (!doneL.has(lvlRes)) return res.status(400).json({ error: `Level ${currentLevel + 1} ${def.label} needs ${RS.labelFor(lvlRes, doneL)} — study it at a Library first.` });
+    }
 
     // Check requirements
     for (const req of def.requires) {

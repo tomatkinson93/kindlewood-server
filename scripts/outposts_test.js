@@ -34,8 +34,8 @@ function part1() {
   const r3 = C.dismantleRefund(3);
   check(r3.timber === Math.floor((120 + 360 + 540) / 2) && r3.bronze === 7, '…and half of each upgrade paid (Lv3: bronze too)');
   const S = require('../lib/outpost_state');
-  const w = S.annotate({ terrain: 'hills', assigned_citizen_id: 1, worker_name: 'Bo', worker_role: 'miner' }, {});
-  const w2 = S.annotate({ terrain: 'hills', assigned_citizen_id: 1, worker_name: 'Bo', worker_role: 'farmer' }, { outposts_unfed_since: new Date() });
+  const w = S.annotate({ terrain: 'hills', crew: [{ id: 1, name: 'Bo', role: 'miner', post: 'worker' }] }, {});
+  const w2 = S.annotate({ terrain: 'hills', crew: [{ id: 1, name: 'Bo', role: 'farmer', post: 'worker' }] }, { outposts_unfed_since: new Date() });
   check(w.mult === 1.5 && w.worker.fit, 'a Miner at a Quarry: +50%');
   check(w2.mult === 0.625 && w2.notes.some(n => n.key === 'unfed'), 'a Farmer there +25%, and unfed halves it (×0.625)');
 }

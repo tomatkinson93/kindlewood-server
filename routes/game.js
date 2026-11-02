@@ -290,7 +290,9 @@ router.get('/settlement', requireAuth, async (req, res) => {
           return Math.max(0, Math.min(100, base + tavernkeepCount * 10 + ((workforce.town && workforce.town.happiness) || 0) + (town.mods.happiness || 0)));
         })(),
         town: { festival: town.festival, upkeep: town.upkeep, arrears: town.arrears, sources: town.sources, watch: town.watch || null },
-        raid: await require('../lib/raids').activeFor(settlement.id),   // a Withered raid on its way (banner)
+        raid: await require('../lib/raids').activeFor(settlement.id),   // a Withered raid on its way (top-bar countdown)
+        defence: await require('../lib/defences').townDefence(settlement).then(d => ({ walls: d.walls, walls_level: d.walls_level, watch: d.watch, own: d.own })).catch(() => null),
+        raid_peace_until: settlement.raid_peace_until && Date.parse(settlement.raid_peace_until) > Date.now() ? settlement.raid_peace_until : null,
         last_tick: settlement.last_tick,
         famine,
       },
@@ -789,6 +791,7 @@ router.post('/migrate', requireAuth, requireAdmin, async (req, res) => {
   )`, "outposts table");
   await run("CREATE INDEX IF NOT EXISTS idx_outposts_settlement ON outposts (settlement_id)", "outposts settlement index");
   await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS raided_until TIMESTAMPTZ", "outposts raided_until (soft raids)");
+  await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS fort_level INTEGER NOT NULL DEFAULT 0", "outposts fort_level (defences)");
   await run("CREATE INDEX IF NOT EXISTS idx_tiles_claimed_by ON tiles (claimed_by) WHERE claimed_by IS NOT NULL", "tiles claimed_by index");
   await run("ALTER TABLE archive_meta ADD COLUMN IF NOT EXISTS outposts JSONB DEFAULT '[]'", "archive outposts snapshot");
 

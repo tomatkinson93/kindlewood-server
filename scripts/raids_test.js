@@ -121,14 +121,19 @@ async function part2() {
   check(g.status === 200 && g.body.active && g.body.active.id === raid.id && g.body.threat.in_reach && g.body.defence, 'GET /api/raids: the raid on its way, the threat and your defence');
   const st = (await api(b, 'GET', '/api/game/settlement')).body.settlement;
   check(st && st.raid && st.raid.id === raid.id, 'the settlement carries it for the banner');
-  // Strong defence: a Lv5 Watchtower with Guards → repelled.
-  await q("INSERT INTO buildings (settlement_id, type, level) VALUES ($1,'watchtower',5)", [b.sid]);
-  for (let i = 0; i < 4; i++) await q(`INSERT INTO citizens (settlement_id, name, gender, role, skills, life_stage) VALUES ($1,$2,'male','soldier','{}','adult')`, [b.sid, 'Guard' + i + RUN]);
+  // Strong defence at the target outpost: a stone tower with a garrison → repelled.
+  await q('UPDATE outposts SET fort_level = 3 WHERE id=$1', [out1]);
+  for (let i = 0; i < 3; i++) {
+    const g = (await q(`INSERT INTO citizens (settlement_id, name, gender, role, skills, life_stage) VALUES ($1,$2,'male','soldier','{}','adult') RETURNING id`, [b.sid, 'Guard' + i + RUN])).rows[0].id;
+    await q("INSERT INTO outpost_crew (citizen_id, outpost_id, post) VALUES ($1,$2,'garrison')", [g, out1]);
+  }
+  await q('UPDATE settlement_raids SET strength = 60 WHERE id=$1', [raid.id]);
+  raid.strength = 60;
   const w0 = Number((await q('SELECT wealth FROM settlements WHERE id=$1', [b.sid])).rows[0].wealth);
   await q('UPDATE settlement_raids SET arrives_at = NOW() WHERE id=$1', [raid.id]);
   const done = await R.resolve(raid.id, () => 0.5);
   const w1 = Number((await q('SELECT wealth FROM settlements WHERE id=$1', [b.sid])).rows[0].wealth);
-  check(done && done.outcome === 'repelled' && w1 > w0, `a manned Lv5 Watchtower repels them (defence ${done && done.defence} vs ${raid.strength}) and earns wealth`);
+  check(done && done.outcome === 'repelled' && w1 > w0, `a stone tower and its garrison repel them (defence ${done && done.defence} vs ${raid.strength}) and earn wealth`);
   check(!(await R.resolve(raid.id)), 'a raid resolves once');
   check(!(await R.eligible()).list.some(x => x.s.id === b.sid), 'then 48 hours of peace');
   // No defence → lost.
@@ -138,9 +143,9 @@ async function part2() {
   const cs = (await q('SELECT * FROM settlements WHERE id=$1', [c.sid])).rows[0];
   const r2r = await R.start(cs, { strength: 80 });
   await q('UPDATE settlement_raids SET arrives_at = NOW() WHERE id=$1', [r2r.id]);
-  const lost = await R.resolve(r2r.id, () => 0.2);   // < 0.5 → the outpost is overrun
+  const lost = await R.resolve(r2r.id, () => 0.2);
   const op = (await q('SELECT raided_until FROM outposts WHERE id=$1', [oc])).rows[0];
-  check(lost.outcome === 'lost' && op.raided_until && Date.parse(op.raided_until) > Date.now() + 5 * 3600e3, 'undefended: the outpost is overrun for 6 hours');
+  check(lost.outcome === 'lost' && Number(lost.loss_share) === 1 && op.raided_until && Date.parse(op.raided_until) > Date.now() + 11 * 3600e3, 'undefended: a full raid — the outpost is overrun for 12 hours');
   const ann = (await require('../lib/outpost_state').load(null, cs)).find(x => x.id === oc);
   check(ann.mult === 0 && ann.notes.some(n => n.key === 'raided'), '…and produces nothing meanwhile');
   const d2 = await player('robbed');
@@ -151,7 +156,7 @@ async function part2() {
   await q('UPDATE settlement_raids SET arrives_at = NOW() WHERE id=$1', [r3r.id]);
   const robbed = await R.resolve(r3r.id, () => 0.9);
   const food = Number((await q('SELECT food FROM settlements WHERE id=$1', [d2.sid])).rows[0].food);
-  check(robbed.outcome === 'lost' && robbed.loot.stolen && robbed.loot.stolen.qty === 300 && food === 49700, 'a town raid carries off a share of one resource — at most 300');
+  check(robbed.outcome === 'lost' && robbed.loot.stolen && robbed.loot.stolen.food === 2000 && food === 48000 && robbed.loot.stolen.timber === 150, 'an undefended town loses 15% of each resource, at most 2,000 of each');
   const ar = await require('../lib/away_report').eventFromSettlementEvent?.({ type: 'raid_lost', message: 'x', created_at: new Date() });
   check(!ar || ar.icon === '🔥', 'raids show in the away report');
 

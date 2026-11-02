@@ -109,8 +109,9 @@ router.get('/', requireAuth, async (req, res) => {
     const outpostByCitizen = {};
     try {
       const { OUTPOST_CONFIG } = require('../outposts_config');
-      const oRes = await query('SELECT id, terrain, tile_q, tile_r, assigned_citizen_id FROM outposts WHERE settlement_id = $1 AND assigned_citizen_id IS NOT NULL', [settlement.id]);
-      oRes.rows.forEach(o => { outpostByCitizen[o.assigned_citizen_id] = { id: o.id, terrain: o.terrain, q: o.tile_q, r: o.tile_r, name: (OUTPOST_CONFIG[o.terrain] || {}).name || 'Outpost' }; });
+      const oRes = await query(`SELECT o.id, o.terrain, o.tile_q, o.tile_r, oc.citizen_id, oc.post FROM outpost_crew oc JOIN outposts o ON o.id = oc.outpost_id
+                                 WHERE o.settlement_id = $1`, [settlement.id]);
+      oRes.rows.forEach(o => { outpostByCitizen[o.citizen_id] = { id: o.id, terrain: o.terrain, q: o.tile_q, r: o.tile_r, post: o.post, name: (OUTPOST_CONFIG[o.terrain] || {}).name || 'Outpost' }; });
     } catch (e) { /* pre-migration */ }
 
     // Build lookup maps for happiness context

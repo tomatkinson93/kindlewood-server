@@ -3,7 +3,9 @@
 //
 //  GET  /               the raid on its way (if any), recent raids, your
 //                       defence, and whether the Withered can reach you
+//  POST /tribute        24 hours of peace (escalating; turns back a raid on its way at double)
 //  POST /admin/send     Dev Tools: raiders gather now ({ minutes } to arrival, default 6h)
+//  POST /admin/peace-clear  Dev Tools: forget tribute peace
 //  POST /admin/resolve  Dev Tools: the raid on its way strikes now
 // ══════════════════════════════════════════════════════════════════════════
 'use strict';
@@ -26,13 +28,26 @@ router.get('/', requireAuth, async (req, res) => {
     const target = await R.targetFor(s, await R.withered((t, p) => query(t, p)), (t, p) => query(t, p));
     const o = active && active.outpost_id ? (await query('SELECT tile_q, tile_r FROM outposts WHERE id=$1', [active.outpost_id])).rows[0] : null;
     const at = o ? { q: o.tile_q, r: o.tile_r } : target ? { q: target.q, r: target.r } : { q: s.tile_q, r: s.tile_r };
-    const defence = await R.defenceFor(s, at);
+    const defence = await R.defenceFor(s, o ? { q: o.tile_q, r: o.tile_r } : at);
+    const loseIfUndefended = Object.fromEntries(['food', 'timber', 'stone', 'metal', 'wealth'].map(k => [k, Math.floor(Math.min(R.STEAL_CAP, (Number(s[k]) || 0) * R.FULL_SHARE))]));
     res.json({
-      ok: true, active, recent, defence,
+      ok: true, active, recent, defence, tribute: R.tributeQuote(s, active), full_raid: loseIfUndefended,
       threat: target ? { in_reach: true, from: target.from.name, target: target.name, distance: target.d } : { in_reach: false },
       rules: { warn_hours: R.WARN_H, reach: R.REACH, cooldown_hours: R.COOLDOWN_H, militia: R.MILITIA, days_per_raid: R.DAYS_PER_RAID },
     });
   } catch (e) { console.error('[raids] get', e); res.status(500).json({ error: 'Failed to load raids.' }); }
+});
+
+// POST /tribute — pay the Withered for 24 hours of peace (turns back a raid on its way, at double).
+router.post('/tribute', requireAuth, async (req, res) => {
+  try { res.json({ ok: true, ...(await R.payTribute(req.user.userId)) }); }
+  catch (e) { if (e.status) return res.status(e.status).json({ error: e.message }); console.error('[raids] tribute', e); res.status(500).json({ error: 'Failed to pay the tribute.' }); }
+});
+
+// POST /admin/peace-clear — Dev Tools: forget any tribute peace and streak.
+router.post('/admin/peace-clear', requireAuth, requireAdmin, async (req, res) => {
+  try { await query('UPDATE settlements SET raid_peace_until = NULL, raid_tribute_at = NULL, raid_tribute_streak = 0 WHERE user_id=$1', [req.user.userId]); res.json({ ok: true }); }
+  catch (e) { console.error('[raids] peace-clear', e); res.status(500).json({ error: 'Failed.' }); }
 });
 
 router.post('/admin/send', requireAuth, requireAdmin, async (req, res) => {
