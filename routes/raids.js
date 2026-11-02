@@ -3,6 +3,8 @@
 //
 //  GET  /               the raid on its way (if any), recent raids, your
 //                       defence, and whether the Withered can reach you
+//  GET  /calls          raids on clanmates' clan-land spots you can help hold
+//  POST /:id/reinforce  { citizen_id } send a Guard/Archer to hold one
 //  POST /tribute        24 hours of peace (escalating; turns back a raid on its way at double)
 //  POST /admin/send     Dev Tools: raiders gather now ({ minutes } to arrival, default 6h)
 //  POST /admin/peace-clear  Dev Tools: forget tribute peace
@@ -29,6 +31,11 @@ router.get('/', requireAuth, async (req, res) => {
     const o = active && active.outpost_id ? (await query('SELECT tile_q, tile_r FROM outposts WHERE id=$1', [active.outpost_id])).rows[0] : null;
     const at = o ? { q: o.tile_q, r: o.tile_r } : target ? { q: target.q, r: target.r } : { q: s.tile_q, r: s.tile_r };
     const defence = await R.defenceFor(s, o ? { q: o.tile_q, r: o.tile_r } : at);
+    if (active) {
+      const rf = await require('../lib/raid_extras').reinforcementDefence((t, p) => query(t, p), active.id);
+      defence.reinforcements = rf.value;
+      defence.reinforcement_list = rf.citizens.map(c => ({ id: c.id, name: c.name, role: c.role }));
+    }
     const loseIfUndefended = Object.fromEntries(['food', 'timber', 'stone', 'metal', 'wealth'].map(k => [k, Math.floor(Math.min(R.STEAL_CAP, (Number(s[k]) || 0) * R.FULL_SHARE))]));
     res.json({
       ok: true, active, recent, defence, tribute: R.tributeQuote(s, active), full_raid: loseIfUndefended,
@@ -36,6 +43,18 @@ router.get('/', requireAuth, async (req, res) => {
       rules: { warn_hours: R.WARN_H, reach: R.REACH, cooldown_hours: R.COOLDOWN_H, militia: R.MILITIA, days_per_raid: R.DAYS_PER_RAID },
     });
   } catch (e) { console.error('[raids] get', e); res.status(500).json({ error: 'Failed to load raids.' }); }
+});
+
+// GET /calls — raids on clanmates' spots on clan land you can help hold.
+router.get('/calls', requireAuth, async (req, res) => {
+  try { res.json({ ok: true, calls: await require('../lib/raid_extras').openCalls(req.user.userId) }); }
+  catch (e) { console.error('[raids] calls', e); res.status(500).json({ error: 'Failed to load calls to arms.' }); }
+});
+
+// POST /:id/reinforce { citizen_id } — answer a call to arms.
+router.post('/:id/reinforce', requireAuth, async (req, res) => {
+  try { res.json({ ok: true, ...(await require('../lib/raid_extras').reinforce(req.user.userId, parseInt(req.params.id, 10), parseInt(req.body && req.body.citizen_id, 10))) }); }
+  catch (e) { if (e.status) return res.status(e.status).json({ error: e.message }); console.error('[raids] reinforce', e); res.status(500).json({ error: 'Failed to send them.' }); }
 });
 
 // POST /tribute — pay the Withered for 24 hours of peace (turns back a raid on its way, at double).
