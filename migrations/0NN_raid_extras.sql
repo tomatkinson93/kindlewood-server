@@ -29,3 +29,10 @@ CREATE TABLE IF NOT EXISTS withered_camps (
   run_id       INTEGER   -- the party quest attacking it
 );
 CREATE INDEX IF NOT EXISTS idx_camps_open ON withered_camps (q, r) WHERE cleared_at IS NULL;
+
+-- Titles for the two special battles (not on any board: quest_source 'raid').
+INSERT INTO quest_definitions (id, title, description, icon, category, quest_type, skill_key, base_success, duration_s, reward_gold, quest_source, archived)
+VALUES
+  ('raid_sally', 'Sally Out', 'Meet the raiders before they reach your walls.', '⚔️', 'combat', 'party', 'combat', 1.0, 600, 0, 'raid', FALSE),
+  ('camp_assault', 'Burn the Withered Camp', 'Drive the Withered from their camp and bring peace to the land around it.', '🏕️', 'combat', 'party', 'combat', 1.0, 600, 0, 'raid', FALSE)
+ON CONFLICT (id) DO NOTHING;

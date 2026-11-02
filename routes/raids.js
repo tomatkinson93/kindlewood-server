@@ -5,6 +5,8 @@
 //                       defence, and whether the Withered can reach you
 //  GET  /calls          raids on clanmates' clan-land spots you can help hold
 //  POST /:id/reinforce  { citizen_id } send a Guard/Archer to hold one
+//  POST /:id/sally      { citizen_ids } meet them in a card battle first
+//  GET  /camps          Withered camps you have found · POST /camps/:id/assault { citizen_ids }
 //  POST /tribute        24 hours of peace (escalating; turns back a raid on its way at double)
 //  POST /admin/send     Dev Tools: raiders gather now ({ minutes } to arrival, default 6h)
 //  POST /admin/peace-clear  Dev Tools: forget tribute peace
@@ -55,6 +57,41 @@ router.get('/calls', requireAuth, async (req, res) => {
 router.post('/:id/reinforce', requireAuth, async (req, res) => {
   try { res.json({ ok: true, ...(await require('../lib/raid_extras').reinforce(req.user.userId, parseInt(req.params.id, 10), parseInt(req.body && req.body.citizen_id, 10))) }); }
   catch (e) { if (e.status) return res.status(e.status).json({ error: e.message }); console.error('[raids] reinforce', e); res.status(500).json({ error: 'Failed to send them.' }); }
+});
+
+// POST /:id/sally { citizen_ids } — meet the raiders in a card battle first.
+router.post('/:id/sally', requireAuth, async (req, res) => {
+  try { res.json({ ok: true, ...(await require('../lib/raid_camps').startSally(req.user.userId, parseInt(req.params.id, 10), req.body && req.body.citizen_ids)) }); }
+  catch (e) { if (e.status) return res.status(e.status).json({ error: e.message }); console.error('[raids] sally', e); res.status(500).json({ error: 'Failed to sally out.' }); }
+});
+
+// GET /camps — Withered camps you have discovered (within reach to assault, or not).
+router.get('/camps', requireAuth, async (req, res) => {
+  try {
+    const C = require('../lib/raid_camps');
+    const s = await mine(req.user.userId);
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+    const seen = new Set((await query('SELECT tile_q, tile_r FROM fog_of_war WHERE user_id=$1', [req.user.userId])).rows.map(t => `${t.tile_q},${t.tile_r}`));
+    const dist = (a, b) => require('../mapgen').hexDistanceWrapped(a.q, a.r, b.q, b.r);
+    const camps = (await C.openCamps()).filter(c => seen.has(`${c.q},${c.r}`)).map(c => ({
+      id: c.id, q: c.q, r: c.r, village: c.village, strength_min: Math.round(c.strength * 0.8), strength_max: Math.round(c.strength * 1.2),
+      distance: s.tile_q != null ? dist({ q: s.tile_q, r: s.tile_r }, c) : null,
+      in_reach: s.tile_q != null && dist({ q: s.tile_q, r: s.tile_r }, c) <= C.ASSAULT_RANGE, under_attack: !!c.run_id,
+    }));
+    res.json({ ok: true, camps, rules: { assault_range: C.ASSAULT_RANGE, peace_range: C.PEACE_RANGE, peace_hours: C.PEACE_H, party_max: 4 } });
+  } catch (e) { console.error('[raids] camps', e); res.status(500).json({ error: 'Failed to load camps.' }); }
+});
+
+// POST /camps/:id/assault { citizen_ids } — attack a camp (party card battle).
+router.post('/camps/:id/assault', requireAuth, async (req, res) => {
+  try { res.json({ ok: true, ...(await require('../lib/raid_camps').startAssault(req.user.userId, parseInt(req.params.id, 10), req.body && req.body.citizen_ids)) }); }
+  catch (e) { if (e.status) return res.status(e.status).json({ error: e.message }); console.error('[raids] assault', e); res.status(500).json({ error: 'Failed to attack the camp.' }); }
+});
+
+// POST /admin/camps — Dev Tools: spawn camps now.
+router.post('/admin/camps', requireAuth, requireAdmin, async (req, res) => {
+  try { res.json({ ok: true, spawned: await require('../lib/raid_camps').spawnCamps() }); }
+  catch (e) { console.error('[raids] spawn', e); res.status(500).json({ error: 'Failed.' }); }
 });
 
 // POST /tribute — pay the Withered for 24 hours of peace (turns back a raid on its way, at double).

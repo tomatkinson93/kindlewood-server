@@ -77,6 +77,64 @@ async function part2() {
   check(view && view.strength === null && view.strength_min === 65 && view.strength_max === 135, 'the client sees only a range (±35% without scouts)');
   void r4;
 
+  console.log('Sally out');
+  const C = require('../lib/raid_camps');
+  const so = await player('sally');
+  await q(`INSERT INTO npc_settlements (name, tile_q, tile_r, faction, species, disposition) VALUES ($1,$2,0,'hostile','withered','hostile')`, ['Warren3' + RUN, so.q + 2]);
+  const sr = await R.start((await q('SELECT * FROM settlements WHERE id=$1', [so.sid])).rows[0], { strength: 70 });
+  const f1 = await cit(so, 'Ash', 'soldier'), f2 = await cit(so, 'Elm', 'archer');
+  let x = await api(so, 'POST', `/api/raids/${sr.id}/sally`, { citizen_ids: [] });
+  check(x.status === 400, 'a sally needs 1–3 citizens');
+  x = await api(so, 'POST', `/api/raids/${sr.id}/sally`, { citizen_ids: [f1, f2] });
+  const run = x.body.quest_run_id && (await q('SELECT * FROM settlement_quests WHERE id=$1', [x.body.quest_run_id])).rows[0];
+  check(x.status === 200 && run && run.combat_status === 'pending' && run.quest_id === 'raid_sally' && run.combat_encounter.length === 2, 'sally out: a card battle waits (two Withered for strength 70)');
+  const pend = await api(so, 'GET', '/api/combat/pending');
+  check(pend.body.battles && pend.body.battles.some(b => b.id === run.id && b.quest_title === 'Sally Out'), '…in the Battles list, titled');
+  check((await api(so, 'POST', `/api/raids/${sr.id}/sally`, { citizen_ids: [f1] })).status === 400, 'one sally per raid');
+  await C.onBattleEnded(run, 'defeat');
+  check(Number((await q('SELECT strength FROM settlement_raids WHERE id=$1', [sr.id])).rows[0].strength) === 88, 'a lost sally makes them 25% stronger');
+  // A won sally breaks a raid.
+  const so2 = await player('sally2');
+  await q(`INSERT INTO npc_settlements (name, tile_q, tile_r, faction, species, disposition) VALUES ($1,$2,0,'hostile','withered','hostile')`, ['Warren4' + RUN, so2.q + 2]);
+  const sr2 = await R.start((await q('SELECT * FROM settlements WHERE id=$1', [so2.sid])).rows[0], { strength: 50 });
+  const h1 = await cit(so2, 'Oak', 'soldier');
+  const x2 = await api(so2, 'POST', `/api/raids/${sr2.id}/sally`, { citizen_ids: [h1] });
+  const run2 = (await q('SELECT * FROM settlement_quests WHERE id=$1', [x2.body.quest_run_id])).rows[0];
+  const w0 = Number((await q('SELECT wealth FROM settlements WHERE id=$1', [so2.sid])).rows[0].wealth);
+  await C.onBattleEnded(run2, 'victory');
+  const sr2b = (await q('SELECT outcome, loss_share FROM settlement_raids WHERE id=$1', [sr2.id])).rows[0];
+  check(sr2b.outcome === 'broken' && Number(sr2b.loss_share) === 0 && Number((await q('SELECT wealth FROM settlements WHERE id=$1', [so2.sid])).rows[0].wealth) === w0 + 80, 'a won sally breaks the raid: nothing lost, +80 wealth');
+  check((await q('SELECT status FROM settlement_quests WHERE id=$1', [run2.id])).rows[0].status === 'collected', 'the sally run is closed (nothing for the notice board)');
+
+  console.log('Withered camps');
+  const home = await player('camper');
+  const vq = home.q + 4;
+  const vid = (await q(`INSERT INTO npc_settlements (name, tile_q, tile_r, faction, species, disposition) VALUES ($1,$2,0,'hostile','withered','hostile') RETURNING id`, ['Warren5' + RUN, vq])).rows[0].id;
+  await C.spawnCamps();
+  const camps = (await q('SELECT * FROM withered_camps WHERE npc_id=$1 AND cleared_at IS NULL', [vid])).rows;
+  const dist = (a, b) => require('../mapgen').hexDistanceWrapped(a.q, a.r, b.q, b.r);
+  check(camps.length === 2 && camps.every(c => dist(c, { q: vq, r: 0 }) <= 3 && dist(c, { q: vq, r: 0 }) >= 2), 'two camps near each Withered village');
+  await C.spawnCamps();
+  check(Number((await q('SELECT COUNT(*)::int AS n FROM withered_camps WHERE npc_id=$1 AND cleared_at IS NULL', [vid])).rows[0].n) === 2, '…and no more');
+  const camp = camps[0];
+  const p1 = await cit(home, 'Rowan', 'soldier'), p2 = await cit(home, 'Briar', 'archer');
+  x = await api(home, 'POST', `/api/raids/camps/${camp.id}/assault`, { citizen_ids: [p1, p2] });
+  check(x.status === 400 && /Scout/.test(x.body.error), 'you must have seen the camp');
+  await q('INSERT INTO fog_of_war (user_id, tile_q, tile_r) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [home.id, camp.q, camp.r]);
+  const list = await api(home, 'GET', '/api/raids/camps');
+  check(list.body.camps.some(c => c.id === camp.id && c.in_reach), 'GET /api/raids/camps lists it, in reach');
+  x = await api(home, 'POST', `/api/raids/camps/${camp.id}/assault`, { citizen_ids: [p1, p2] });
+  const crun = x.body.quest_run_id && (await q('SELECT * FROM settlement_quests WHERE id=$1', [x.body.quest_run_id])).rows[0];
+  check(x.status === 200 && crun && crun.quest_id === 'camp_assault' && crun.combat_status === 'pending', 'assault: a party card battle');
+  const neighbour = await player('neighbour');
+  await q('UPDATE settlements SET tile_q = $2 WHERE id=$1', [neighbour.sid, camp.q + 1]);
+  await C.onBattleEnded(crun, 'victory');
+  const cleared = (await q('SELECT cleared_at FROM withered_camps WHERE id=$1', [camp.id])).rows[0].cleared_at;
+  const peace = (await q('SELECT raid_peace_until FROM settlements WHERE id=$1', [neighbour.sid])).rows[0].raid_peace_until;
+  check(cleared && peace && Date.parse(peace) > Date.now() + 71 * 3600e3, 'cleared: three days of peace for towns nearby');
+  const wf = await R.withered((t, p) => q(t, p));
+  check(wf.some(b => b.camp_id && b.camp_id === camps[1].id) && !wf.some(b => b.camp_id === camp.id), 'raids now set out from the remaining camp');
+
   await pool.end();
 }
 

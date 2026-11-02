@@ -37,6 +37,11 @@ router.get('/world', requireAuth, async (req, res) => {
       FROM settlements s JOIN users u ON s.user_id = u.id
       WHERE s.tile_q IS NOT NULL AND s.tile_r IS NOT NULL
     `);
+    // Withered camps (lib/raid_camps), shown on tiles the viewer has revealed.
+    const campMap = {};
+    try {
+      for (const c of (await query('SELECT id, q, r, strength FROM withered_camps WHERE cleared_at IS NULL')).rows) campMap[`${c.q},${c.r}`] = { id: c.id, strength_min: Math.round(c.strength * 0.8), strength_max: Math.round(c.strength * 1.2) };
+    } catch (e) { /* pre-migration */ }
     const settlementMap = {};
     settlementsRes.rows.forEach(s => {
       settlementMap[`${s.tile_q},${s.tile_r}`] = { ...s, settlement_type: 'player' };
@@ -159,6 +164,7 @@ router.get('/world', requireAuth, async (req, res) => {
           mine: !!(settlement && op.settlement_id === settlement.id),
           owner: op.owner_name,
         } : null,
+        camp: isRevealed && campMap[`${t.q},${t.r}`] ? campMap[`${t.q},${t.r}`] : null,
         settlement: isRevealed && occupant ? {
           name: occupant.name,
           species: occupant.species,

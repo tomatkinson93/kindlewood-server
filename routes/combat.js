@@ -640,6 +640,8 @@ router.post('/resolve', requireAuth, async (req, res) => {
            WHERE id=$2`,
           [JSON.stringify(serverLog), quest_run_id]
         );
+        // A sally or a camp assault (lib/raid_camps) settles its own outcome.
+        try { await require('../lib/raid_camps').onBattleEnded(questRun, 'defeat'); } catch (e) { console.error('raid battle (defeat) failed', e); }
         // Push: manual battle ended in defeat. Quest now fails.
         eventBus.publish(sett.id, {
           type: 'combat_resolved',
@@ -738,6 +740,11 @@ router.post('/resolve', requireAuth, async (req, res) => {
       }
     }
 
+    // A sally or a camp assault (lib/raid_camps): break the raid / clear the camp.
+    let raidBattle = null;
+    if (questRun && victoryRecorded) {
+      try { raidBattle = await require('../lib/raid_camps').onBattleEnded(questRun, 'victory'); } catch (e) { console.error('raid battle (victory) failed', e); }
+    }
     // (Quest clock resumption happened above with the victory record:
     // completes_at moves on by the pause, so ignoring a battle for hours
     // doesn't shorten the quest.)
@@ -789,6 +796,7 @@ router.post('/resolve', requireAuth, async (req, res) => {
       outcome: 'victory',
       wealth_awarded: paid,
       spoils,
+      raid_battle: raidBattle,
       wealth_after: wealthAfter,
       upgraded_citizens: upgraded,
       quest_resumed: !!questRun,
