@@ -9,15 +9,18 @@
 //    POST   /build     — { q, r } claim + build in ONE transaction (the button)
 //    POST   /claim     — { q, r } territory only (10 wealth; API completeness)
 //    POST   /:id/upgrade — next level (max 3): more yield and ores, more upkeep
-//    POST   /:id/assign   — { citizen_id, post: worker|garrison } (workers +25%/+50%; garrison defends)
+//    POST   /:id/assign   — { citizen_id, post: worker|garrison|hauler } (workers +25%/+50%; garrison defends;
+//                            a hauler carries the store home, run after run)
+//    POST   /:id/haul     — { citizen_id } one porter run: out, load up, home (lib/outpost_store)
 //    POST   /:id/unassign — { citizen_id } bring them home
 //    POST   /:id/fortify  — the next fort level (lib/defences FORT; research-gated)
-//    DELETE /:id       — dismantle, clears the tile claim, refunds half of what was paid
+//    DELETE /:id       — dismantle, clears the tile claim, refunds half of what was paid;
+//                         the crew carry its store home
 //
 //  Contested-tile arbiter: UNIQUE (tile_q, tile_r) on outposts — the DB, not
 //  this handler, decides races. Unique violation → 409.
-//  No Math.random() anywhere; production accrues via the existing last_tick
-//  path in routes/game.js, so nothing here touches clocks.
+//  No Math.random() anywhere. Production fills each outpost's own store on
+//  its own clock (lib/outpost_store, outposts.store_tick).
 // ══════════════════════════════════════════════════════════════════════════
 
 'use strict';
@@ -35,6 +38,7 @@ const {
 const { TIER_ORDER } = require('../buildings');
 const RD = require('../lib/resource_defs');
 const outpostState = require('../lib/outpost_state');
+const OS = require('../lib/outpost_store');
 
 const router = express.Router();
 
@@ -111,10 +115,15 @@ async function present(settlement, o, discMult) {
     cost: Object.fromEntries(Object.entries(D.FORT[nl].cost).map(([r, v]) => [r, Math.ceil(v * discMult)])),
     researchMet: D.fortAllowed(fx) >= nl, research: RS.labelFor(FORT_RESEARCH[nl], done),
   } : null;
+  // Its store, the porters on the road to or from it, and a trip estimate.
+  const hauls = await OS.activeHauls(settlement.id, o.id);
+  let trip = null;
+  try { const t = await OS.tripFor(null, settlement, o, { id: 0 }); trip = { leg_seconds: t.leg, carry: t.carry, tiles: t.tiles }; } catch (e) { /* estimate only */ }
   return {
     ...decorate(o), next: nextLevel(o, settlement.tier, discMult),
-    workers: o.workers || [], garrison: o.garrison || [],
-    worker_slots: Math.max(1, Number(o.level) || 1),
+    workers: o.workers || [], garrison: o.garrison || [], haulers: o.haulers || [],
+    worker_slots: Math.max(1, Number(o.level) || 1), hauler_slots: OS.HAULER_SLOTS,
+    store: OS.present(o), rates: OS.ratesFor(o, done), hauls, trip,
     fort: { level: lvl, name: lvl ? D.FORT[lvl].name : null, icon: lvl ? D.FORT[lvl].icon : null, defence: def.fort, slots: lvl ? D.FORT[lvl].slots : 0, next },
     defence: { own: def.own, fort: def.fort, garrison: def.garrison },
   };
@@ -151,18 +160,18 @@ async function loadUserSettlement(userId, client = null) {
 // the topbar tick immediately (spec §7 spend-sync). Uses the same inputs as
 // GET /settlement.
 async function freshResourcesAndRates(settlementId, userId) {
-  const [sRes, uRes, bRes, cRows, oRes] = await Promise.all([
+  const [sRes, uRes, bRes, cRows] = await Promise.all([
     query(`SELECT ${require('../lib/resource_defs').KEYS.join(', ')} FROM settlements WHERE id=$1`, [settlementId]),
     query('SELECT species FROM users WHERE id=$1', [userId]),
     query('SELECT type, level FROM buildings WHERE settlement_id=$1', [settlementId]),
     require('../lib/careers').loadWorkforce(null, settlementId).catch(async () =>
       (await query("SELECT role FROM citizens WHERE settlement_id=$1 AND COALESCE(life_stage, 'adult') = 'adult'", [settlementId])).rows),
-    outpostState.load(null, settlementId).then(rows => ({ rows })),
   ]);
   const { calculateRates } = require('../buildings');
   const { getCurrentSeason, applySeasonModifiers } = require('../seasons');
   const species = uRes.rows[0]?.species || 'Mice';
-  const baseRates = calculateRates(bRes.rows, cRows, species, oRes.rows, { research: await require('../lib/research').doneSet(null, settlementId) });
+  // Outposts fill their own stores (lib/outpost_store), not the town's rates.
+  const baseRates = calculateRates(bRes.rows, cRows, species, [], { research: await require('../lib/research').doneSet(null, settlementId) });
   const rates = applySeasonModifiers(baseRates, getCurrentSeason());
   return { resources: sRes.rows[0], rates };
 }
@@ -224,8 +233,11 @@ async function checkTileEligibility(client, settlement, qn, rn, W, H) {
 // ── GET / — my outposts + status ───────────────────────────────────────────
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const settlement = await loadUserSettlement(req.user.userId);
+    let settlement = await loadUserSettlement(req.user.userId);
     if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+    // Porters home, stores up to now, idle haulers out (lib/outpost_store).
+    await OS.sync(settlement);
+    settlement = await loadUserSettlement(req.user.userId);
 
     const oRes = { rows: await outpostState.load(null, settlement) };   // annotated: worker, unfed, raided
 
@@ -243,6 +255,9 @@ router.get('/', requireAuth, async (req, res) => {
       upkeep_food_per_hr: OUTPOST_FOOD_UPKEEP_PER_HR,
       unfed: !!settlement.outposts_unfed_since,
       worker_bonus: { base: outpostState.WORKER_BONUS, fit: outpostState.FIT_BONUS, fit_class: outpostState.FIT },
+      store_per_level: OS.STORE_PER_LEVEL,
+      haul: { seconds_per_tile: OS.SECONDS_PER_TILE, min_leg_seconds: OS.MIN_LEG_SECONDS, porter_carry: require('../lib/market').PORTER_CARRY },
+      resources: (await freshResourcesAndRates(settlement.id, req.user.userId)).resources,
       config: publicConfig(),
     });
   } catch (err) {
@@ -454,14 +469,15 @@ router.post('/:id/upgrade', requireAuth, async (req, res) => {
   }
 });
 
-// ── POST /:id/assign — post a citizen: { citizen_id, post: worker|garrison } ─
+// ── POST /:id/assign — post a citizen: { citizen_id, post: worker|garrison|hauler }
 // Workers: up to the outpost's level. Garrison: Guards and Archers, up to the
-// fort's slots (lib/defences FORT). One post per citizen (outpost_crew PK).
+// fort's slots (lib/defences FORT). Hauler: OS.HAULER_SLOTS, any adult; they
+// set straight off for the store. One post per citizen (outpost_crew PK).
 router.post('/:id/assign', requireAuth, async (req, res) => {
   try {
     const D = require('../lib/defences');
     const id = parseInt(req.params.id, 10), cid = parseInt(req.body && req.body.citizen_id, 10);
-    const post = (req.body && req.body.post) === 'garrison' ? 'garrison' : 'worker';
+    const post = ['garrison', 'hauler'].includes(req.body && req.body.post) ? req.body.post : 'worker';
     if (!Number.isFinite(id) || !Number.isFinite(cid)) return res.status(400).json({ error: 'outpost id and citizen_id required.' });
     const settlement = await loadUserSettlement(req.user.userId);
     if (!settlement) return res.status(404).json({ error: 'No settlement.' });
@@ -474,12 +490,14 @@ router.post('/:id/assign', requireAuth, async (req, res) => {
     if (why) return res.status(400).json({ error: why });
     if (post === 'garrison' && !D.GARRISON_ROLES.includes(c.role)) return res.status(400).json({ error: 'Only Guards and Archers can garrison an outpost.' });
     const n = (await query('SELECT COUNT(*)::int AS n FROM outpost_crew WHERE outpost_id=$1 AND post=$2', [id, post])).rows[0].n;
-    const cap = post === 'garrison' ? ((D.FORT[Number(o.fort_level) || 0] || {}).slots || 0) : Math.max(1, Number(o.level) || 1);
+    const cap = post === 'garrison' ? ((D.FORT[Number(o.fort_level) || 0] || {}).slots || 0) : post === 'hauler' ? OS.HAULER_SLOTS : Math.max(1, Number(o.level) || 1);
     if (n >= cap) return res.status(400).json({ error: post === 'garrison'
       ? (cap ? `The ${D.FORT[o.fort_level].name} holds ${cap} — raise the fort for more.` : 'Build a palisade first — there is nowhere for a garrison to stand.')
+      : post === 'hauler' ? 'This outpost already has its hauler.'
       : `A level ${o.level || 1} outpost has room for ${cap} worker${cap === 1 ? '' : 's'}.` });
     const r = await query('INSERT INTO outpost_crew (citizen_id, outpost_id, post) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING RETURNING citizen_id', [cid, id, post]);
     if (!r.rows.length) return res.status(409).json({ error: `${c.name} already has a post at an outpost.` });
+    if (post === 'hauler') await OS.sync(settlement);   // off to the store right away
     const { resources, rates } = await freshResourcesAndRates(settlement.id, req.user.userId);
     res.json({ ok: true, outpost: await presentById(settlement, id), resources, rates });
   } catch (err) {
@@ -504,6 +522,32 @@ router.post('/:id/unassign', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[outposts] unassign', err);
     res.status(500).json({ error: 'Failed to bring them home.' });
+  }
+});
+
+// ── POST /:id/haul — { citizen_id } one porter run to the outpost and back ──
+// They walk out, load up to their carry weight from its store and bring it
+// home to the town's stores (lib/outpost_store).
+router.post('/:id/haul', requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10), cid = parseInt(req.body && req.body.citizen_id, 10);
+    if (!Number.isFinite(id) || !Number.isFinite(cid)) return res.status(400).json({ error: 'outpost id and citizen_id required.' });
+    const settlement = await loadUserSettlement(req.user.userId);
+    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+    await OS.sync(settlement);
+    const o = (await query('SELECT * FROM outposts WHERE id=$1 AND settlement_id=$2', [id, settlement.id])).rows[0];
+    if (!o) return res.status(404).json({ error: 'Outpost not found.' });
+    const c = (await query('SELECT id, name, settlement_id, life_stage, role FROM citizens WHERE id=$1', [cid])).rows[0];
+    const why = await outpostState.busyReason(c, settlement.id);
+    if (why) return res.status(400).json({ error: why });
+    if (!Object.values(OS.storeOf(o)).some(v => v >= 1)) return res.status(400).json({ error: 'Its store is empty — nothing to carry yet.' });
+    let haul;
+    try { haul = await OS.startHaul(null, settlement, o, c, false); }
+    catch (e) { if (e.code === '23505') return res.status(409).json({ error: `${c.name} is already on the road.` }); throw e; }
+    res.json({ ok: true, haul: { id: haul.id, name: c.name, arrives_at: haul.arrives_at, returns_at: haul.returns_at, carry: Number(haul.carry) }, outpost: await presentById(settlement, id) });
+  } catch (err) {
+    console.error('[outposts] haul', err);
+    res.status(500).json({ error: 'Failed to send the porter.' });
   }
 });
 
@@ -554,12 +598,16 @@ router.delete('/:id', requireAuth, async (req, res) => {
     if (!settlement) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'No settlement.' }); }
 
     const oRes = await client.query(
-      'DELETE FROM outposts WHERE id=$1 AND settlement_id=$2 RETURNING tile_q, tile_r, level',
+      'DELETE FROM outposts WHERE id=$1 AND settlement_id=$2 RETURNING tile_q, tile_r, level, store',
       [id, settlement.id]
     );
     if (!oRes.rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Outpost not found.' }); }
 
     const { tile_q, tile_r, level } = oRes.rows[0];
+    // The crew carry whatever was stored home with them.
+    const carried = Object.fromEntries(Object.entries(OS.storeOf(oRes.rows[0])).map(([k, v]) => [k, Math.floor(v)]).filter(([, v]) => v > 0));
+    const ck = Object.keys(carried);
+    if (ck.length) await client.query(`UPDATE settlements SET ${ck.map((r, i) => `${r} = ${r} + $${i + 1}`).join(', ')} WHERE id = $${ck.length + 1}`, [...ck.map(r => carried[r]), settlement.id]);
     await client.query('DELETE FROM outpost_crew WHERE outpost_id=$1', [id]);
     await client.query(
       'UPDATE tiles SET claimed_by=NULL, claimed_at=NULL WHERE q=$1 AND r=$2 AND claimed_by=$3',
@@ -579,6 +627,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
       ok: true,
       removed: { tile_q, tile_r },
       refund,
+      carried,
       used: cnt.rows[0].n,
       cap: capForTier(settlement.tier || 'camp'),
       resources,

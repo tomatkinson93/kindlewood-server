@@ -113,6 +113,16 @@ router.get('/', requireAuth, async (req, res) => {
                                  WHERE o.settlement_id = $1`, [settlement.id]);
       oRes.rows.forEach(o => { outpostByCitizen[o.citizen_id] = { id: o.id, terrain: o.terrain, q: o.tile_q, r: o.tile_r, post: o.post, name: (OUTPOST_CONFIG[o.terrain] || {}).name || 'Outpost' }; });
     } catch (e) { /* pre-migration */ }
+    // Carrying goods home from an outpost (lib/outpost_store): away.
+    const haulByCitizen = {};
+    try {
+      const { OUTPOST_CONFIG } = require('../outposts_config');
+      const hRes = await query(`SELECT h.citizen_id, h.outpost_id, h.standing, h.status, o.terrain,
+                                       CASE WHEN h.status = 'outbound' THEN h.arrives_at ELSE h.returns_at END AS completes_at
+                                  FROM outpost_hauls h LEFT JOIN outposts o ON o.id = h.outpost_id
+                                 WHERE h.settlement_id = $1 AND h.status IN ('outbound','returning')`, [settlement.id]);
+      hRes.rows.forEach(h => { haulByCitizen[h.citizen_id] = { outpost_id: h.outpost_id, outpost_name: (OUTPOST_CONFIG[h.terrain] || {}).name || 'Outpost', status: h.status, standing: !!h.standing, completes_at: h.completes_at }; });
+    } catch (e) { /* pre-migration */ }
 
     // Build lookup maps for happiness context
     const season = getCurrentSeason();
@@ -219,6 +229,7 @@ router.get('/', requireAuth, async (req, res) => {
         active_quest: questByCitizen[c.id] || null,
         trade: tradeByCitizen[c.id] || null,
         outpost: outpostByCitizen[c.id] || null,
+        haul: haulByCitizen[c.id] || null,
         happiness_factors: factors,
         happiness_computed: computed,
         breeding_status: breedingStatus,

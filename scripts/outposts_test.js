@@ -129,9 +129,12 @@ async function part2() {
   const qid = qa.body.available && qa.body.available[0] && qa.body.available[0].id;
   r = await api(wk, 'POST', '/api/quests/accept', { quest_id: qid, citizen_id: miner });
   check(r.status === 400 && /outpost/.test(r.body.error), 'a posted worker can\'t go questing');
+  // Outposts fill their own stores now (lib/outpost_store): the town's
+  // breakdown leaves them out, and the outpost names its worker itself.
   const bd2 = await api(wk, 'GET', '/api/game/resource-breakdown');
-  const opRow = ((bd2.body.breakdown || {}).stone || { sources: [] }).sources.find(x => x.kind === 'outpost' && x.outpost_id === wid);
-  check(opRow && /\+50%/.test(opRow.label), 'the breakdown names the worker');
+  const opRow = ((bd2.body.breakdown || {}).stone || { sources: [] }).sources.find(x => x.kind === 'outpost');
+  const me2 = await rate();
+  check(!opRow && (me2.notes || []).some(n => n.key === 'worker' && /\+50%/.test(n.short)) && me2.rates.stone === me2.yields.stone, 'not in the town breakdown; the outpost names its worker and rate');
   r = await api(wk, 'POST', `/api/game/outposts/${wid2}/assign`, { citizen_id: farmer });
   check(r.status === 200 && r.body.outpost.worker && r.body.outpost.worker.fit, 'a Farmer at a Farmstead knows the land too');
   r = await api(wk, 'POST', `/api/game/outposts/${wid}/unassign`);

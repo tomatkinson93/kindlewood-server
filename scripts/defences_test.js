@@ -120,7 +120,8 @@ async function part2() {
   console.log('Graded raids');
   const c = await player('graded');
   await q(`INSERT INTO npc_settlements (name, tile_q, tile_r, faction, species, disposition) VALUES ($1,$2,0,'hostile','withered','hostile')`, ['Warren' + RUN, c.q + 3]);
-  const oc = (await q("INSERT INTO outposts (settlement_id, tile_q, tile_r, terrain, level, fort_level) VALUES ($1,$2,0,'plains',1,2) RETURNING id", [c.sid, c.q + 2])).rows[0].id;
+  // The outpost's own store is what an outpost raid loots (lib/outpost_store).
+  const oc = (await q(`INSERT INTO outposts (settlement_id, tile_q, tile_r, terrain, level, fort_level, store) VALUES ($1,$2,0,'plains',1,2,'{"food":20000,"wealth":40}') RETURNING id`, [c.sid, c.q + 2])).rows[0].id;
   const worker = await cit(c, 'Digger', 'farmer'), guard = await cit(c, 'Watch', 'soldier');
   await q("INSERT INTO outpost_crew (citizen_id, outpost_id, post) VALUES ($1,$2,'worker'),($3,$2,'garrison')", [worker, oc, guard]);
   const before = await sRow(c);
@@ -130,7 +131,9 @@ async function part2() {
   const res = await R.resolve(raid.id, () => 0.5);   // defence 25 + 9 = 34 vs 68 → half a raid
   const after = await sRow(c);
   check(res.outcome === 'partial' && Math.abs(Number(res.loss_share) - 0.5) < 0.01, `half defended: half a raid (${res.loss_share})`);
-  check(Number(before.food) - Number(after.food) === 1000, `…half of the 2,000 food a full raid takes (${Number(before.food) - Number(after.food)})`);
+  const storeFood = Number((await q('SELECT store FROM outposts WHERE id=$1', [oc])).rows[0].store.food);
+  check(20000 - storeFood === 1000, `…half of the 2,000 food a full raid takes, from the outpost's store (${20000 - storeFood})`);
+  check(Number(before.food) === Number(after.food) && Number(before.wealth) === Number(after.wealth), '…and nothing from the town');
   const hurt = (await q("SELECT citizen_id FROM citizen_events WHERE settlement_id=$1 AND event_type='injury'", [c.sid])).rows.map(x => x.citizen_id);
   check(hurt.includes(worker) && hurt.includes(guard), 'the worker and the guard there are hurt');
   check(!(await q('SELECT 1 FROM outpost_crew WHERE outpost_id=$1', [oc])).rows.length, '…and sent home');

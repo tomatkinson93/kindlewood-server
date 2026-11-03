@@ -79,7 +79,15 @@ async function buildReport(s, since, now) {
 
   // ── Resources: ledger totals, split over who produced / ate them ──
   const ledger = s.away_ledger || {};
-  const base = calculateRatesBreakdown(bRes.rows, cRes.rows.filter(c => c.life_stage !== 'deceased' && c.life_stage !== 'child'), s.species, oRes.rows);
+  // Outposts fill their own stores; what porters brought home is its own row.
+  const base = calculateRatesBreakdown(bRes.rows, cRes.rows.filter(c => c.life_stage !== 'deceased' && c.life_stage !== 'child'), s.species, []);
+  const hauledOf = r => Math.max(0, Math.round(Number(ledger['hauled_' + r]) || 0));
+  const withHauled = (r, produced, rows) => {
+    const h = Math.min(produced, hauledOf(r));
+    const out = A.splitBySources(produced - h, rows);
+    if (h > 0) out.push({ label: '🧺 Carried home from outposts', amount: h });
+    return out.sort((a, b) => b.amount - a.amount);
+  };
   const defs = await happenings.loadLive();
   const effHours = A.effectiveProductionHours(defs, since, now);
   const awayHours = (now - since) / 3600000;
@@ -91,12 +99,12 @@ async function buildReport(s, since, now) {
       produced, consumed, net: produced - consumed,
       // Average season × Happening multiplier over the absence (1 = none).
       multiplier: awayHours > 0 ? Math.round(effHours[r] / awayHours * 100) / 100 : 1,
-      sources: A.splitBySources(produced, (base[r] && base[r].sources || []).filter(x => x.kind !== 'season_multiplier')),
+      sources: withHauled(r, produced, (base[r] && base[r].sources || []).filter(x => x.kind !== 'season_multiplier')),
       consumers: [],
     };
   }
   // Ores and other extras the town turned up while away (only those).
-  const ore = require('../lib/ores').oreRates(bRes.rows, cRes.rows.filter(c => c.life_stage !== 'deceased' && c.life_stage !== 'child'), oRes.rows,
+  const ore = require('../lib/ores').oreRates(bRes.rows, cRes.rows.filter(c => c.life_stage !== 'deceased' && c.life_stage !== 'child'), [],
     await require('../lib/research').doneSet(null, s.id).catch(() => new Set()));
   for (const r of RD.EXTRA) {
     const produced = Math.round(Number(ledger['produced_' + r]) || 0);
@@ -105,7 +113,7 @@ async function buildReport(s, since, now) {
     resources[r] = {
       produced, consumed: 0, net: produced,
       multiplier: awayHours > 0 ? Math.round(effHours[f] / awayHours * 100) / 100 : 1,
-      sources: A.splitBySources(produced, (ore.sources[r] || []).map(x => ({ ...x, weight: x.value }))),
+      sources: withHauled(r, produced, (ore.sources[r] || []).map(x => ({ ...x, weight: x.value }))),
       consumers: [],
     };
   }

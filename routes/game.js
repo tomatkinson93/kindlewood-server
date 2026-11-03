@@ -95,15 +95,11 @@ async function applyTick(settlement, species, workforce) {
   const hoursElapsed = (now - lastTick) / (1000 * 60 * 60);
   if (hoursElapsed < 0.005) return settlement;
 
-  const [bRes, oRes] = await Promise.all([
-    query('SELECT type, level FROM buildings WHERE settlement_id=$1', [settlement.id]),
-    // Outposts (010) — yields ride this same last_tick accrual; no separate
-    // clock. .catch → [] so pre-migration DBs keep ticking.
-    // Workers, unfed upkeep and raids scale each one (lib/outpost_state).
-    outpostState.load(null, settlement).then(rows => ({ rows })),
-  ]);
+  const bRes = await query('SELECT type, level FROM buildings WHERE settlement_id=$1', [settlement.id]);
+  // Outposts fill their own stores on their own clock; porters carry the
+  // goods home (lib/outpost_store), so they are not in the town's rates.
   const wf = workforce || await loadWorkforce(settlement.id);
-  const baseRates = calculateRates(bRes.rows, wf, species, oRes.rows, { research: await research.doneSet(null, settlement.id) });
+  const baseRates = calculateRates(bRes.rows, wf, species, [], { research: await research.doneSet(null, settlement.id) });
   // The town's own bonuses (festival for the hours it ran, wonders) and the
   // upkeep its treasury pays (lib/town_mods).
   const town = await townMods.load(null, settlement, now);
@@ -231,16 +227,17 @@ router.get('/settlement', requireAuth, async (req, res) => {
 
     const workforce = await loadWorkforce(settlement.id);
     settlement = await applyTick(settlement, user.species, workforce);
+    // Outpost stores and porters home since last time (lib/outpost_store).
+    await require('../lib/outpost_store').sync(settlement);
+    settlement = (await query('SELECT * FROM settlements WHERE id=$1', [settlement.id])).rows[0] || settlement;
 
     const buildingsResult = await query(
       'SELECT type, level FROM buildings WHERE settlement_id=$1',
       [settlement.id]
     );
-    // Outposts (010) — same rows feed the rate calc so the topbar +N/hr
-    // reflects them the moment one is founded.
-    const outpostsResult = { rows: await outpostState.load(null, settlement) };
+    // Outposts fill their own stores (lib/outpost_store) — not in the town's rates.
     const season = getCurrentSeason();
-    const baseRates = calculateRates(buildingsResult.rows, workforce, user.species, outpostsResult.rows, { research: await research.doneSet(null, settlement.id) });
+    const baseRates = calculateRates(buildingsResult.rows, workforce, user.species, [], { research: await research.doneSet(null, settlement.id) });
     const hMods = await happeningModsNow();
     const rates = applyHappeningRates(applySeasonModifiers(baseRates, season), hMods);
     // Ores share the season and Happening multiplier of the resource they follow.
@@ -365,8 +362,8 @@ router.get('/resource-breakdown', requireAuth, async (req, res) => {
     );
     const workforce = await loadWorkforce(settlement.id);
 
-    // Outposts (010) — one source row per outpost in the modal.
-    const outpostsResult = { rows: await outpostState.load(null, settlement) };
+    // Outposts fill their own stores now (lib/outpost_store): not in here.
+    const outpostsResult = { rows: [] };
 
     const season = getCurrentSeason();
     const base = calculateRatesBreakdown(buildingsResult.rows, workforce, user.species, outpostsResult.rows);
@@ -788,8 +785,8 @@ router.post('/migrate', requireAuth, requireAdmin, async (req, res) => {
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`, "item_templates table");
 
-  // 010_tiles_outposts — tile claims + outposts. Yields go through
-  // calculateRates (production/last_tick path); food upkeep goes through
+  // 010_tiles_outposts — tile claims + outposts. Yields fill each outpost's
+  // own store (lib/outpost_store) for porters to carry home; food upkeep goes through
   // famine consumption (quantized carry) — see famine.js.
   // level + assigned_citizen_id are reserved for future upgrades/workers.
   await run("ALTER TABLE tiles ADD COLUMN IF NOT EXISTS claimed_by INTEGER DEFAULT NULL REFERENCES settlements(id) ON DELETE SET NULL", "tiles claimed_by");
@@ -808,6 +805,8 @@ router.post('/migrate', requireAuth, requireAdmin, async (req, res) => {
   await run("CREATE INDEX IF NOT EXISTS idx_outposts_settlement ON outposts (settlement_id)", "outposts settlement index");
   await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS raided_until TIMESTAMPTZ", "outposts raided_until (soft raids)");
   await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS fort_level INTEGER NOT NULL DEFAULT 0", "outposts fort_level (defences)");
+  await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS store JSONB NOT NULL DEFAULT '{}'::jsonb", "outposts store (lib/outpost_store)");
+  await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS store_tick TIMESTAMPTZ DEFAULT date_trunc('milliseconds', NOW())", "outposts store_tick");
   await run("CREATE INDEX IF NOT EXISTS idx_tiles_claimed_by ON tiles (claimed_by) WHERE claimed_by IS NOT NULL", "tiles claimed_by index");
   await run("ALTER TABLE archive_meta ADD COLUMN IF NOT EXISTS outposts JSONB DEFAULT '[]'", "archive outposts snapshot");
 
