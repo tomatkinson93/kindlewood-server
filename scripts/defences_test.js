@@ -84,15 +84,22 @@ async function part2() {
   const g1 = await cit(b, 'Spear', 'soldier'), g2 = await cit(b, 'Bow', 'archer'), f1 = await cit(b, 'Pick', 'miner'), f2 = await cit(b, 'Shovel', 'miner'), f3 = await cit(b, 'Hoe', 'farmer');
   r = await api(b, 'POST', `/api/game/outposts/${op}/assign`, { citizen_id: f1, post: 'garrison' });
   check(r.status === 400 && /Guards and Archers/.test(r.body.error), 'only Guards and Archers garrison');
+  // Crew walk out first (outpost_crew.arrives_at); this skips the walk.
+  const arrive = () => q('UPDATE outpost_crew SET arrives_at = NULL WHERE outpost_id=$1', [op]);
+  const mine = async () => (await api(b, 'GET', '/api/game/outposts')).body.outposts.find(x => x.id === op);
   r = await api(b, 'POST', `/api/game/outposts/${op}/assign`, { citizen_id: g1, post: 'garrison' });
-  check(r.status === 200 && r.body.outpost.garrison.length === 1 && r.body.outpost.defence.own === 10 + 8 + 1, 'a Guard garrisons it: 10 + 9 defence');
+  check(r.status === 200 && r.body.outpost.garrison.length === 1 && r.body.outpost.garrison[0].arriving && r.body.outpost.defence.own === 10, 'a Guard sets out: no defence until they arrive');
+  await arrive();
+  check((await mine()).defence.own === 10 + 8 + 1, 'there: 10 + 9 defence');
   r = await api(b, 'POST', `/api/game/outposts/${op}/assign`, { citizen_id: g2, post: 'garrison' });
   check(r.status === 400 && /holds 1/.test(r.body.error), 'a palisade holds one');
   r = await api(b, 'POST', `/api/game/outposts/${op}/assign`, { citizen_id: f1 });
   const r2 = await api(b, 'POST', `/api/game/outposts/${op}/assign`, { citizen_id: f2 });
   const r3 = await api(b, 'POST', `/api/game/outposts/${op}/assign`, { citizen_id: f3 });
   check(r.status === 200 && r2.status === 200 && r2.body.outpost.workers.length === 2 && r3.status === 400 && /room for 2 workers/.test(r3.body.error), 'a level 2 outpost takes two workers');
-  check(Math.abs(r2.body.outpost.mult - 2) < 1e-9, `two Miners at a Quarry: +100% (×${r2.body.outpost.mult})`);
+  await arrive();
+  const two = await mine();
+  check(Math.abs(two.mult - 2) < 1e-9, `two Miners at a Quarry: +100% (×${two.mult})`);
   const away = await api(b, 'POST', '/api/quests/accept', { quest_id: 'q_gather_herbs', citizen_id: g1 });
   check(away.status === 400 && /outpost|board/.test(away.body.error), 'garrisoned citizens are busy');
   await study(b, 'signal_fires', 'stone_forts', 'drill_yards');

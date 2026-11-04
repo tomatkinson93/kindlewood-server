@@ -135,7 +135,31 @@ The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-fronte
   - haulers who were away catch up run after run (each leaves when the last got home);
   - hauled goods show in the away report as "Carried home from outposts" (`hauled_<res>` in the ledger);
   - citizens on a haul get a `haul` field (`/api/citizens`) and are busy everywhere (`busyReason`, `merchantCitizenIds`, `awayMap`).
-- **Tests:** `scripts/outpost_store_test.js` (30) and `verify/outpost_store_proofs.js` (28). The full run was 2,612 passed, 0 failed.
+- **Tests (R6):** `scripts/outpost_store_test.js` and `verify/outpost_store_proofs.js`.
+
+### R6b — fixes and outpost buildings
+- **Held toasts:** toasts that arrive while the loading screen is up are queued (`_holdToast` / `releaseHeldToasts` in `main.js`; `showBuildToast` too) and play after Start playing.
+- **Fixed-size windows** (`css/modal-sizes.css`, loaded last):
+  - the away report is wider (880px);
+  - the citizen profile, mail, inventory and clan panel keep one height across their tabs;
+  - a scratch Playwright "measure" script checked every tabbed window; market, leaderboard, decks, settlement view and crafting were already steady.
+- **Outpost window** (`KWOutposts.manage(id)`, `#kwop-modal`, 980×720, full screen on phones): Overview, Buildings, People and Defence tabs. It opens from 🏕️ Manage on the tab's cards, the outpost's tile panel, and a journey's card on the map. Worker, garrison, fort, upgrade and dismantle buttons reuse main.js (`_wireOutpostSection`); `selectWorldTile` calls `KWOutposts.refreshModal()`.
+- **Outpost buildings** (`lib/outpost_buildings.js`, table `outpost_buildings`, migration `0NN_outpost_buildings.sql`):
+  - plots = level + 1;
+  - any land: Storehouse (store +50%), Bunkhouse (+1 worker), Waystation (trips −30%), Mule Pen (carry +50%), Watchfire (+8 defence);
+  - one land each: Granary, Sawpit, Quarry Crane, Ore Sorter (hills or mountain), Deep Shaft, Smokehouse, Drying Racks, Dig Tent;
+  - paid from the town (less the building discount); takes `hours` to finish; pulling one down gives nothing back;
+  - routes: `POST /api/game/outposts/:id/buildings {key}`, `DELETE /api/game/outposts/:id/buildings/:key`;
+  - effects reach `outpost_state.load` as `o.bfx` (cap, rates, trips, carry, worker slots, defence).
+- **Crew walk to and from their posts:**
+  - `outpost_hauls.kind` is `haul`, `post` or `return`; `outpost_crew.arrives_at` is set while someone walks out;
+  - workers and garrison count only once they arrive;
+  - brought home, they walk back, and someone called back just after setting out turns round where they are;
+  - dismantling sends the crew home on foot;
+  - `lib/travel.js` `outpostJourneys` draws porters and walks on the map (kind `outpost`, and a card button opens the outpost window);
+  - the live events are `outpost_walk` and `outpost_haul_home`;
+  - citizens get `haul.kind`, and placards read "Walking to/home from".
+- **Tests:** both outpost test files grew (53 server checks and 38 proofs); `outposts_test` and `defences_test` now skip the walk out with SQL. On a fresh database the full run was 2,640 passed. `rankings_test` only passes on its first run against a database: it inserts fixed "richest town" rows.
 
 ---
 

@@ -167,6 +167,94 @@ async function part2() {
   check(r.status === 200 && r.body.carried && r.body.carried.timber === 77 && r.body.carried.copper === 3, 'dismantle: the crew carry the store home');
   check(Number((await town(d.sid)).timber) - Number(pre.timber) === 77 + 60, '…on top of the refund');
 
+  console.log('Buildings');
+  const e = await user('obuild');
+  const oe = await outpost(e, 'forest');
+  const ready = key => q("UPDATE outpost_buildings SET ready_at = NOW() - interval '1 second' WHERE outpost_id=$1 AND key=$2", [oe, key]);
+  const view = async (p = e, id = oe) => (await api(p, 'GET', '/api/game/outposts')).body.outposts.find(x => x.id === id);
+  let ve = await view();
+  check(ve.buildings && ve.buildings.slots === 2 && ve.buildings.used === 0, 'a level 1 outpost has 2 building plots');
+  const keys = ve.buildings.options.map(x => x.key);
+  check(keys.includes('sawpit') && keys.includes('storehouse') && !keys.includes('granary') && !keys.includes('smokehouse'), 'forest land offers a Sawpit, not a Granary');
+  r = await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'granary' });
+  check(r.status === 400 && /doesn't belong/.test(r.body.error), 'a Granary in a forest: refused');
+  const pre1 = await town(e.sid);
+  r = await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'storehouse' });
+  check(r.status === 200 && Number(pre1.timber) - Number((await town(e.sid)).timber) === 120 && r.body.outpost.buildings.built[0].ready === false,
+    'raise a Storehouse: paid from the town, going up' + (r.status === 200 ? '' : ' — ' + JSON.stringify(r.body)));
+  check(r.body.outpost.store.cap === 300, '…no effect until it is finished');
+  await ready('storehouse');
+  ve = await view();
+  check(ve.store.cap === 450, 'finished: half as much room again (450)');
+  r = await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'sawpit' });
+  await ready('sawpit');
+  ve = await view();
+  check(r.status === 200 && ve.rates.timber === 7.5, `a Sawpit: +25% timber (${ve.rates.timber})`);
+  r = await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'mule_pen' });
+  check(r.status === 400 && /2 building plots/.test(r.body.error), 'plots full: refused');
+  r = await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'storehouse' });
+  check(r.status === 400, 'one of each');
+  r = await api(e, 'DELETE', `/api/game/outposts/${oe}/buildings/storehouse`);
+  check(r.status === 200 && r.body.outpost.buildings.used === 1 && r.body.outpost.store.cap === 300, 'pull one down: the plot is free, the room is gone');
+  const t0e = (await view()).trip;
+  await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'waystation' });
+  await ready('waystation');
+  const t1e = (await view()).trip;
+  check(t1e.leg_seconds === Math.round(t0e.leg_seconds * 0.7) && t1e.carry === t0e.carry, `a Waystation: trips 30% faster (${t0e.leg_seconds}s → ${t1e.leg_seconds}s)`);
+  await api(e, 'DELETE', `/api/game/outposts/${oe}/buildings/waystation`);
+  await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'mule_pen' });
+  await ready('mule_pen');
+  check((await view()).trip.carry === Math.floor(t0e.carry * 1.5), 'a Mule Pen: porters carry half as much again');
+  await api(e, 'DELETE', `/api/game/outposts/${oe}/buildings/mule_pen`);
+  await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'bunkhouse' });
+  await ready('bunkhouse');
+  check((await view()).worker_slots === 2, 'a Bunkhouse: room for one more worker');
+  await api(e, 'DELETE', `/api/game/outposts/${oe}/buildings/bunkhouse`);
+  await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'watchfire' });
+  await ready('watchfire');
+  check((await view()).defence.own === 8, 'a Watchfire: +8 defence');
+
+  console.log('Walking to and from a post');
+  const f = await user('owalk');
+  const [fq, fr] = spot();
+  await q('UPDATE settlements SET tile_q=$2, tile_r=$3 WHERE id=$1', [f.sid, fq - 2, fr]);
+  const of = (await q("INSERT INTO outposts (settlement_id, tile_q, tile_r, terrain, level) VALUES ($1,$2,$3,'forest',1) RETURNING id", [f.sid, fq, fr])).rows[0].id;
+  const walker = await cit(f, 'Strider', 'woodcutter');
+  r = await api(f, 'POST', `/api/game/outposts/${of}/assign`, { citizen_id: walker });
+  const walk = (await q("SELECT * FROM outpost_hauls WHERE citizen_id=$1 AND status <> 'done'", [walker])).rows[0];
+  check(r.status === 200 && walk && walk.kind === 'post' && r.body.outpost.workers[0].arriving, 'posted: they walk out (a "post" walk), not working yet');
+  const cl2 = await api(f, 'GET', '/api/citizens');
+  const wc = (cl2.body.citizens || cl2.body || []).find(c => c.id === walker);
+  check(wc && wc.haul && wc.haul.kind === 'post' && wc.outpost, 'the citizen list shows them on the road to their post');
+  const trv = await api(f, 'GET', '/api/travel');
+  const jw = (trv.body.journeys || []).find(j => j.id === 'outpost:' + walk.id);
+  check(jw && jw.kind === 'outpost' && jw.to.q === fq && jw.returns_at === null && /Walking out/.test(jw.title), 'the map draws the walk (town → outpost)');
+  await q("UPDATE outpost_hauls SET arrives_at = NOW() - interval '1 second', returns_at = NOW() - interval '1 second' WHERE id=$1", [walk.id]);
+  await q('UPDATE outpost_crew SET arrives_at = NOW() - interval \'1 second\' WHERE citizen_id=$1', [walker]);
+  const sf = async () => (await q('SELECT * FROM settlements WHERE id=$1', [f.sid])).rows[0];
+  await OS.sync(await sf());
+  check((await q('SELECT status FROM outpost_hauls WHERE id=$1', [walk.id])).rows[0].status === 'done', 'arrived: the walk is over');
+  r = await api(f, 'POST', `/api/game/outposts/${of}/unassign`, { citizen_id: walker });
+  const back = (await q("SELECT * FROM outpost_hauls WHERE citizen_id=$1 AND status <> 'done'", [walker])).rows[0];
+  check(r.status === 200 && back && back.kind === 'return' && back.status === 'returning', 'brought home: they walk back (a "return" walk)');
+  const tr2 = await api(f, 'GET', '/api/travel');
+  const jb = (tr2.body.journeys || []).find(j => j.id === 'outpost:' + back.id);
+  check(jb && jb.from.q === fq && /Walking home/.test(jb.title), 'the map draws the walk home (outpost → town)');
+  const qa2 = await api(f, 'GET', '/api/quests');
+  const qid2 = qa2.body.available && qa2.body.available[0] && qa2.body.available[0].id;
+  if (qid2) {
+    r = await api(f, 'POST', '/api/quests/accept', { quest_id: qid2, citizen_id: walker });
+    check(r.status === 400, 'busy until they are home');
+  }
+  await q("UPDATE outpost_hauls SET returns_at = NOW() - interval '1 second' WHERE id=$1", [back.id]);
+  await OS.sync(await sf());
+  check((await q('SELECT status FROM outpost_hauls WHERE id=$1', [back.id])).rows[0].status === 'done', 'home: free again');
+  // Called back while still on the way out: they turn round where they are.
+  r = await api(f, 'POST', `/api/game/outposts/${of}/assign`, { citizen_id: walker });
+  r = await api(f, 'POST', `/api/game/outposts/${of}/unassign`, { citizen_id: walker });
+  const turn = (await q("SELECT * FROM outpost_hauls WHERE citizen_id=$1 AND status <> 'done'", [walker])).rows[0];
+  check(turn && turn.kind === 'return' && (new Date(turn.returns_at) - new Date(turn.departs_at)) < 10000, 'called back just after setting out: home in moments');
+
   await pool.end();
 }
 
