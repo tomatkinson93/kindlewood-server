@@ -23,7 +23,7 @@ function part1() {
   check(!G.drawGoals(9, '2026-W44', 3, 1).some(g => g.key === 'wonder'), 'wonder goals only for level-5 clans');
   const big = G.drawGoals(7, '2026-W44', 10, 1), small = G.drawGoals(7, '2026-W44', 1, 1);
   check(big[0].target > small[0].target, 'targets grow with the roster');
-  check(T.boonCost(10) > T.boonCost(2) && Object.keys(T.BOONS).length === 5, 'five boons, dearer for bigger clans');
+  check(T.boonCost(10) > T.boonCost(2) && Object.keys(T.BOONS).length === 6 && !!T.BOONS.outpost_network, 'six boons (Outpost Network too), dearer for bigger clans');
 }
 
 async function part2() {

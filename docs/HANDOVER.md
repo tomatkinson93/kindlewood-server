@@ -163,9 +163,29 @@ The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-fronte
 
 ---
 
+### R6c — outpost extras
+- **Haul settings:** `outposts.haul_filter` lists the resources porters carry (null = all), and `haul_threshold` is the % full before a standing hauler sets out. Set with `PATCH /api/game/outposts/:id/settings`; edited in the window's People tab.
+- **Roads** (`lib/outpost_roads.js`):
+  - Track, then Paved Road (trips ×0.75, then ×0.5); cost and time scale with tiles;
+  - built with `POST /:id/road`; `road_level` counts from `road_ready_at`;
+  - drawn on the map by `js/kwmap-roads.js`, from the map tile's `outpost.road`.
+- **Outpost events** (`lib/outpost_events.js`, table `outpost_events`):
+  - seven kinds: rich_vein, trader, wolves, traveller, cache, storm, harvest;
+  - each outpost rolls hourly (1/36 chance) in the worker tick; an event waits 12 hours, then its fallback choice happens by itself;
+  - answered with `POST /:id/events/:eid {choice}`; the live event is `outpost_event`.
+- **Clan features:**
+  - on clan land the store is +25%;
+  - a **Signal Tower** outpost building (clan land only) shares that outpost's defence at twice the rate and reaches 5 tiles (`lib/defences` `clanShare`);
+  - the **Outpost Network** boon gives porters +25% carry;
+  - a new weekly goal: `haul` (goods carried home);
+  - clanmates can send a porter: `POST /:id/help` creates a haul with `owner_settlement_id`, and the goods go to the owner. The map tile's `outpost.clanmate` shows the Help carry panel.
+- **Dev Tools → ⛺ Outposts** (`POST /api/game/outposts/admin/{finish,arrive,porters,fill,event,events-clear}`): finish buildings and roads, make crew arrive, bring porters home, fill the stores, start or clear an event.
+- **Specialisations:** the design is in `docs/OUTPOST_SPECIALISATIONS.md` and is **waiting for the user's answers** to its questions before it's built.
+- **Tests:** `scripts/outpost_r6c_test.js` (39 checks) and `verify/outpost_store_proofs.js` §8. On a fresh database the full run was 2,693 passed, 0 failed.
+
 ## 3. What's left (agreed or deferred)
 
-1. **More refinements** from the user, if they have them. Ideas for outposts: a per-outpost "haul only these resources" filter, and more hauler slots at level 3.
+1. **Outpost specialisations:** waiting on the user's answers to the questions in `docs/OUTPOST_SPECIALISATIONS.md`.
 2. **Withered strength creep:** each repelled raid makes the next one ~5% stronger; a loss or a cleared camp resets it. Suggested next, since it finishes the raid system.
 3. **Raid log tab in the Watchtower:** past raids with outcome, losses, injuries, and defence vs strength. The data is already in `settlement_raids` (`loot` jsonb, `loss_share`, `defence`). Also suggested next.
 4. **Mutual defence treaties** (clan to clan, or with Allied villages), so non-members on clan land can share defence. Today only members share (`lib/defences.js` `clanShare`). This needs a design discussion.

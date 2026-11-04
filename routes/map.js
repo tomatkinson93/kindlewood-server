@@ -60,7 +60,7 @@ router.get('/world', requireAuth, async (req, res) => {
     // outpost — possible via the standalone claim route). .catch → empty
     // pre-migration.
     const outpostsRes = await query(`
-      SELECT o.id, o.settlement_id, o.tile_q, o.tile_r, o.terrain, o.level,
+      SELECT o.id, o.settlement_id, o.tile_q, o.tile_r, o.terrain, o.level, o.road_level, o.road_ready_at,
              s.name AS owner_name, s.user_id AS owner_user_id
         FROM outposts o JOIN settlements s ON s.id = o.settlement_id
     `).catch(() => ({ rows: [] }));
@@ -163,6 +163,10 @@ router.get('/world', requireAuth, async (req, res) => {
           level: op.level,
           mine: !!(settlement && op.settlement_id === settlement.id),
           owner: op.owner_name,
+          // Your own roads are drawn on the map (js/kwmap-roads.js).
+          road: settlement && op.settlement_id === settlement.id ? require('../lib/outpost_roads').levelOf(op) : undefined,
+          // A clanmate's outpost: you can send a porter to help (POST /outposts/:id/help).
+          clanmate: !!(myClanId && op.settlement_id !== (settlement && settlement.id) && clanByUser[op.owner_user_id] && clanByUser[op.owner_user_id].id === myClanId) || undefined,
         } : null,
         camp: isRevealed && campMap[`${t.q},${t.r}`] ? campMap[`${t.q},${t.r}`] : null,
         settlement: isRevealed && occupant ? {

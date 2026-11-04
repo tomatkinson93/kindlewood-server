@@ -807,6 +807,11 @@ router.post('/migrate', requireAuth, requireAdmin, async (req, res) => {
   await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS fort_level INTEGER NOT NULL DEFAULT 0", "outposts fort_level (defences)");
   await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS store JSONB NOT NULL DEFAULT '{}'::jsonb", "outposts store (lib/outpost_store)");
   await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS store_tick TIMESTAMPTZ DEFAULT date_trunc('milliseconds', NOW())", "outposts store_tick");
+  await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS haul_filter JSONB", "outposts haul_filter");
+  await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS haul_threshold INTEGER NOT NULL DEFAULT 0", "outposts haul_threshold");
+  await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS road_level INTEGER NOT NULL DEFAULT 0", "outposts road_level");
+  await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS road_ready_at TIMESTAMPTZ", "outposts road_ready_at");
+  await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS event_roll_at TIMESTAMPTZ", "outposts event_roll_at");
   await run("CREATE INDEX IF NOT EXISTS idx_tiles_claimed_by ON tiles (claimed_by) WHERE claimed_by IS NOT NULL", "tiles claimed_by index");
   await run("ALTER TABLE archive_meta ADD COLUMN IF NOT EXISTS outposts JSONB DEFAULT '[]'", "archive outposts snapshot");
 
