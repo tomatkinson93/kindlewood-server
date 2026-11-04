@@ -119,12 +119,17 @@ async function part2() {
   const miner = await cit('Pick', 'miner'), farmer = await cit('Hoe', 'farmer');
   const rate = async () => (await api(wk, 'GET', '/api/game/outposts')).body.outposts.find(x => x.id === wid);
   const base = await rate();
+  // Crew walk out first (outpost_crew.arrives_at); this skips the walk.
+  const arrive = () => q('UPDATE outpost_crew SET arrives_at = NULL WHERE outpost_id IN (SELECT id FROM outposts WHERE settlement_id=$1)', [wk.sid]);
   r = await api(wk, 'POST', `/api/game/outposts/${wid}/assign`, { citizen_id: miner });
-  check(r.status === 200 && r.body.outpost.worker && r.body.outpost.worker.fit && r.body.outpost.yields.stone === Math.round(base.yields.stone * 1.5),
-    'post a Miner at a Quarry: +50% stone' + (r.status === 200 ? '' : ' — ' + JSON.stringify(r.body)));
+  check(r.status === 200 && r.body.outpost.workers[0] && r.body.outpost.workers[0].arriving && !r.body.outpost.worker && r.body.outpost.yields.stone === base.yields.stone,
+    'post a Miner at a Quarry: they walk out first, no bonus yet' + (r.status === 200 ? '' : ' — ' + JSON.stringify(r.body)));
+  await arrive();
+  const there = await rate();
+  check(there.worker && there.worker.fit && there.yields.stone === Math.round(base.yields.stone * 1.5), 'there: +50% stone');
   const wid2 = await outpost(wk, 'plains');
   r = await api(wk, 'POST', `/api/game/outposts/${wid2}/assign`, { citizen_id: miner });
-  check(r.status === 400 && /busy at work|already/i.test(r.body.error), 'one outpost at a time');
+  check(r.status === 400 && /busy at work|already|on the road/i.test(r.body.error), 'one outpost at a time');
   const qa = await api(wk, 'GET', '/api/quests');
   const qid = qa.body.available && qa.body.available[0] && qa.body.available[0].id;
   r = await api(wk, 'POST', '/api/quests/accept', { quest_id: qid, citizen_id: miner });
@@ -136,7 +141,7 @@ async function part2() {
   const me2 = await rate();
   check(!opRow && (me2.notes || []).some(n => n.key === 'worker' && /\+50%/.test(n.short)) && me2.rates.stone === me2.yields.stone, 'not in the town breakdown; the outpost names its worker and rate');
   r = await api(wk, 'POST', `/api/game/outposts/${wid2}/assign`, { citizen_id: farmer });
-  check(r.status === 200 && r.body.outpost.worker && r.body.outpost.worker.fit, 'a Farmer at a Farmstead knows the land too');
+  check(r.status === 200 && r.body.outpost.workers[0] && r.body.outpost.workers[0].fit, 'a Farmer at a Farmstead knows the land too');
   r = await api(wk, 'POST', `/api/game/outposts/${wid}/unassign`);
   check(r.status === 200 && !r.body.outpost.worker && r.body.outpost.yields.stone === base.yields.stone, 'bring them home: back to the base yield');
   check((await api(a, 'POST', `/api/game/outposts/${wid}/assign`, { citizen_id: miner })).status === 404, 'not someone else\'s outpost');

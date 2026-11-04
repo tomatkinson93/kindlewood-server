@@ -117,11 +117,11 @@ router.get('/', requireAuth, async (req, res) => {
     const haulByCitizen = {};
     try {
       const { OUTPOST_CONFIG } = require('../outposts_config');
-      const hRes = await query(`SELECT h.citizen_id, h.outpost_id, h.standing, h.status, o.terrain,
-                                       CASE WHEN h.status = 'outbound' THEN h.arrives_at ELSE h.returns_at END AS completes_at
+      const hRes = await query(`SELECT h.citizen_id, h.outpost_id, h.standing, h.status, h.kind, o.terrain,
+                                       h.returns_at, CASE WHEN h.status = 'outbound' THEN h.arrives_at ELSE h.returns_at END AS completes_at
                                   FROM outpost_hauls h LEFT JOIN outposts o ON o.id = h.outpost_id
                                  WHERE h.settlement_id = $1 AND h.status IN ('outbound','returning')`, [settlement.id]);
-      hRes.rows.forEach(h => { haulByCitizen[h.citizen_id] = { outpost_id: h.outpost_id, outpost_name: (OUTPOST_CONFIG[h.terrain] || {}).name || 'Outpost', status: h.status, standing: !!h.standing, completes_at: h.completes_at }; });
+      hRes.rows.forEach(h => { haulByCitizen[h.citizen_id] = { outpost_id: h.outpost_id, outpost_name: (OUTPOST_CONFIG[h.terrain] || {}).name || 'Outpost', status: h.status, standing: !!h.standing, kind: h.kind || 'haul', completes_at: h.kind === 'return' ? h.returns_at : h.completes_at }; });
     } catch (e) { /* pre-migration */ }
 
     // Build lookup maps for happiness context

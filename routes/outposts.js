@@ -12,6 +12,10 @@
 //    POST   /:id/assign   — { citizen_id, post: worker|garrison|hauler } (workers +25%/+50%; garrison defends;
 //                            a hauler carries the store home, run after run)
 //    POST   /:id/haul     — { citizen_id } one porter run: out, load up, home (lib/outpost_store)
+//    POST   /:id/buildings — { key } raise a building inside it (lib/outpost_buildings)
+//    DELETE /:id/buildings/:key — pull one down (frees the slot, nothing back)
+//  Workers and garrison walk out to a new post and home again from one
+//  (outpost_hauls kind 'post' / 'return'); they count once they arrive.
 //    POST   /:id/unassign — { citizen_id } bring them home
 //    POST   /:id/fortify  — the next fort level (lib/defences FORT; research-gated)
 //    DELETE /:id       — dismantle, clears the tile claim, refunds half of what was paid;
@@ -39,6 +43,7 @@ const { TIER_ORDER } = require('../buildings');
 const RD = require('../lib/resource_defs');
 const outpostState = require('../lib/outpost_state');
 const OS = require('../lib/outpost_store');
+const OB = require('../lib/outpost_buildings');
 
 const router = express.Router();
 
@@ -122,12 +127,15 @@ async function present(settlement, o, discMult) {
   return {
     ...decorate(o), next: nextLevel(o, settlement.tier, discMult),
     workers: o.workers || [], garrison: o.garrison || [], haulers: o.haulers || [],
-    worker_slots: Math.max(1, Number(o.level) || 1), hauler_slots: OS.HAULER_SLOTS,
+    worker_slots: workerSlots(o), hauler_slots: OS.HAULER_SLOTS,
     store: OS.present(o), rates: OS.ratesFor(o, done), hauls, trip,
+    buildings: OB.present(o, discMult),
     fort: { level: lvl, name: lvl ? D.FORT[lvl].name : null, icon: lvl ? D.FORT[lvl].icon : null, defence: def.fort, slots: lvl ? D.FORT[lvl].slots : 0, next },
     defence: { own: def.own, fort: def.fort, garrison: def.garrison },
   };
 }
+// Workers an outpost has room for: its level, plus a Bunkhouse.
+const workerSlots = o => Math.max(1, Number(o.level) || 1) + Math.round((o.bfx && o.bfx.worker_slots) || 0);
 const presentById = async (settlement, id) => present(settlement, (await outpostState.load(null, settlement)).find(x => x.id === id));
 
 // Ores per hour at a level (before research, which can gate or raise them).
@@ -469,6 +477,20 @@ router.post('/:id/upgrade', requireAuth, async (req, res) => {
   }
 });
 
+// Crew leaving a post walk home (haulers live in town between runs). Anyone
+// still on the way out turns round where they are.
+async function walkHome(settlement, outpostId, rows, db = null) {
+  const run = db ? (t, p) => db.query(t, p) : query;
+  const o = (await run('SELECT * FROM outposts WHERE id=$1', [outpostId])).rows[0];
+  if (!o) return;
+  for (const c of rows || []) {
+    if (c.post === 'hauler') continue;
+    const out = (await run("UPDATE outpost_hauls SET status = 'done' WHERE citizen_id=$1 AND kind = 'post' AND status IN ('outbound','returning') RETURNING departs_at", [c.citizen_id])).rows[0];
+    const leg = out ? Date.now() - new Date(out.departs_at).getTime() : null;
+    try { await OS.startWalk(db, settlement, o, { id: c.citizen_id }, 'return', leg); } catch (e) { if (e.code !== '23505') throw e; }
+  }
+}
+
 // ── POST /:id/assign — post a citizen: { citizen_id, post: worker|garrison|hauler }
 // Workers: up to the outpost's level. Garrison: Guards and Archers, up to the
 // fort's slots (lib/defences FORT). Hauler: OS.HAULER_SLOTS, any adult; they
@@ -490,13 +512,18 @@ router.post('/:id/assign', requireAuth, async (req, res) => {
     if (why) return res.status(400).json({ error: why });
     if (post === 'garrison' && !D.GARRISON_ROLES.includes(c.role)) return res.status(400).json({ error: 'Only Guards and Archers can garrison an outpost.' });
     const n = (await query('SELECT COUNT(*)::int AS n FROM outpost_crew WHERE outpost_id=$1 AND post=$2', [id, post])).rows[0].n;
-    const cap = post === 'garrison' ? ((D.FORT[Number(o.fort_level) || 0] || {}).slots || 0) : post === 'hauler' ? OS.HAULER_SLOTS : Math.max(1, Number(o.level) || 1);
+    o.bfx = await OB.fxFor(o.id);
+    const cap = post === 'garrison' ? ((D.FORT[Number(o.fort_level) || 0] || {}).slots || 0) : post === 'hauler' ? OS.HAULER_SLOTS : workerSlots(o);
     if (n >= cap) return res.status(400).json({ error: post === 'garrison'
       ? (cap ? `The ${D.FORT[o.fort_level].name} holds ${cap} — raise the fort for more.` : 'Build a palisade first — there is nowhere for a garrison to stand.')
       : post === 'hauler' ? 'This outpost already has its hauler.'
-      : `A level ${o.level || 1} outpost has room for ${cap} worker${cap === 1 ? '' : 's'}.` });
-    const r = await query('INSERT INTO outpost_crew (citizen_id, outpost_id, post) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING RETURNING citizen_id', [cid, id, post]);
+      : `This outpost has room for ${cap} worker${cap === 1 ? '' : 's'}${o.bfx.worker_slots ? '' : ' — a Bunkhouse makes room for one more'}.` });
+    // Workers and garrison walk out first (a hauler's first run is their walk).
+    const leg = post === 'hauler' ? 0 : (await OS.tripFor(null, settlement, o, c)).leg * 1000;
+    const r = await query(`INSERT INTO outpost_crew (citizen_id, outpost_id, post, arrives_at) VALUES ($1,$2,$3, ${leg ? 'NOW() + make_interval(secs => $4)' : 'NULL'})
+                           ON CONFLICT DO NOTHING RETURNING citizen_id`, leg ? [cid, id, post, leg / 1000] : [cid, id, post]);
     if (!r.rows.length) return res.status(409).json({ error: `${c.name} already has a post at an outpost.` });
+    if (leg) await OS.startWalk(null, settlement, o, c, 'post', leg);
     if (post === 'hauler') await OS.sync(settlement);   // off to the store right away
     const { resources, rates } = await freshResourcesAndRates(settlement.id, req.user.userId);
     res.json({ ok: true, outpost: await presentById(settlement, id), resources, rates });
@@ -515,8 +542,10 @@ router.post('/:id/unassign', requireAuth, async (req, res) => {
     if (!settlement) return res.status(404).json({ error: 'No settlement.' });
     const own = (await query('SELECT id FROM outposts WHERE id=$1 AND settlement_id=$2', [id, settlement.id])).rows[0];
     if (!own) return res.status(404).json({ error: 'Outpost not found.' });
-    if (Number.isFinite(cid)) await query('DELETE FROM outpost_crew WHERE outpost_id=$1 AND citizen_id=$2', [id, cid]);
-    else await query("DELETE FROM outpost_crew WHERE outpost_id=$1 AND post='worker'", [id]);
+    const gone = Number.isFinite(cid)
+      ? (await query('DELETE FROM outpost_crew WHERE outpost_id=$1 AND citizen_id=$2 RETURNING *', [id, cid])).rows
+      : (await query("DELETE FROM outpost_crew WHERE outpost_id=$1 AND post='worker' RETURNING *", [id])).rows;
+    await walkHome(settlement, id, gone);
     const { resources, rates } = await freshResourcesAndRates(settlement.id, req.user.userId);
     res.json({ ok: true, outpost: await presentById(settlement, id), resources, rates });
   } catch (err) {
@@ -548,6 +577,59 @@ router.post('/:id/haul', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[outposts] haul', err);
     res.status(500).json({ error: 'Failed to send the porter.' });
+  }
+});
+
+// ── POST /:id/buildings — { key } raise a building inside the outpost ──────
+router.post('/:id/buildings', requireAuth, async (req, res) => {
+  const id = parseInt(req.params.id, 10), key = String((req.body && req.body.key) || '');
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Bad outpost id.' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const settlement = (await client.query('SELECT * FROM settlements WHERE user_id=$1 FOR UPDATE', [req.user.userId])).rows[0];
+    const o = settlement && (await client.query('SELECT * FROM outposts WHERE id=$1 AND settlement_id=$2 FOR UPDATE', [id, settlement.id])).rows[0];
+    const fail = async (status, error) => { await client.query('ROLLBACK'); return res.status(status).json({ error }); };
+    if (!o) return fail(404, 'Outpost not found.');
+    if (!OB.DEFS[key]) return fail(400, 'No such building.');
+    if (!OB.allowed(key, o.terrain)) return fail(400, `A ${OB.DEFS[key].name} doesn't belong on this land.`);
+    const have = (await client.query('SELECT key FROM outpost_buildings WHERE outpost_id=$1', [id])).rows.map(r => r.key);
+    if (have.includes(key)) return fail(400, `It already has a ${OB.DEFS[key].name}.`);
+    const slots = OB.slotsFor(o.level);
+    if (have.length >= slots) return fail(400, `No room: a level ${o.level || 1} outpost has ${slots} building plots. Upgrade it, or pull something down.`);
+    const mult = (await require('./buildings').buildDiscount(settlement.id)).mult;
+    const cost = OB.costOf(key, mult);
+    for (const [r, v] of Object.entries(cost)) if (v > (Number(settlement[r]) || 0)) return fail(400, `Not enough ${RD.label(r).toLowerCase()}. Need ${v}.`);
+    const keys = Object.keys(cost).filter(r => RD.isResource(r) && cost[r] > 0);
+    await client.query(`UPDATE settlements SET ${keys.map((r, i) => `${r} = ${r} - $${i + 1}`).join(', ')} WHERE id = $${keys.length + 1}`, [...keys.map(r => cost[r]), settlement.id]);
+    const hours = OB.DEFS[key].hours * mult;
+    await client.query('INSERT INTO outpost_buildings (outpost_id, key, ready_at) VALUES ($1, $2, NOW() + make_interval(secs => $3))', [id, key, Math.round(hours * 3600)]);
+    await client.query('COMMIT');
+    const { resources, rates } = await freshResourcesAndRates(settlement.id, req.user.userId);
+    res.json({ ok: true, outpost: await presentById(settlement, id), spent: cost, resources, rates });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[outposts] build', err);
+    res.status(500).json({ error: 'Failed to build.' });
+  } finally {
+    client.release();
+  }
+});
+
+// ── DELETE /:id/buildings/:key — pull it down (frees the plot) ─────────────
+router.delete('/:id/buildings/:key', requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const settlement = await loadUserSettlement(req.user.userId);
+    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+    const own = (await query('SELECT id FROM outposts WHERE id=$1 AND settlement_id=$2', [id, settlement.id])).rows[0];
+    if (!own) return res.status(404).json({ error: 'Outpost not found.' });
+    const r = await query('DELETE FROM outpost_buildings WHERE outpost_id=$1 AND key=$2 RETURNING key', [id, String(req.params.key)]);
+    if (!r.rows.length) return res.status(404).json({ error: 'No such building here.' });
+    res.json({ ok: true, outpost: await presentById(settlement, id) });
+  } catch (err) {
+    console.error('[outposts] pull down', err);
+    res.status(500).json({ error: 'Failed to pull it down.' });
   }
 });
 
@@ -608,7 +690,9 @@ router.delete('/:id', requireAuth, async (req, res) => {
     const carried = Object.fromEntries(Object.entries(OS.storeOf(oRes.rows[0])).map(([k, v]) => [k, Math.floor(v)]).filter(([, v]) => v > 0));
     const ck = Object.keys(carried);
     if (ck.length) await client.query(`UPDATE settlements SET ${ck.map((r, i) => `${r} = ${r} + $${i + 1}`).join(', ')} WHERE id = $${ck.length + 1}`, [...ck.map(r => carried[r]), settlement.id]);
-    await client.query('DELETE FROM outpost_crew WHERE outpost_id=$1', [id]);
+    // The crew walk home from the empty tile; its buildings come down with it.
+    const crewRows = (await client.query('DELETE FROM outpost_crew WHERE outpost_id=$1 RETURNING *', [id])).rows;
+    await client.query('DELETE FROM outpost_buildings WHERE outpost_id=$1', [id]);
     await client.query(
       'UPDATE tiles SET claimed_by=NULL, claimed_at=NULL WHERE q=$1 AND r=$2 AND claimed_by=$3',
       [tile_q, tile_r, settlement.id]
@@ -620,6 +704,11 @@ router.delete('/:id', requireAuth, async (req, res) => {
         [...keys.map(r => refund[r]), settlement.id]);
     }
     await client.query('COMMIT');
+    for (const c of crewRows) {
+      if (c.post === 'hauler') continue;
+      await query("UPDATE outpost_hauls SET status = 'done' WHERE citizen_id=$1 AND kind = 'post' AND status IN ('outbound','returning')", [c.citizen_id]).catch(() => {});
+      await OS.startWalk(null, settlement, { id, tile_q, tile_r, bfx: {} }, { id: c.citizen_id }, 'return').catch(() => {});
+    }
 
     const cnt = await query('SELECT COUNT(*)::int AS n FROM outposts WHERE settlement_id=$1', [settlement.id]);
     const { resources, rates } = await freshResourcesAndRates(settlement.id, req.user.userId);
