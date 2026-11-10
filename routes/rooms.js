@@ -13,7 +13,7 @@ const jwt = require('jsonwebtoken');
 const router = express.Router();
 const rooms = require('../lib/game_rooms');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
+const { JWT_SECRET } = require('../lib/jwt_secret');
 
 // Mirrors stream.js: accept the JWT from the `token` cookie, a Bearer
 // header, or the ?token= query string. The query fallback exists because

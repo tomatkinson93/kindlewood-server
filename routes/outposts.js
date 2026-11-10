@@ -134,6 +134,8 @@ async function present(settlement, o, discMult) {
     workers: o.workers || [], garrison: o.garrison || [], haulers: o.haulers || [],
     worker_slots: workerSlots(o), hauler_slots: OS.HAULER_SLOTS,
     store: OS.present(o), rates: OS.ratesFor(o, done), hauls, trip,
+    // The carter: what comes home by itself (a share of the rate; more with a road).
+    trickle: { share: OS.trickleShare(o), per_hour: OS.trickleRates(o, done), shares: OS.TRICKLE },
     buildings: OB.present(o, discMult),
     settings: { haul_filter: OS.filterOf(o), haul_threshold: Number(o.haul_threshold) || 0 },
     road: require('../lib/outpost_roads').present(o, trip ? trip.tiles : 1, discMult),
@@ -189,6 +191,8 @@ async function freshResourcesAndRates(settlementId, userId) {
   const species = uRes.rows[0]?.species || 'Mice';
   // Outposts fill their own stores (lib/outpost_store), not the town's rates.
   const baseRates = calculateRates(bRes.rows, cRows, species, [], { research: await require('../lib/research').doneSet(null, settlementId) });
+  // Each outpost's carter brings a share home by itself: part of the town's shown rates.
+  for (const [k, v] of Object.entries(await OS.townTrickleRates((await query('SELECT * FROM settlements WHERE id=$1', [settlementId])).rows[0] || { id: settlementId }))) baseRates[k] = (baseRates[k] || 0) + v;
   const rates = applySeasonModifiers(baseRates, getCurrentSeason());
   return { resources: sRes.rows[0], rates };
 }

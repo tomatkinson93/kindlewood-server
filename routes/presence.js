@@ -13,7 +13,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
+const { JWT_SECRET } = require('../lib/jwt_secret');
 const ONLINE_WINDOW_MS = 70 * 1000;   // seen within 70s ⇒ online (2 missed pings)
 
 const online = new Map(); // userId -> { name, lastSeen }

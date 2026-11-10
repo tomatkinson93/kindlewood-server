@@ -2,7 +2,7 @@ services:
   - type: web
     name: kindlewood-api
     runtime: node
-    plan: free
+    plan: starter
     nodeVersion: 20.19.0
     buildCommand: npm install
     startCommand: npm start

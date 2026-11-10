@@ -46,7 +46,7 @@ async function part2() {
       : (await q("INSERT INTO users (username, email, password_hash, species) VALUES ($1,$2,'x','Mice') RETURNING id", [username, `${username}@t.l`])).rows[0];
     let s = (await q('SELECT * FROM settlements WHERE user_id=$1', [u.id])).rows[0];
     if (!s) s = (await q(`INSERT INTO settlements (user_id, name, world_version, tier, wealth, food, timber, stone, metal, last_tick, tile_q, tile_r)
-                        VALUES ($1,$2,2,'village',5000,5000,5000,5000,5000,NOW(),$3,$4) RETURNING *`, [u.id, username, -40000 - seq * 20, -40000])).rows[0];
+                        VALUES ($1,$2,2,'village',5000,5000,5000,5000,5000,NOW(),$3,$4) RETURNING *`, [u.id, username, -40000 - seq * 20, -40000 - Math.floor(Math.random() * 900000)])).rows[0];   // a fresh row each run
     else await q('UPDATE settlements SET wealth=5000, food=5000, timber=5000, stone=5000, metal=5000 WHERE id=$1', [s.id]);
     return { id: u.id, sid: s.id, q: s.tile_q, r: s.tile_r, token: jwt.sign({ userId: u.id, username, species: 'Mice' }, SECRET) };
   }
@@ -183,6 +183,7 @@ async function part2() {
   console.log('Dev Tools');
   if (ADMIN) {
     const ad = await user('r6admin', ADMIN);
+    await q('DELETE FROM outposts WHERE settlement_id=$1', [ad.sid]);   // the admin's town is reused between runs
     const oad = await outpost(ad, 'plains', 2);
     await q("INSERT INTO outpost_buildings (outpost_id, key, ready_at) VALUES ($1, 'granary', NOW() + interval '2 hours') ON CONFLICT DO NOTHING", [oad]);
     r = await api(ad, 'POST', '/api/game/outposts/admin/finish');

@@ -13,7 +13,7 @@ const { query } = require('../db');
 const store = require('../lib/game_stats_store');
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
+const { JWT_SECRET } = require('../lib/jwt_secret');
 
 // ── Auth (cookie / Bearer / ?token=), same pattern as the other routes ──
 function user(req) {

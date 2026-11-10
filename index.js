@@ -31,6 +31,8 @@ app.use(cors({
 
 app.use(express.json());
 app.use(cookieParser());
+// First-time steps per player, for the new-player funnel (lib/milestones).
+app.use(require('./lib/milestones').middleware);
 
 app.get('/health', (req, res) => res.json({ ok: true, service: 'kindlewood-api' }));
 
@@ -94,6 +96,7 @@ app.use('/api/travel', require('./routes/travel'));
 app.use('/api/careers', require('./routes/careers'));
 app.use('/api/research', require('./routes/research'));
 app.use('/api/crafting', require('./routes/crafting'));
+app.use('/api/funnel', require('./routes/funnel'));
 app.use((err, req, res, next) => {
   console.error(err.message);
   res.status(500).json({ error: 'Internal server error.' });

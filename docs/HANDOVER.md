@@ -113,13 +113,13 @@ The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-fronte
   - It retries failed same-origin scripts and styles (after 0.5s, 1.5s and 4s).
   - `kwWhenReady(fn, target)` holds start-up code until any retries land.
   - `window.KWLoad` exposes `progress()`, `ready()` and `failed`.
-- **`.htaccess`:** js and css cached for a year (they are always `?v=`-versioned), html never cached, gzip on.
+- **`.htaccess`:** js and css cached for a year (the built files are named by content hash), html never cached, gzip on.
 - **The loading screen waits for everything:**
   - a live file count;
   - a checklist of real steps;
   - "server waking up" retries for a sleeping Render server;
   - names any missing files, with Reload / Carry on.
-- **`verify/versions.json` with `assets_proofs`** fails if a js or css file changes without a new `?v=`. **Always bump `?v=` and run `node verify/assets_proofs.js --update`** when you change a front-end file.
+- (Retired in Phase 0: `verify/versions.json` and `?v=` bumping. The uploaded site is built by `npm run build`.)
 
 ### R6 — refinements and outpost stores
 - **Loading screen:** on first load it no longer fades out by itself; a big **▶ Start playing** button (`#ls-play`, `lsReadyToPlay()` in `main.js`) appears once everything is in. The away report opens after the click.
@@ -182,6 +182,22 @@ The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-fronte
 - **Dev Tools → ⛺ Outposts** (`POST /api/game/outposts/admin/{finish,arrive,porters,fill,event,events-clear}`): finish buildings and roads, make crew arrive, bring porters home, fill the stores, start or clear an event.
 - **Specialisations:** the design is in `docs/OUTPOST_SPECIALISATIONS.md` and is **waiting for the user's answers** to its questions before it's built.
 - **Tests:** `scripts/outpost_r6c_test.js` (39 checks) and `verify/outpost_store_proofs.js` §8. On a fresh database the full run was 2,693 passed, 0 failed.
+
+### Phase 0 of the 1.0 roadmap — foundations (2026-11-10)
+The direction is now set in `docs/ROADMAP_1_0.md` (a cosy generational sim, PvE first). **Read it before starting new work.** Phase 0 is built:
+- **Frontend build:** `npm run build` (`scripts/build.js`, needs `npm install` once) makes `dist/`: three script bundles, one stylesheet and the config file, named by content hash.
+  - Each source file still runs as its own `<script>` inside a bundle, in page order. Pasting files together broke `typeof laterVariable` checks and let one error stop every later file.
+  - `@import` lines are hoisted whole (the Google Fonts address contains semicolons).
+  - `/assets` is not copied.
+  - **`?v=` bumping and `verify/versions.json` are retired.** The `?v=` tags in `index.html` only need to be present.
+- **Deploy:** `.github/workflows/deploy.yml` runs proofs, builds and uploads `dist/` by FTP on every push to `main`. It needs the secrets `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD` (optional `FTP_DIR`); without them it only attaches the built site to the run.
+- **`npm run proofs`** runs every frontend proof (`scripts/run-proofs.js`).
+- **Loading counter fix:** the load guard listened for file loads on `window`, where they never arrive, so the count always read 0. It listens on `document` now.
+- **JWT secret:** `lib/jwt_secret.js` is the only source. With `NODE_ENV=production` the server **refuses to start** without a `JWT_SECRET` of 16+ characters. Check it is set on Render before merging.
+- **`render.yaml`** now says `plan: starter`, matching what is paid for.
+- **New-player funnel** (`lib/milestones.js`, table `player_milestones`): a middleware records the first time each player does each step; births are marked from `simulation.js`. Read it at `GET /api/funnel?days=N` (admins) or Dev Tools → 📈 New players.
+- **Outposts trickle** (decision 3): a **carter** brings 60% of each outpost's output home by itself (80% along a track, 100% paved; `TRICKLE` in `lib/outpost_store.js`). The rest waits in the store for porters. The town's shown rates include the carter's share; fractions owed are kept in `outposts.trickle`.
+- **Testing the bundle:** the scratch script used was a Playwright comparison of the plain site and `dist/` (requests, page errors, globals, computed styles). Rebuild it if the build changes; it caught a broken stylesheet that the script-only check missed.
 
 ## 3. What's left (agreed or deferred)
 
@@ -252,7 +268,7 @@ The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-fronte
 ### Frontend patterns (`kindlewood-frontend`)
 - Plain scripts and IIFEs that attach globals (`window.KWRaids`, `KWJourneys`, `KWDialog`, `KWHelp`, `KWTravel`, `KWRequests`, …). No build step.
 - **`worldMapData` and `citizensData` are top-level `let`**, not on `window`. Inside an IIFE use `typeof worldMapData !== 'undefined' ? worldMapData : …`.
-- **Every `<script>`/`<link>` is `/js/x.js?v=…` or `/css/x.css?v=…`.** Bump `?v=` on change, then run `node verify/assets_proofs.js --update`.
+- **Every `<script>`/`<link>` is `/js/x.js?v=…` or `/css/x.css?v=…`** (the build reads these tags). The `?v=` value no longer needs bumping.
 - **Start-up code:** use `kwWhenReady(fn)` (or a `readyState` check), never a bare `DOMContentLoaded`. `assets_proofs` 3a checks this.
 - **Player-facing confirms and alerts:** use `await KWDialog.confirm({title, message, ok, danger})` or `KWDialog.alert(...)`.
 - **New full-screen overlays:**

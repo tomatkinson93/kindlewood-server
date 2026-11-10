@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
+const { JWT_SECRET } = require('../lib/jwt_secret');
 
 module.exports = function requireAuth(req, res, next) {
   // Accept Bearer token from Authorization header OR cookie

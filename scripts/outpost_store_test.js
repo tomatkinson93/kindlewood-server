@@ -69,13 +69,19 @@ async function part2() {
   const t0 = await town(a.sid);
   let r = await api(a, 'GET', '/api/game/outposts');
   let me = (r.body.outposts || []).find(x => x.id === o1);
-  check(me && me.store && me.store.items.timber >= 50 && me.store.items.timber <= 70, `ten hours at 6 timber an hour, seasons aside, went into its store (${me && me.store.items.timber})`);
+  // Ten hours at 6 timber an hour is about 60: the carter takes 60% home, 40% waits in the store.
+  check(me && me.store && me.store.items.timber >= 18 && me.store.items.timber <= 30, `ten hours of timber: about 40% waits in its store (${me && me.store.items.timber})`);
+  const tAfter = await town(a.sid);
+  const cameHome = Number(tAfter.timber) - Number(t0.timber);
+  check(cameHome >= 28 && cameHome <= 46 && Math.abs(cameHome - me.store.items.timber * 1.5) <= 3, `…and about 60% came home by itself (${cameHome})`);
+  check(me.trickle && me.trickle.share === 0.6 && me.trickle.per_hour.timber === 3.6 && me.trickle.shares[2] === 1, 'the panel says what the carter brings: 60% (80% with a track, all of it paved)');
   check(me && me.rates.timber === 6 && me.store.cap === 300 && r.body.store_per_level === 300, 'the panel gets its rate and cap');
   check(me && me.trip && me.trip.leg_seconds >= 120 && me.trip.carry === 20, `and a trip estimate: a porter carries 20 (${JSON.stringify(me && me.trip)})`);
   const s1 = await api(a, 'GET', '/api/game/settlement');
   check(s1.status === 200 && !(s1.body.settlement.rates.timber > 1000), 'GET /settlement still works');
   const t1 = await town(a.sid);
-  check(Number(t1.timber) - Number(t0.timber) < 200, 'the town\'s timber did not get the outpost\'s output');
+  check(Number(t1.timber) - Number(t0.timber) < 200, 'the town did not get the outpost\'s whole output');
+  check(s1.body.settlement.rates.timber >= 10 + 3, `the town's shown timber rate includes the carter's share (${s1.body.settlement.rates.timber}/hr)`);
 
   console.log('Cap');
   const o2 = await outpost(a, 'forest', { tick: new Date(Date.now() - 200 * 3600e3), store: { timber: 290 } });
@@ -111,7 +117,7 @@ async function part2() {
   h = (await q('SELECT * FROM outpost_hauls WHERE id=$1', [hid])).rows[0];
   check(h.status === 'done' && Number((await town(a.sid)).timber) - Number(before.timber) === ld.timber, 'home: the load goes into the town\'s stores');
   const led = (await q('SELECT away_ledger FROM settlements WHERE id=$1', [a.sid])).rows[0].away_ledger || {};
-  check(Number(led.hauled_timber) === ld.timber, 'the away report hears about it');
+  check(Number(led.hauled_timber) >= ld.timber, 'the away report hears about it (porters and the carter)');
 
   console.log('Empty store');
   const o3 = await outpost(a, 'plains');
