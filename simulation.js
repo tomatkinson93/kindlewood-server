@@ -352,6 +352,7 @@ async function _createChild(settlementId, pair, atMs = null, houseNameKnown = nu
   );
 
   const childId = result.rows[0]?.id;
+  require('./lib/milestones').birth(settlementId).catch(() => {});   // new-player funnel
   // A first child reveals a hidden 'fertile' trait in either parent.
   const careers = require('./lib/careers');
   for (const pid of [pair.id_a, pair.id_b]) careers.revealOnEvent(settlementId, pid, 'child').catch(() => {});

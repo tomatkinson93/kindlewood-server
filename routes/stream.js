@@ -41,7 +41,7 @@ const { query } = require('../db');
 const eventBus = require('../lib/event_bus');
 const { staffRole } = require('../lib/moderation');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
+const { JWT_SECRET } = require('../lib/jwt_secret');
 const KEEPALIVE_MS = 25 * 1000;   // < typical proxy idle timeout of 30s/60s
 
 const router = express.Router();

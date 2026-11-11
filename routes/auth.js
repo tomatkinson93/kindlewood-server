@@ -7,7 +7,7 @@ const clanPalette = require('../lib/clan_palette');
 const { RANK_LABELS } = require('../lib/clan_permissions');
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
+const { JWT_SECRET } = require('../lib/jwt_secret');
 
 const COOKIE_OPTIONS = {
   httpOnly: true,

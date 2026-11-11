@@ -238,6 +238,9 @@ router.get('/settlement', requireAuth, async (req, res) => {
     // Outposts fill their own stores (lib/outpost_store) — not in the town's rates.
     const season = getCurrentSeason();
     const baseRates = calculateRates(buildingsResult.rows, workforce, user.species, [], { research: await research.doneSet(null, settlement.id) });
+    // …but each outpost's carter brings a share of its output home by itself:
+    // show that in the town's rates (the goods arrive through outpost_store.sync).
+    for (const [k, v] of Object.entries(await require('../lib/outpost_store').townTrickleRates(settlement))) baseRates[k] = (baseRates[k] || 0) + v;
     const hMods = await happeningModsNow();
     const rates = applyHappeningRates(applySeasonModifiers(baseRates, season), hMods);
     // Ores share the season and Happening multiplier of the resource they follow.
@@ -807,6 +810,12 @@ router.post('/migrate', requireAuth, requireAdmin, async (req, res) => {
   await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS fort_level INTEGER NOT NULL DEFAULT 0", "outposts fort_level (defences)");
   await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS store JSONB NOT NULL DEFAULT '{}'::jsonb", "outposts store (lib/outpost_store)");
   await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS store_tick TIMESTAMPTZ DEFAULT date_trunc('milliseconds', NOW())", "outposts store_tick");
+  await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS haul_filter JSONB", "outposts haul_filter");
+  await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS haul_threshold INTEGER NOT NULL DEFAULT 0", "outposts haul_threshold");
+  await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS road_level INTEGER NOT NULL DEFAULT 0", "outposts road_level");
+  await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS road_ready_at TIMESTAMPTZ", "outposts road_ready_at");
+  await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS event_roll_at TIMESTAMPTZ", "outposts event_roll_at");
+  await run("ALTER TABLE outposts ADD COLUMN IF NOT EXISTS trickle JSONB NOT NULL DEFAULT '{}'::jsonb", "outposts trickle (the carter)");
   await run("CREATE INDEX IF NOT EXISTS idx_tiles_claimed_by ON tiles (claimed_by) WHERE claimed_by IS NOT NULL", "tiles claimed_by index");
   await run("ALTER TABLE archive_meta ADD COLUMN IF NOT EXISTS outposts JSONB DEFAULT '[]'", "archive outposts snapshot");
 

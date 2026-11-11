@@ -14,6 +14,11 @@
 //    POST   /:id/haul     — { citizen_id } one porter run: out, load up, home (lib/outpost_store)
 //    POST   /:id/buildings — { key } raise a building inside it (lib/outpost_buildings)
 //    DELETE /:id/buildings/:key — pull one down (frees the slot, nothing back)
+//    PATCH  /:id/settings  — { haul_filter, haul_threshold } what porters carry, when haulers go
+//    POST   /:id/road      — the next road level to town (lib/outpost_roads)
+//    POST   /:id/events/:eid — { choice } answer an outpost event (lib/outpost_events)
+//    POST   /:id/help      — { citizen_id } a clanmate's porter fetches for the owner
+//    POST   /admin/:action — Dev Tools: finish | arrive | porters | fill | event | events-clear
 //  Workers and garrison walk out to a new post and home again from one
 //  (outpost_hauls kind 'post' / 'return'); they count once they arrive.
 //    POST   /:id/unassign — { citizen_id } bring them home
@@ -129,7 +134,13 @@ async function present(settlement, o, discMult) {
     workers: o.workers || [], garrison: o.garrison || [], haulers: o.haulers || [],
     worker_slots: workerSlots(o), hauler_slots: OS.HAULER_SLOTS,
     store: OS.present(o), rates: OS.ratesFor(o, done), hauls, trip,
+    // The carter: what comes home by itself (a share of the rate; more with a road).
+    trickle: { share: OS.trickleShare(o), per_hour: OS.trickleRates(o, done), shares: OS.TRICKLE },
     buildings: OB.present(o, discMult),
+    settings: { haul_filter: OS.filterOf(o), haul_threshold: Number(o.haul_threshold) || 0 },
+    road: require('../lib/outpost_roads').present(o, trip ? trip.tiles : 1, discMult),
+    events: await require('../lib/outpost_events').openFor(settlement.id, o.id),
+    on_clan_land: !!o.on_clan_land,
     fort: { level: lvl, name: lvl ? D.FORT[lvl].name : null, icon: lvl ? D.FORT[lvl].icon : null, defence: def.fort, slots: lvl ? D.FORT[lvl].slots : 0, next },
     defence: { own: def.own, fort: def.fort, garrison: def.garrison },
   };
@@ -180,6 +191,8 @@ async function freshResourcesAndRates(settlementId, userId) {
   const species = uRes.rows[0]?.species || 'Mice';
   // Outposts fill their own stores (lib/outpost_store), not the town's rates.
   const baseRates = calculateRates(bRes.rows, cRows, species, [], { research: await require('../lib/research').doneSet(null, settlementId) });
+  // Each outpost's carter brings a share home by itself: part of the town's shown rates.
+  for (const [k, v] of Object.entries(await OS.townTrickleRates((await query('SELECT * FROM settlements WHERE id=$1', [settlementId])).rows[0] || { id: settlementId }))) baseRates[k] = (baseRates[k] || 0) + v;
   const rates = applySeasonModifiers(baseRates, getCurrentSeason());
   return { resources: sRes.rows[0], rates };
 }
@@ -570,6 +583,7 @@ router.post('/:id/haul', requireAuth, async (req, res) => {
     const why = await outpostState.busyReason(c, settlement.id);
     if (why) return res.status(400).json({ error: why });
     if (!Object.values(OS.storeOf(o)).some(v => v >= 1)) return res.status(400).json({ error: 'Its store is empty — nothing to carry yet.' });
+    if (!Object.values(OS.wanted(o)).some(v => v >= 1)) return res.status(400).json({ error: 'Nothing in the store that porters are set to carry (see its haul settings).' });
     let haul;
     try { haul = await OS.startHaul(null, settlement, o, c, false); }
     catch (e) { if (e.code === '23505') return res.status(409).json({ error: `${c.name} is already on the road.` }); throw e; }
@@ -592,7 +606,9 @@ router.post('/:id/buildings', requireAuth, async (req, res) => {
     const fail = async (status, error) => { await client.query('ROLLBACK'); return res.status(status).json({ error }); };
     if (!o) return fail(404, 'Outpost not found.');
     if (!OB.DEFS[key]) return fail(400, 'No such building.');
-    if (!OB.allowed(key, o.terrain)) return fail(400, `A ${OB.DEFS[key].name} doesn't belong on this land.`);
+    const onLand = OB.DEFS[key] && OB.DEFS[key].clan ? await require('../lib/clan_treasury').onClanLand(client, req.user.userId, o.tile_q, o.tile_r) : true;
+    if (OB.DEFS[key] && OB.DEFS[key].clan && !onLand) return fail(400, `A ${OB.DEFS[key].name} can only stand on your clan's land.`);
+    if (!OB.allowed(key, o.terrain, onLand)) return fail(400, `A ${OB.DEFS[key].name} doesn't belong on this land.`);
     const have = (await client.query('SELECT key FROM outpost_buildings WHERE outpost_id=$1', [id])).rows.map(r => r.key);
     if (have.includes(key)) return fail(400, `It already has a ${OB.DEFS[key].name}.`);
     const slots = OB.slotsFor(o.level);
@@ -630,6 +646,158 @@ router.delete('/:id/buildings/:key', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[outposts] pull down', err);
     res.status(500).json({ error: 'Failed to pull it down.' });
+  }
+});
+
+// ── PATCH /:id/settings — { haul_filter: [res]|null, haul_threshold: % } ───
+// What porters bring home from here, and how full the store gets before a
+// standing hauler sets out (0 = whenever there's anything).
+router.patch('/:id/settings', requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const settlement = await loadUserSettlement(req.user.userId);
+    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+    const own = (await query('SELECT id FROM outposts WHERE id=$1 AND settlement_id=$2', [id, settlement.id])).rows[0];
+    if (!own) return res.status(404).json({ error: 'Outpost not found.' });
+    const b = req.body || {};
+    if ('haul_filter' in b) {
+      const f = Array.isArray(b.haul_filter) ? [...new Set(b.haul_filter.map(String).filter(k => RD.isResource(k)))] : null;
+      await query('UPDATE outposts SET haul_filter = $2 WHERE id = $1', [id, f && f.length ? JSON.stringify(f) : null]);
+    }
+    if ('haul_threshold' in b) {
+      const t = Math.round(Number(b.haul_threshold));
+      if (![0, 25, 50, 75, 90].includes(t)) return res.status(400).json({ error: 'Threshold must be 0, 25, 50, 75 or 90.' });
+      await query('UPDATE outposts SET haul_threshold = $2 WHERE id = $1', [id, t]);
+    }
+    await OS.sync(settlement);
+    res.json({ ok: true, outpost: await presentById(settlement, id) });
+  } catch (err) {
+    console.error('[outposts] settings', err);
+    res.status(500).json({ error: 'Failed to save.' });
+  }
+});
+
+// ── POST /:id/road — lay the next stretch of road (Track, then Paved) ──────
+router.post('/:id/road', requireAuth, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'Bad outpost id.' });
+  const client = await pool.connect();
+  try {
+    const ROADS = require('../lib/outpost_roads');
+    await client.query('BEGIN');
+    const settlement = (await client.query('SELECT * FROM settlements WHERE user_id=$1 FOR UPDATE', [req.user.userId])).rows[0];
+    const o = settlement && (await client.query('SELECT * FROM outposts WHERE id=$1 AND settlement_id=$2 FOR UPDATE', [id, settlement.id])).rows[0];
+    const fail = async (status, error) => { await client.query('ROLLBACK'); return res.status(status).json({ error }); };
+    if (!o) return fail(404, 'Outpost not found.');
+    if (ROADS.levelOf(o) < (Number(o.road_level) || 0)) return fail(400, 'The road crew are still at work.');
+    const { W, H } = await loadWorldDims();
+    const tiles = settlement.tile_q == null ? 1 : hexDistWrapped(settlement.tile_q, settlement.tile_r, o.tile_q, o.tile_r, W, H);
+    const mult = (await require('./buildings').buildDiscount(settlement.id)).mult;
+    const next = ROADS.nextOf(o, tiles, mult);
+    if (!next) return fail(400, 'It already has a paved road all the way.');
+    for (const [r, v] of Object.entries(next.cost)) if (v > (Number(settlement[r]) || 0)) return fail(400, `Not enough ${RD.label(r).toLowerCase()}. Need ${v}.`);
+    const keys = Object.keys(next.cost);
+    await client.query(`UPDATE settlements SET ${keys.map((r, i) => `${r} = ${r} - $${i + 1}`).join(', ')} WHERE id = $${keys.length + 1}`, [...keys.map(r => next.cost[r]), settlement.id]);
+    await client.query('UPDATE outposts SET road_level = $2, road_ready_at = NOW() + make_interval(secs => $3) WHERE id = $1', [id, next.level, Math.round(next.hours * 3600)]);
+    await client.query('COMMIT');
+    const { resources, rates } = await freshResourcesAndRates(settlement.id, req.user.userId);
+    res.json({ ok: true, outpost: await presentById(settlement, id), spent: next.cost, resources, rates });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[outposts] road', err);
+    res.status(500).json({ error: 'Failed to lay the road.' });
+  } finally {
+    client.release();
+  }
+});
+
+// ── POST /:id/events/:eid — { choice } answer something that happened ──────
+router.post('/:id/events/:eid', requireAuth, async (req, res) => {
+  try {
+    const settlement = await loadUserSettlement(req.user.userId);
+    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+    const r = await require('../lib/outpost_events').choose(settlement.id, parseInt(req.params.eid, 10), String((req.body && req.body.choice) || ''));
+    if (r.error) return res.status(r.status || 400).json({ error: r.error });
+    const { resources, rates } = await freshResourcesAndRates(settlement.id, req.user.userId);
+    res.json({ ok: true, outcome: r.outcome, joined: r.joined, outpost: await presentById(settlement, parseInt(req.params.id, 10)).catch(() => null), resources, rates });
+  } catch (err) {
+    console.error('[outposts] event', err);
+    res.status(500).json({ error: 'Failed.' });
+  }
+});
+
+// ── POST /:id/help — { citizen_id } a clanmate's porter fetches from this
+// outpost; the goods go to its owner. Owner and helper must share a clan.
+router.post('/:id/help', requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10), cid = parseInt(req.body && req.body.citizen_id, 10);
+    if (!Number.isFinite(id) || !Number.isFinite(cid)) return res.status(400).json({ error: 'outpost id and citizen_id required.' });
+    const me = await loadUserSettlement(req.user.userId);
+    if (!me) return res.status(404).json({ error: 'No settlement.' });
+    const o = (await query('SELECT o.*, s.user_id AS owner_user_id, s.name AS owner_name FROM outposts o JOIN settlements s ON s.id = o.settlement_id WHERE o.id=$1', [id])).rows[0];
+    if (!o) return res.status(404).json({ error: 'Outpost not found.' });
+    if (o.settlement_id === me.id) return res.status(400).json({ error: 'It\'s your own outpost — send a porter from its window.' });
+    const same = (await query(`SELECT 1 FROM clan_members a JOIN clan_members b ON a.clan_id = b.clan_id WHERE a.user_id = $1 AND b.user_id = $2`, [req.user.userId, o.owner_user_id]).catch(() => ({ rows: [] }))).rows.length;
+    if (!same) return res.status(403).json({ error: 'Only clanmates can help carry from someone\'s outpost.' });
+    const c = (await query('SELECT id, name, settlement_id, life_stage, role FROM citizens WHERE id=$1', [cid])).rows[0];
+    const why = await outpostState.busyReason(c, me.id);
+    if (why) return res.status(400).json({ error: why });
+    if (!Object.values(OS.wanted(o)).some(v => v >= 1)) return res.status(400).json({ error: 'Its store has nothing to carry.' });
+    let haul;
+    try { haul = await OS.startHaul(null, me, o, c, false, Date.now(), o.settlement_id); }
+    catch (e) { if (e.code === '23505') return res.status(409).json({ error: `${c.name} is already on the road.` }); throw e; }
+    res.json({ ok: true, haul: { id: haul.id, name: c.name, owner: o.owner_name, arrives_at: haul.arrives_at, returns_at: haul.returns_at, carry: Number(haul.carry) } });
+  } catch (err) {
+    console.error('[outposts] help', err);
+    res.status(500).json({ error: 'Failed to send help.' });
+  }
+});
+
+// ── Dev Tools (admins): finish things, fill stores, start an event ─────────
+const { requireAdmin } = require('../middleware/admin');
+router.post('/admin/:action', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const settlement = await loadUserSettlement(req.user.userId);
+    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+    const sid = settlement.id, act = req.params.action, b = req.body || {};
+    const mine = 'SELECT id FROM outposts WHERE settlement_id = $1';
+    let msg = 'Done.';
+    if (act === 'finish') {
+      const a = await query(`UPDATE outpost_buildings SET ready_at = NOW() WHERE outpost_id IN (${mine}) AND ready_at > NOW()`, [sid]);
+      const r2 = await query(`UPDATE outposts SET road_ready_at = NOW() WHERE settlement_id = $1 AND road_ready_at > NOW()`, [sid]);
+      msg = `${a.rowCount} building(s) and ${r2.rowCount} road(s) finished.`;
+    } else if (act === 'arrive') {
+      const a = await query(`UPDATE outpost_crew SET arrives_at = NULL WHERE outpost_id IN (${mine}) AND arrives_at IS NOT NULL`, [sid]);
+      await query(`UPDATE outpost_hauls SET arrives_at = LEAST(arrives_at, NOW()), returns_at = LEAST(returns_at, NOW()) WHERE settlement_id = $1 AND kind IN ('post','return') AND status IN ('outbound','returning')`, [sid]);
+      msg = `${a.rowCount} crew member(s) arrived.`;
+    } else if (act === 'porters') {
+      const a = await query(`UPDATE outpost_hauls SET arrives_at = LEAST(arrives_at, NOW() - interval '2 seconds'), returns_at = LEAST(returns_at, NOW() - interval '1 second') WHERE settlement_id = $1 AND status IN ('outbound','returning')`, [sid]);
+      msg = `${a.rowCount} run(s) brought home.`;
+    } else if (act === 'fill') {
+      for (const o of await outpostState.load(null, settlement)) {
+        const cap = OS.capOf(o), keys = Object.keys(OS.ratesFor(o, new Set()));
+        if (keys.length) await query(`UPDATE outposts SET store = COALESCE(store, '{}'::jsonb) || jsonb_build_object(${keys.map(k => `'${k}', ${cap}::float8`).join(', ')}) WHERE id = $1`, [o.id]);
+      }
+      msg = 'Every outpost store is full.';
+    } else if (act === 'event') {
+      const list = await outpostState.load(null, settlement);
+      const o = list.find(x => x.id === Number(b.outpost_id)) || list[0];
+      if (!o) return res.status(400).json({ error: 'No outposts.' });
+      await query('UPDATE outpost_events SET resolved_at = NOW(), outcome = $2 WHERE outpost_id = $1 AND resolved_at IS NULL', [o.id, 'Cleared by Dev Tools']);
+      const KINDS = require('../lib/outpost_events').KINDS;
+      const kind = b.kind && KINDS[b.kind] ? b.kind : null;
+      const e = await require('../lib/outpost_events').start(o, settlement, kind);
+      if (!e) return res.status(400).json({ error: 'That event can\'t happen there right now (a trader needs something in the store).' });
+      msg = `${e.icon} ${e.title} at the ${o.name || 'outpost'}.`;
+    } else if (act === 'events-clear') {
+      const a = await query(`UPDATE outpost_events SET resolved_at = NOW(), outcome = 'Cleared by Dev Tools' WHERE settlement_id = $1 AND resolved_at IS NULL`, [sid]);
+      msg = `${a.rowCount} event(s) cleared.`;
+    } else return res.status(404).json({ error: 'Unknown action.' });
+    await OS.sync(settlement);
+    res.json({ ok: true, message: msg });
+  } catch (err) {
+    console.error('[outposts] admin', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
