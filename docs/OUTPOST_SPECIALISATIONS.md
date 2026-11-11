@@ -1,6 +1,6 @@
 # Outpost specialisations — design for review (not built yet)
 
-Status: **proposal**. Nothing here is implemented. The open questions are at the end.
+Status: **frozen until after 1.0** (see `docs/ROADMAP_1_0.md`). Nothing here is implemented. When it is picked up, cut it to three or four charters and two new resources, and note that haul filters are due to be removed (`docs/OUTPOST_TRIM.md`).
 
 ## 1. The shape of it
 

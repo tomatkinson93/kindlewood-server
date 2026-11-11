@@ -87,6 +87,8 @@ Each phase is one or two rounds of work in the style used so far, with tests. Th
 - **Add funnel logging** (§6.1), so later decisions use real numbers.
 
 ### Phase 1 — The life cycle (the heart of 1.0)
+**The build spec is `docs/PHASE_1_LIFE_CYCLE.md`.** It supersedes the outline below where they differ. The assessment behind it found that births cannot happen in the live game and that no ordinary player can grow past a Camp; both are fixed by its first step. It also recommends a slower life pace than the one in §9, which is waiting on the owner's choice.
+
 - **Ageing:** age is worked out from `born_at`. One game year is 28 real hours, as now.
 - **Life stages** (proposed, tunable):
 
@@ -122,7 +124,7 @@ Each phase is one or two rounds of work in the style used so far, with tests. Th
 ### Phase 4 — Consolidation and the layout rework
 - The layout rework list in §10.
 - The five-place navigation (§3.3) on desktop and phone.
-- Automatic carters at outposts; the outpost window keeps its tabs but the default state needs no attention.
+- The outpost trim in `docs/OUTPOST_TRIM.md` (the carter itself was built in Phase 0).
 - Remove or merge small duplicate screens (Journeys folds into The Land; Stores into Home).
 - A pacing pass on tier costs using the funnel numbers. The target is a Village in the first two or three sessions.
 
