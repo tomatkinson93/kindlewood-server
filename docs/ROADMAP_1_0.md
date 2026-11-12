@@ -87,6 +87,8 @@ Each phase is one or two rounds of work in the style used so far, with tests. Th
 - **Add funnel logging** (§6.1), so later decisions use real numbers.
 
 ### Phase 1 — The life cycle (the heart of 1.0)
+**The build spec is `docs/PHASE_1_LIFE_CYCLE.md`.** It supersedes the outline below where they differ. The assessment behind it found that births cannot happen in the live game and that no ordinary player can grow past a Camp; both are fixed by its first step. It also recommends a slower life pace than the one in §9, which is waiting on the owner's choice.
+
 - **Ageing:** age is worked out from `born_at`. One game year is 28 real hours, as now.
 - **Life stages** (proposed, tunable):
 
@@ -107,6 +109,8 @@ Each phase is one or two rounds of work in the style used so far, with tests. Th
 - **Population balance:** birth rates, housing caps and food upkeep are re-tuned so a town neither dies out nor overflows.
 
 ### Phase 2 — Moments (one decision system for everything)
+**The build spec is `docs/PHASE_2_MOMENTS.md`**, with the engine design and the first thirty moments.
+
 - The outpost events system (`lib/outpost_events.js`) becomes the general **moments** engine: a situation, two or three options, a named citizen involved, a visible consequence.
 - **Sources** of moments:
   - family: a proposal, a quarrel, a child's wish, an elder's last request
@@ -120,9 +124,11 @@ Each phase is one or two rounds of work in the style used so far, with tests. Th
 ### Phase 3 — Onboarding and the guide (§6)
 
 ### Phase 4 — Consolidation and the layout rework
+**The build spec is `docs/LAYOUT_SPEC.md`.** Its window component is needed from Phase 1.
+
 - The layout rework list in §10.
 - The five-place navigation (§3.3) on desktop and phone.
-- Automatic carters at outposts; the outpost window keeps its tabs but the default state needs no attention.
+- The outpost trim in `docs/OUTPOST_TRIM.md` (the carter itself was built in Phase 0).
 - Remove or merge small duplicate screens (Journeys folds into The Land; Stores into Home).
 - A pacing pass on tier costs using the funnel numbers. The target is a Village in the first two or three sessions.
 
@@ -213,13 +219,15 @@ What this means going forward:
 
 ## 9. Decisions made (2026-11-10)
 
-1. **Pace of a life:** as proposed. A child grows up in about 11 real days; a starting adult lives roughly 4–6 weeks.
+1. **Pace of a life:** the slower pace in `docs/PHASE_1_LIFE_CYCLE.md` §2 (changed 2026-11-12): grown up at 14 real days, about 8 weeks as a working adult, a life of about 3 months.
 2. **Death:** citizens die of old age, with memorials and inheritance.
 3. **Outposts:** goods **trickle** home on their own; no shipments needed. Porters, haulers and roads only speed it up.
 4. **Navigation:** the five-place layout, plus a general layout rework (§10).
 5. **Guide:** one elder per species.
 6. **Order:** the most logical route (see §5). The game is in beta, so there is no rush for new players.
 7. **PvP:** optional PvP worlds, well after 1.0. Multi-species towns are a later expansion.
+8. **Heirlooms** carry a small bonus within the family (+5%, up to +10% over generations).
+9. **Phase 1 step 1** (the two live bugs) ships first, on its own.
 
 ## 10. Layout review and rework list
 

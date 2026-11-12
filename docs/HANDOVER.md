@@ -1,20 +1,87 @@
-# Kindlewood — handover (after R6: refinements and outpost stores, 2026-11-03)
+# Kindlewood — handover (after the pre-Phase 1 reviews, 2026-11-12)
 
-Read this first in a new chat. It covers what exists, what's left, and how to work on it.
+Read this first in a new chat. It covers where things stand, what to do next, what exists, and how to work on it.
 The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-frontend/docs/`).
+
+---
+
+## 0. Start here
+
+**The direction is set.** Kindlewood is a cosy generational sim, PvE first: *raise a woodland family line through the seasons.* Read these before writing code, in this order:
+
+| Doc | What it is |
+|---|---|
+| `docs/ROADMAP_1_0.md` | The agreed plan: pillars, phases, onboarding, the owner's decisions |
+| `docs/SECURITY_REVIEW.md` | **Fix S1 and S2 first.** Two high-severity holes in the live game |
+| `docs/PHASE_1_LIFE_CYCLE.md` | **The next feature work**, as a spec with a build order and tests |
+| `docs/LAYOUT_SPEC.md` | The window component (needed from Phase 1) and the five-place navigation (Phase 4) |
+| `docs/PHASE_2_MOMENTS.md` | The moments engine and the first thirty moments |
+| `docs/OUTPOST_TRIM.md` | What to cut from outposts (Phase 4 unless the owner says sooner) |
+| `docs/OUTPOST_SPECIALISATIONS.md` | A design that is **frozen until after 1.0**. Do not build it. |
+
+**Rules of the road** (agreed with the owner):
+
+- **No new systems before 1.0.** Every feature must serve families, the turning year, or gentle stakes. If it only turns resources into resources, fold it in or leave it out.
+- **Never punish being away.** Anything that needs tending must have a sensible default that happens by itself.
+- **Death ships only together with inheritance and the chronicle** (Phase 1 steps 2–6 are one release).
+- **Push back** when a request works against the pitch, and say what you would cut. The owner has asked for this.
+- **Build to the specs.** If a spec turns out to be wrong, say so and propose the change; don't quietly build something else.
+- **Agreed phase order:** 0 (done) → 1 life cycle → 2 moments → 4 consolidation and layout → 3 onboarding and the guide → 5 species → 6 clan project.
+
+### What to do next, in order
+
+1. **Security fixes S1 and S2** (`SECURITY_REVIEW.md`): validate and escape usernames and town names; stop using the sign-in cookie. Both are small. Then S4 and S3.
+2. **Phase 1, step 1** (`PHASE_1_LIFE_CYCLE.md` §9), shipped on its own:
+   - houses hold 4;
+   - births need a free bed in town;
+   - the population number follows the real count;
+   - the kin rule;
+   - housing sorts itself;
+   - death clears `house_id`.
+
+   This fixes the two live bugs below.
+3. **The window component** (`LAYOUT_SPEC.md` §3), then **Phase 1 steps 2–7** as one release, with the Families screens built on it.
+4. Then Phase 2, and so on down the roadmap.
+
+All the owner's decisions for Phase 1 are made (`PHASE_1_LIFE_CYCLE.md` §11): the slower life pace, heirlooms with a small bonus, step 1 first.
+
+### Findings from the assessment (2026-11-11 and 12)
+
+1. **Births cannot happen in the live game.** A birth needs a couple sharing a house with a free place, and every house holds 2. Details in `PHASE_1_LIFE_CYCLE.md` §1.1.
+2. **No ordinary player can leave Camp.** `settlements.population` is stuck at 10 (only admin tools and the traveller event raise it) and a Village needs 20. Everything gated by tier is unreachable without Dev Tools.
+3. **Citizens do not age.** Age is a fixed number; children never grow up; nobody dies of old age.
+4. **Adding ageing alone would wipe out every town** within two months (`scripts/population_model.js`, scenario B). Births must need a free bed in town, houses must hold 4, and settlers must arrive as a safety net. With those, towns are stable.
+5. **No kin rule:** siblings or a parent and child could become partners once children grow up.
+6. **A player can put HTML in a username or town name and it runs in other players' browsers** (confirmed locally). The sign-in token is readable by page scripts, so this allows account takeover. `SECURITY_REVIEW.md` S1.
+7. **Other websites can act as a signed-in player** on routes that need no request body, through the sign-in cookie. `SECURITY_REVIEW.md` S2.
+8. **The dead still take up a place in their house** (`house_id` is never cleared).
+9. **The outpost trickle left haulers, haul settings and three buildings with little purpose.** See `OUTPOST_TRIM.md`.
+
+### Nothing since R5 is merged
+
+Everything from R6 onwards is on the branch `claude/vigilant-feynman-npuc6r` in both repos: four rounds of outpost work, Phase 0, and these docs. No pull requests are open. The owner has been advised to merge and play before Phase 1 goes far.
+
+**Before that branch is merged:**
+
+- **Render must have `JWT_SECRET` set** (16+ characters). With `NODE_ENV=production` the server now refuses to start without it.
+- **GitHub secrets for the frontend deploy:** `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD` (optional `FTP_DIR`). Without them the workflow only attaches the built site to the run.
+- The first deploy after merging turns the trickle on: the top bar's rates change for anyone with outposts.
+
+### Which model for what
+
+The owner plans to build with Opus and bring Fable back for judgement calls. Good moments to ask for a Fable review: the end of each phase ("does this still serve the pitch, and what should be cut?"), any change to the numbers in `PHASE_1_LIFE_CYCLE.md` §2, and any request for a new system.
 
 ---
 
 ## 1. Where things stand
 
-- **Everything below is merged to `main` in both repos.** The frontend went in as PR #90.
+- **`main`** holds everything up to R5 and the loading fixes. See "Nothing since R5 is merged" above.
 - **Deploying:**
-  - **Server:** `tomatkinson93/kindlewood-server` deploys itself from `main` on Render (`https://kindlewood-api.onrender.com`). It's on Render's free tier, so it sleeps when idle and takes up to a minute to wake. The loading screen now handles that.
-  - **Frontend:** `tomatkinson93/kindlewood-frontend` is uploaded to cPanel **by hand** (site: kindlewood.quest).
-  - **`/assets`** is not in the zip; it goes up separately by FTP.
-  - **`.htaccess`** is in the frontend root and **must be uploaded**. It starts with a dot, so turn on "Show hidden files" in cPanel File Manager. If the host already has one, merge the rules into it.
-- **Migrations:** new SQL files are named `0NN_<name>.sql` and listed in `db.js` `applyMigrationFiles([...])`. They are idempotent and re-run on every boot. The README asks for them to be renumbered at deploy, but `main` currently runs them as `0NN_*`, and that works because only the suffix is matched. See `migrations/README.md`. The latest is `0NN_outpost_store.sql`.
-- **The user wanted to suggest "refinements to the new things we've added"** (the R5 features and the defences/raids work) but hasn't said what yet. Ask them.
+  - **Server:** `tomatkinson93/kindlewood-server` deploys itself from `main` on Render (`https://kindlewood-api.onrender.com`). The API is on the **Starter** plan ($7 a month), which does not sleep; the database is Basic-256mb ($6.30). The database is the first limit that will be reached.
+  - **Frontend:** `tomatkinson93/kindlewood-frontend` serves kindlewood.quest from cPanel. Until the deploy workflow has its FTP secrets, run `npm run build` and upload the contents of `dist/` by hand (including `.htaccess`: turn on "Show hidden files").
+  - **`/assets`** is uploaded separately by FTP and is never touched by the build.
+- **Migrations:** new SQL files are named `0NN_<name>.sql` and listed in `db.js` `applyMigrationFiles([...])`. They are idempotent and re-run on every boot. See `migrations/README.md`. The latest is `0NN_outpost_trickle.sql`.
+- **Tests:** on a fresh database the last full run was 2,730 passed and 3 failed. The 3 were in `npc_requests_test`, which passed 3 of 3 times on its own (also on the previous code); treat it as intermittent and look at it if it recurs. `rankings_test` only passes on its first run against a database.
 
 ---
 
@@ -199,26 +266,27 @@ The direction is now set in `docs/ROADMAP_1_0.md` (a cosy generational sim, PvE 
 - **Outposts trickle** (decision 3): a **carter** brings 60% of each outpost's output home by itself (80% along a track, 100% paved; `TRICKLE` in `lib/outpost_store.js`). The rest waits in the store for porters. The town's shown rates include the carter's share; fractions owed are kept in `outposts.trickle`.
 - **Testing the bundle:** the scratch script used was a Playwright comparison of the plain site and `dist/` (requests, page errors, globals, computed styles). Rebuild it if the build changes; it caught a broken stylesheet that the script-only check missed.
 
-## 3. What's left (agreed or deferred)
+## 3. What's left
 
-1. **Outpost specialisations:** waiting on the user's answers to the questions in `docs/OUTPOST_SPECIALISATIONS.md`.
-2. **Withered strength creep:** each repelled raid makes the next one ~5% stronger; a loss or a cleared camp resets it. Suggested next, since it finishes the raid system.
-3. **Raid log tab in the Watchtower:** past raids with outcome, losses, injuries, and defence vs strength. The data is already in `settlement_raids` (`loot` jsonb, `loss_share`, `defence`). Also suggested next.
-4. **Mutual defence treaties** (clan to clan, or with Allied villages), so non-members on clan land can share defence. Today only members share (`lib/defences.js` `clanShare`). This needs a design discussion.
-5. **Repair costs for a raided outpost** instead of idle time (`outposts.raided_until`).
-6. **Friends and Achievements** (hidden menu items), **avatar upload** (hidden), and **player honors** (hidden; clan honors are live).
-7. **Clan emblems** are still emoji placeholders.
-8. **Rankings:** boards for research progress and crafting don't exist yet (`routes/game_stats.js`, `js/leaderboard.js`).
-9. **Proof coverage is missing** for chat, inventory, diplomacy, the tier screen and most of the clan panel.
-10. **Reopening the away report works per device only** (localStorage). A server-stored "last report" would fix that.
-11. **Happenings:** no default or seasonal ones exist; admins create them by hand (by choice).
-12. **Optional:** bundle the ~100 scripts into ~3 files if 503s come back even with caching. This adds a build step before each cPanel upload, so it was deferred.
-13. **Old 404s:**
-    - `/assets/kindlewood-logo.png` and `kindlewood-logotype.webp`;
-    - `/assets/images/tiles/*.png`;
-    - some audio files (`page_turn.mp3`, `ambient/night.mp3`).
+**The roadmap decides the order** (`docs/ROADMAP_1_0.md` §5). The list below is the older backlog; most of it now waits until after 1.0.
 
-    They are referenced in code but not on the host. The game falls back without them. Either upload them by FTP or remove the references.
+Still worth doing along the way:
+
+1. **Proof coverage is missing** for chat, inventory, diplomacy, the tier screen and most of the clan panel. Add proofs as the layout rework touches each.
+2. **Reopening the away report works per device only** (localStorage). The chronicle in Phase 1 replaces the need.
+3. **Old 404s:** `/assets/kindlewood-logo.png`, `kindlewood-logotype.webp`, `/assets/images/tiles/*.png`, and some audio (`page_turn.mp3`, `ambient/night.mp3`) are referenced but not on the host. The game falls back without them. Upload them or remove the references.
+4. **The worker tick** visits every settlement with outposts about once a minute (`lib/outpost_store.js tick`). Fine for hundreds of towns; before thousands, change it to "only towns with something due".
+5. **Dev Tools** ships to every player inside `index.html` (about 700 lines). Move it to its own page for admins (layout rework item 10).
+
+Frozen until after 1.0:
+
+- Outpost specialisations and the seven new resources.
+- Withered strength creep; the raid log tab in the Watchtower; repair costs for raided outposts.
+- Mutual defence treaties.
+- Friends, Achievements, avatar upload, player honors (all hidden today); clan emblems.
+- New rankings boards.
+- Default or seasonal Happenings.
+- Multi-species towns (a later expansion) and PvP worlds. To keep both open: read species per citizen, and have raid code take "an attacker", not the Withered specifically.
 
 ---
 
