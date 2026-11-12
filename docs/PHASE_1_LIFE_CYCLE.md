@@ -1,6 +1,6 @@
 # Phase 1 — the life cycle (build spec)
 
-Status: **ready to build**, written 2026-11-11. Part of `docs/ROADMAP_1_0.md`.
+Status: **ready to build**; decisions in §11 are made. Written 2026-11-11, updated 2026-11-12. Part of `docs/ROADMAP_1_0.md`.
 Read §1 first: it lists two bugs in the live game that block progress today.
 
 ## 1. Findings from the assessment
@@ -46,11 +46,11 @@ Conclusions:
 
 ## 2. Numbers
 
-**I recommend a slower pace than the one agreed** ("grown up in about 11 days, adult life of 4–6 weeks"). At the agreed pace a 60-bed Village has a death every day and a half, and the ten founders are all gone inside six weeks. That is a lot of funerals for a cosy game. The recommended pace cuts deaths by about 30% and keeps the founders for 6–10 weeks. Every number lives in one config file and can be changed from Dev Tools (§8), so this can be tuned during the beta.
+**Build the "Recommended" column.** The owner chose it on 2026-11-12 over the faster pace first agreed ("grown up in about 11 days, adult life of 4–6 weeks"). At the faster pace a 60-bed Village has a death every day and a half, and the ten founders are all gone inside six weeks. The recommended pace cuts deaths by about 30% and keeps the founders for 6–10 weeks. Every number lives in one config file and can be changed from Dev Tools (§8), so it can still be tuned during the beta.
 
 One game year is 28 real hours (unchanged).
 
-| Setting | Agreed pace | **Recommended** | Real time (recommended) |
+| Setting | First agreed (not used) | **Recommended (build this)** | Real time (recommended) |
 |---|---|---|---|
 | Child | 0–5 | 0–6 | 8 days |
 | Youth | 6–9 | 7–11 | 6 days |
@@ -121,6 +121,7 @@ Age is always computed (`(now − born_at) / 28h`), so nothing needs to tick for
 - The catch-up is capped at a week (`SIM_MAX_CATCHUP_HOURS`), and the cap stays. A player away for a month does not come back to a graveyard: rolls for the skipped hours are simply not made.
 - A citizen who is away (on a quest, at an outpost, on the road) does not die of old age until they are home.
 - `deaths.js writeDeathEvent` gains `cause: 'old_age'`. It no longer unequips everything first: inheritance (§4.8) decides where the gear goes.
+- Death clears the citizen's `house_id`. Today it does not, so the dead still take up a place in their house (`docs/SECURITY_REVIEW.md`, last section). Bed counts use living citizens only.
 - **How much ceremony:**
   - the head of a family, or anyone with a title or a class level of 10 or more, gets a moment-style notice with a memorial line the player can read;
   - everyone else gets one gentle chronicle line and a toast.
@@ -225,8 +226,8 @@ Each step ends with tests passing. **Steps 2–6 ship together**: death without 
 - `scripts/population_model.js` stays as the planning tool. Re-run it whenever a number in §2 changes; a town should never die out, and "a death every N days" should stay near the figures in §1.3.
 - Frontend proofs for the Families screen, the profile blocks and the away report.
 
-## 11. Decisions for the owner
+## 11. Decisions made (2026-11-12)
 
-1. **Pace:** the agreed one, or the slower recommended one (§2)?
-2. **Step 1 now?** It fixes the two live bugs and can ship before the rest of Phase 1.
-3. **Heirloom bonus:** is +5% rising to +10% within the family the right size, or should heirlooms be keepsakes with no bonus?
+1. **Pace: the slower, recommended one** (§2, the "Recommended" column). The "Agreed pace" column is kept only for comparison.
+2. **Step 1 ships first, on its own**, built by the next model.
+3. **Heirlooms carry the small bonus**: +5%, rising by 1% a generation to +10%, within the family.

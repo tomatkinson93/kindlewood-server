@@ -1,4 +1,4 @@
-# Kindlewood — handover (after the Phase 0 assessment, 2026-11-11)
+# Kindlewood — handover (after the pre-Phase 1 reviews, 2026-11-12)
 
 Read this first in a new chat. It covers where things stand, what to do next, what exists, and how to work on it.
 The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-frontend/docs/`).
@@ -11,9 +11,12 @@ The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-fronte
 
 | Doc | What it is |
 |---|---|
-| `docs/ROADMAP_1_0.md` | The agreed plan: pillars, phases, onboarding, layout rework list, the owner's decisions |
-| `docs/PHASE_1_LIFE_CYCLE.md` | **The next thing to build**, as a spec with a build order and tests |
-| `docs/OUTPOST_TRIM.md` | What to cut from outposts (proposal; do it in Phase 4 unless the owner says sooner) |
+| `docs/ROADMAP_1_0.md` | The agreed plan: pillars, phases, onboarding, the owner's decisions |
+| `docs/SECURITY_REVIEW.md` | **Fix S1 and S2 first.** Two high-severity holes in the live game |
+| `docs/PHASE_1_LIFE_CYCLE.md` | **The next feature work**, as a spec with a build order and tests |
+| `docs/LAYOUT_SPEC.md` | The window component (needed from Phase 1) and the five-place navigation (Phase 4) |
+| `docs/PHASE_2_MOMENTS.md` | The moments engine and the first thirty moments |
+| `docs/OUTPOST_TRIM.md` | What to cut from outposts (Phase 4 unless the owner says sooner) |
 | `docs/OUTPOST_SPECIALISATIONS.md` | A design that is **frozen until after 1.0**. Do not build it. |
 
 **Rules of the road** (agreed with the owner):
@@ -22,23 +25,37 @@ The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-fronte
 - **Never punish being away.** Anything that needs tending must have a sensible default that happens by itself.
 - **Death ships only together with inheritance and the chronicle** (Phase 1 steps 2–6 are one release).
 - **Push back** when a request works against the pitch, and say what you would cut. The owner has asked for this.
+- **Build to the specs.** If a spec turns out to be wrong, say so and propose the change; don't quietly build something else.
 - **Agreed phase order:** 0 (done) → 1 life cycle → 2 moments → 4 consolidation and layout → 3 onboarding and the guide → 5 species → 6 clan project.
 
-### Findings from the assessment (2026-11-11)
+### What to do next, in order
+
+1. **Security fixes S1 and S2** (`SECURITY_REVIEW.md`): validate and escape usernames and town names; stop using the sign-in cookie. Both are small. Then S4 and S3.
+2. **Phase 1, step 1** (`PHASE_1_LIFE_CYCLE.md` §9), shipped on its own:
+   - houses hold 4;
+   - births need a free bed in town;
+   - the population number follows the real count;
+   - the kin rule;
+   - housing sorts itself;
+   - death clears `house_id`.
+
+   This fixes the two live bugs below.
+3. **The window component** (`LAYOUT_SPEC.md` §3), then **Phase 1 steps 2–7** as one release, with the Families screens built on it.
+4. Then Phase 2, and so on down the roadmap.
+
+All the owner's decisions for Phase 1 are made (`PHASE_1_LIFE_CYCLE.md` §11): the slower life pace, heirlooms with a small bonus, step 1 first.
+
+### Findings from the assessment (2026-11-11 and 12)
 
 1. **Births cannot happen in the live game.** A birth needs a couple sharing a house with a free place, and every house holds 2. Details in `PHASE_1_LIFE_CYCLE.md` §1.1.
 2. **No ordinary player can leave Camp.** `settlements.population` is stuck at 10 (only admin tools and the traveller event raise it) and a Village needs 20. Everything gated by tier is unreachable without Dev Tools.
 3. **Citizens do not age.** Age is a fixed number; children never grow up; nobody dies of old age.
 4. **Adding ageing alone would wipe out every town** within two months (`scripts/population_model.js`, scenario B). Births must need a free bed in town, houses must hold 4, and settlers must arrive as a safety net. With those, towns are stable.
 5. **No kin rule:** siblings or a parent and child could become partners once children grow up.
-6. **The agreed life pace is fast:** a death every 1.5 days in a 60-bed Village. The spec recommends a slower pace (§2 there) and makes every number tunable. **The owner has not yet chosen between them.**
-7. **The outpost trickle left haulers, haul settings and three buildings with little purpose.** See `OUTPOST_TRIM.md`.
-
-### What to do next
-
-1. **Phase 1, step 1** (`PHASE_1_LIFE_CYCLE.md` §9): houses hold 4, births need a free bed in town, the population number follows the real count, the kin rule, housing sorts itself. This fixes findings 1 and 2 and can ship alone. **Ask the owner whether to ship it straight away.**
-2. Then Phase 1 steps 2–7 as one release.
-3. Ask the owner the three questions in `PHASE_1_LIFE_CYCLE.md` §11 before step 2.
+6. **A player can put HTML in a username or town name and it runs in other players' browsers** (confirmed locally). The sign-in token is readable by page scripts, so this allows account takeover. `SECURITY_REVIEW.md` S1.
+7. **Other websites can act as a signed-in player** on routes that need no request body, through the sign-in cookie. `SECURITY_REVIEW.md` S2.
+8. **The dead still take up a place in their house** (`house_id` is never cleared).
+9. **The outpost trickle left haulers, haul settings and three buildings with little purpose.** See `OUTPOST_TRIM.md`.
 
 ### Nothing since R5 is merged
 
@@ -49,6 +66,10 @@ Everything from R6 onwards is on the branch `claude/vigilant-feynman-npuc6r` in 
 - **Render must have `JWT_SECRET` set** (16+ characters). With `NODE_ENV=production` the server now refuses to start without it.
 - **GitHub secrets for the frontend deploy:** `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD` (optional `FTP_DIR`). Without them the workflow only attaches the built site to the run.
 - The first deploy after merging turns the trickle on: the top bar's rates change for anyone with outposts.
+
+### Which model for what
+
+The owner plans to build with Opus and bring Fable back for judgement calls. Good moments to ask for a Fable review: the end of each phase ("does this still serve the pitch, and what should be cut?"), any change to the numbers in `PHASE_1_LIFE_CYCLE.md` §2, and any request for a new system.
 
 ---
 
