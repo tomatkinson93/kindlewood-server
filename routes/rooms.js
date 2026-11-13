@@ -15,13 +15,13 @@ const rooms = require('../lib/game_rooms');
 
 const { JWT_SECRET } = require('../lib/jwt_secret');
 
-// Mirrors stream.js: accept the JWT from the `token` cookie, a Bearer
+// Mirrors stream.js: accept the JWT from a Bearer
 // header, or the ?token= query string. The query fallback exists because
 // the API is cross-origin (kindlewood-api.onrender.com vs kindlewood.quest)
-// and EventSource cannot send headers or reliably carry third-party cookies.
+// and EventSource cannot send headers. The old sign-in cookie is not read.
 // Identity field is `userId` to match the auth.js JWT payload.
 function user(req) {
-  let token = req.cookies && req.cookies.token;
+  let token = null;   // no cookie: Bearer header or ?token= only (SECURITY_REVIEW S2)
   const authHeader = req.headers.authorization;
   if (!token && authHeader && authHeader.startsWith('Bearer ')) token = authHeader.slice(7);
   if (!token && req.query && req.query.token) token = String(req.query.token);

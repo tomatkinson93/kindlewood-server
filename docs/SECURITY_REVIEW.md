@@ -1,6 +1,6 @@
 # Security and exploit review (2026-11-12)
 
-Status: **findings only; nothing here is fixed yet.** Fix S1 and S2 before anything else, including Phase 1.
+Status: **S1–S4 fixed (2026-11-13)**; S5–S8 open. See "What was done" at the end.
 
 ## Scope and limits
 
@@ -84,6 +84,18 @@ Not covered: a line-by-line read of all 42 route files (the Market, at about 2,0
 ## One related bug (not security)
 
 `deaths.js` marks a citizen deceased but leaves their `house_id`. The housing route counts every citizen in a house, so **the dead still take up a place**. Phase 1's bed count must use living citizens only, and death should clear `house_id`.
+
+## What was done (2026-11-13)
+
+- **S1:**
+  - `lib/names.js` holds the rules, used by register and rename. Ruler names are 3–20 letters, digits, `_` or `-`, **with single spaces between words**. The review said no spaces, but the sign-up form's own example is "Aldric Thornpaw", and spaces carry no risk.
+  - Town names are 2–32 letters (any alphabet), digits, spaces, apostrophes, `_` or `-`. House names have `< > " & \`` stripped.
+  - `0NN_name_cleanup.sql` strips those characters from existing usernames and town names. A clash becomes `player<id>`.
+  - Client: `escHtml` at every place found (`main.js` tile panel, tier card, Ruler box, View Profile attributes). The event feed and event toasts are escaped or plain text. `verify/names_proofs.js` fails on any unescaped username, owner or town name in an HTML string.
+- **S2:** no cookie is set or read. Logout still clears an old one.
+- **S3:** `lib/rate_limit.js` (in memory, one instance): login 10 a minute per address and per email, register 5 an hour per address. Loopback is exempt outside production so local test runs work. `trust proxy` is 1 (`TRUST_PROXY_HOPS` overrides it). **Check after deploy** that `req.ip` is the player's address, not Render's, or every player shares one limit.
+- **S4:** strings only; email shape and 254-character cap; passwords 8–72 bytes. Login refuses non-strings.
+- Tests: `scripts/security_test.js`.
 
 ## Suggested order
 

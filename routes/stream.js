@@ -46,11 +46,11 @@ const KEEPALIVE_MS = 25 * 1000;   // < typical proxy idle timeout of 30s/60s
 
 const router = express.Router();
 
-// Custom auth: accept token from cookie, Authorization header, OR ?token=
+// Custom auth: accept token from the Authorization header OR ?token=
 // query string. The query-string fallback exists because the EventSource
 // constructor cannot set headers. We never log tokens.
 function authFromRequest(req) {
-  let token = req.cookies && req.cookies.token;
+  let token = null;   // no cookie: Bearer header or ?token= only (SECURITY_REVIEW S2)
   const authHeader = req.headers.authorization;
   if (!token && authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.slice(7);
@@ -140,7 +140,7 @@ router.get('/', async (req, res) => {
   }
 
   // Initial event so the client can confirm the stream is alive. Also
-  // useful as a "did our cookie work?" signal.
+  // useful as a "did sign-in work?" signal.
   send({ type: 'connected', settlement_id: settlementId, clan_id: clanId, staff, ts: Date.now() });
 
   // Subscribe to the bus. The returned function lets us clean up cleanly.

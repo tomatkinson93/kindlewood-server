@@ -15,9 +15,9 @@ const store = require('../lib/game_stats_store');
 const router = express.Router();
 const { JWT_SECRET } = require('../lib/jwt_secret');
 
-// ── Auth (cookie / Bearer / ?token=), same pattern as the other routes ──
+// ── Auth (Bearer / ?token=), same pattern as the other routes ──
 function user(req) {
-  let token = req.cookies && req.cookies.token;
+  let token = null;   // no cookie: Bearer header or ?token= only (SECURITY_REVIEW S2)
   const h = req.headers.authorization;
   if (!token && h && h.startsWith('Bearer ')) token = h.slice(7);
   if (!token && req.query && req.query.token) token = String(req.query.token);

@@ -154,8 +154,9 @@ router.post('/unassign', requireAuth, async (req, res) => {
 // ── PATCH /api/housing/:id/name — rename a house ─────────────────────────────
 router.patch('/:id/name', requireAuth, async (req, res) => {
   try {
-    const { name } = req.body;
-    if (!name || !name.trim()) return res.status(400).json({ error: 'Name required.' });
+    const raw = (req.body || {}).name;
+    const name = typeof raw === 'string' ? raw.trim().replace(/[<>"&`]/g, '').slice(0, 40) : '';
+    if (!name) return res.status(400).json({ error: 'Name required.' });
 
     const settRes = await query(
       'SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]
@@ -165,7 +166,7 @@ router.patch('/:id/name', requireAuth, async (req, res) => {
 
     const result = await query(
       'UPDATE houses SET name=$1 WHERE id=$2 AND settlement_id=$3 RETURNING id',
-      [name.trim().slice(0, 40), req.params.id, settlement.id]
+      [name, req.params.id, settlement.id]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'House not found.' });
 

@@ -323,17 +323,16 @@ router.get('/settlement', requireAuth, async (req, res) => {
 });
 
 router.patch('/settlement/rename', requireAuth, async (req, res) => {
-  const { name } = req.body;
-  if (!name || name.trim().length < 2)
-    return res.status(400).json({ error: 'Name must be at least 2 characters.' });
+  const name = require('../lib/names').cleanTownName((req.body || {}).name);
+  if (!name) return res.status(400).json({ error: require('../lib/names').TOWN_RULE });
   try {
     const settlementResult = await query(
       'SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]
     );
     const settlement = settlementResult.rows[0];
     if (!settlement) return res.status(404).json({ error: 'No settlement found.' });
-    await query('UPDATE settlements SET name=$1 WHERE id=$2', [name.trim(), settlement.id]);
-    res.json({ ok: true, name: name.trim() });
+    await query('UPDATE settlements SET name=$1 WHERE id=$2', [name, settlement.id]);
+    res.json({ ok: true, name });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Rename failed.' });

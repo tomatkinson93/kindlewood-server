@@ -29,6 +29,10 @@ app.use(cors({
   credentials: true,
 }));
 
+// Render puts one proxy in front of the app; trust it so req.ip is the
+// player's address (used by the sign-in rate limits). TRUST_PROXY_HOPS
+// overrides the count if that ever changes.
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS) || 1);
 app.use(express.json());
 app.use(cookieParser());
 // First-time steps per player, for the new-player funnel (lib/milestones).
