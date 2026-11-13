@@ -6,7 +6,7 @@ const router = express.Router();
 
 const HOUSED_HAPPINESS_BONUS  =  10; // applied when citizen is housed
 const UNHOUSED_HAPPINESS_CAP  =  50; // max happiness for unhoused citizens
-const HOUSING_CAPACITY = { starter_house: 2 };
+const HOUSING_CAPACITY = { starter_house: require('../lib/life').CONFIG.HOUSE_BEDS };   // 4
 
 // ── GET /api/housing — all houses + residents for this settlement ──────────────
 router.get('/', requireAuth, async (req, res) => {
@@ -28,7 +28,7 @@ router.get('/', requireAuth, async (req, res) => {
                 ORDER BY c.born_at
               ) FILTER (WHERE c.id IS NOT NULL) AS residents
        FROM houses h
-       LEFT JOIN citizens c ON c.house_id = h.id
+       LEFT JOIN citizens c ON c.house_id = h.id AND COALESCE(c.life_stage, 'adult') <> 'deceased'
        WHERE h.settlement_id = $1
        GROUP BY h.id
        ORDER BY h.created_at ASC`,
@@ -38,7 +38,7 @@ router.get('/', requireAuth, async (req, res) => {
     // Unhoused citizens
     const unhousedRes = await query(
       `SELECT id, name, gender, role FROM citizens
-       WHERE settlement_id=$1 AND (house_id IS NULL)
+       WHERE settlement_id=$1 AND (house_id IS NULL) AND COALESCE(life_stage, 'adult') <> 'deceased'
        ORDER BY born_at ASC`,
       [settlement.id]
     );
@@ -84,7 +84,7 @@ router.post('/assign', requireAuth, async (req, res) => {
 
     // Check capacity
     const occupantRes = await query(
-      'SELECT COUNT(*) FROM citizens WHERE house_id=$1', [house_id]
+      "SELECT COUNT(*) FROM citizens WHERE house_id=$1 AND COALESCE(life_stage, 'adult') <> 'deceased'", [house_id]
     );
     const occupants = parseInt(occupantRes.rows[0].count);
     if (occupants >= house.capacity)
@@ -92,10 +92,11 @@ router.post('/assign', requireAuth, async (req, res) => {
 
     // Validate citizen belongs to settlement
     const citizenRes = await query(
-      'SELECT id, name FROM citizens WHERE id=$1 AND settlement_id=$2',
+      "SELECT id, name, house_id FROM citizens WHERE id=$1 AND settlement_id=$2 AND COALESCE(life_stage, 'adult') <> 'deceased'",
       [citizen_id, settlement.id]
     );
     if (!citizenRes.rows[0]) return res.status(404).json({ error: 'Citizen not found.' });
+    if (citizenRes.rows[0].house_id === house.id) return res.json({ ok: true });
 
     // Assign
     await query('UPDATE citizens SET house_id=$1 WHERE id=$2', [house_id, citizen_id]);
@@ -180,7 +181,7 @@ router.patch('/:id/name', requireAuth, async (req, res) => {
 // ── Internal: create a house row when a starter_house building is built ───────
 // Called from buildings route after successful build
 async function createHouseForSettlement(settlementId, buildingType) {
-  const capacity = HOUSING_CAPACITY[buildingType] || 2;
+  const capacity = HOUSING_CAPACITY[buildingType] || require('../lib/life').CONFIG.HOUSE_BEDS;
   // Count existing houses of this type to auto-name
   const countRes = await query(
     "SELECT COUNT(*) FROM houses WHERE settlement_id=$1 AND building_type=$2",

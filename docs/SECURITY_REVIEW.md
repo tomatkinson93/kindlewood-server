@@ -83,7 +83,7 @@ Not covered: a line-by-line read of all 42 route files (the Market, at about 2,0
 
 ## One related bug (not security)
 
-`deaths.js` marks a citizen deceased but leaves their `house_id`. The housing route counts every citizen in a house, so **the dead still take up a place**. Phase 1's bed count must use living citizens only, and death should clear `house_id`.
+**Fixed 2026-11-13 (Phase 1 step 1).** `deaths.js` marked a citizen deceased but left their `house_id`. The housing route counts every citizen in a house, so **the dead still take up a place**. Phase 1's bed count must use living citizens only, and death should clear `house_id`.
 
 ## What was done (2026-11-13)
 

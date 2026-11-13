@@ -31,7 +31,7 @@ The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-fronte
 ### What to do next, in order
 
 1. ~~Security fixes S1–S4~~ (done 2026-11-13; S5 a file at a time as files are touched).
-2. **Phase 1, step 1** (`PHASE_1_LIFE_CYCLE.md` §9), shipped on its own:
+2. ~~**Phase 1, step 1**~~ (built 2026-11-13; see `PHASE_1_LIFE_CYCLE.md` §9 for what to watch after deploy), shipped on its own:
    - houses hold 4;
    - births need a free bed in town;
    - the population number follows the real count;
@@ -46,6 +46,8 @@ The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-fronte
 All the owner's decisions for Phase 1 are made (`PHASE_1_LIFE_CYCLE.md` §11): the slower life pace, heirlooms with a small bonus, step 1 first.
 
 ### Findings from the assessment (2026-11-11 and 12)
+
+(Findings 1, 2, 5, 6, 7 and 8 are fixed as of 2026-11-13.)
 
 1. **Births cannot happen in the live game.** A birth needs a couple sharing a house with a free place, and every house holds 2. Details in `PHASE_1_LIFE_CYCLE.md` §1.1.
 2. **No ordinary player can leave Camp.** `settlements.population` is stuck at 10 (only admin tools and the traveller event raise it) and a Village needs 20. Everything gated by tier is unreachable without Dev Tools.

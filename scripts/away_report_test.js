@@ -87,7 +87,7 @@ const T0 = Date.parse('2026-11-05T03:00:00Z');   // post-cutover: 7h seasons
     assert.strictEqual(sim.events.filter(e => e.type === 'close_bond').length, 1);
     assert.strictEqual(sim.events[0].at, T0 + 1 * H);   // 59 + 0.858×2 ≥ 60 on the 2nd hour
   });
-  await test('3d breeding rolls every hour but never overfills the house', () => {
+  await test('3d breeding rolls every hour but never overfills the town (free beds)', () => {
     const orig = Math.random; Math.random = () => 0;     // every roll succeeds
     try {
       const a = mkCit(1, { partner_id: 2 }), b = mkCit(2, { partner_id: 1 });

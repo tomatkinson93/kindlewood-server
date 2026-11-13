@@ -29,8 +29,9 @@ async function writeDeathEvent({
   bodyPart = null,
   sourceBattleId = null,
 }) {
+  // The dead give up their bed (docs/PHASE_1_LIFE_CYCLE.md §4.4).
   await query(
-    `UPDATE citizens SET life_stage='deceased' WHERE id=$1`,
+    `UPDATE citizens SET life_stage='deceased', house_id=NULL WHERE id=$1`,
     [citizenId]
   );
   // Their gear goes back to the stores.
@@ -41,6 +42,10 @@ async function writeDeathEvent({
      VALUES ($1,$2,'death',$3,$4,$5,$6,$7) RETURNING *`,
     [citizenId, settlementId, severity, bodyPart, narrative, sourceBattleId, cause]
   );
+  // The population follows the living; a freed bed may house someone.
+  const life = require('./lib/life');
+  await life.recount(settlementId).catch(() => {});
+  await life.autoHouse(settlementId).catch(() => {});
   return ev.rows[0];
 }
 

@@ -279,6 +279,9 @@ router.get('/settlement', requireAuth, async (req, res) => {
     await research.settle(settlement.id).catch(e => console.error('[research] settle failed:', e.message));
     const discovered = await resourcesLib.discoveredKeys(null, settlement.id);
     const newDiscoveries = await resourcesLib.unseen(null, settlement.id);
+    // Population and beds from live counts (docs/PHASE_1_LIFE_CYCLE.md §5).
+    settlement.population = await require('../lib/life').recount(settlement.id);
+    const bedInfo = await require('../lib/life').beds(settlement.id);
 
     console.log(`SETTLEMENT returning tile_q=${settlement.tile_q} for user=${req.user.userId}`);
     res.json({
@@ -299,6 +302,7 @@ router.get('/settlement', requireAuth, async (req, res) => {
         season,
         population: settlement.population,
         population_cap: settlement.population_cap,
+        beds: bedInfo.beds,
         happiness: (() => {
           // Base happiness + 10 per tavernkeep + careers (warm hearths, vigils…)
           const tavernkeepCount = workforce.filter(c => c.role === 'tavernkeep').length;
@@ -471,7 +475,9 @@ router.post('/cheat/citizen', requireAuth, requireAdmin, async (req, res) => {
        JSON.stringify(citizen.life), JSON.stringify(citizen.repro),
        JSON.stringify(citizen.visible_traits), JSON.stringify(citizen.hidden_traits)]
     );
-    await query('UPDATE settlements SET population = population + 1 WHERE id=$1', [settlement.id]);
+    const life = require('../lib/life');
+    await life.recount(settlement.id);
+    await life.autoHouse(settlement.id);
     res.json({ ok: true, name: citizen.name });
   } catch (err) {
     console.error(err);
@@ -709,6 +715,7 @@ router.patch('/cheat/citizen/:id', requireAuth, requireAdmin, async (req, res) =
     if (gender     !== undefined) { updates.push(`gender=$${i++}`);     vals.push(gender); }
     if (role       !== undefined) { updates.push(`role=$${i++}`);       vals.push(role); }
     if (life_stage !== undefined) { updates.push(`life_stage=$${i++}`); vals.push(life_stage); }
+    if (life_stage === 'deceased') updates.push('house_id=NULL');
     if (generation !== undefined) { updates.push(`generation=$${i++}`); vals.push(generation); }
     if (stats !== undefined) {
       const merged = { ...(c.stats || {}), ...stats };
@@ -726,6 +733,7 @@ router.patch('/cheat/citizen/:id', requireAuth, requireAdmin, async (req, res) =
 
     vals.push(req.params.id, settlement.id);
     await query(`UPDATE citizens SET ${updates.join(',')} WHERE id=$${i++} AND settlement_id=$${i++}`, vals);
+    if (life_stage !== undefined) await require('../lib/life').recount(settlement.id);
     res.json({ ok: true });
   } catch (err) {
     console.error(err);
@@ -1399,6 +1407,7 @@ router.get('/tier-info', requireAuth, async (req, res) => {
     const currentTierIndex = TIER_ORDER.indexOf(s.tier);
     const nextTier = TIER_ORDER[currentTierIndex + 1];
     const req2 = nextTier ? TIER_REQUIREMENTS[nextTier] : null;
+    s.population = await require('../lib/life').recount(s.id);   // live count, not the stored number
 
     let canUpgrade = false;
     let requirementsMet = {};
@@ -1457,6 +1466,8 @@ router.post('/upgrade-tier', requireAuth, async (req, res) => {
       'SELECT COUNT(*) FROM buildings WHERE settlement_id=$1', [s.id]
     );
     const buildingCount = parseInt(buildingsRes.rows[0].count);
+
+    s.population = await require('../lib/life').recount(s.id);   // live count, not the stored number
 
     // Validate all requirements
     const errors = [];

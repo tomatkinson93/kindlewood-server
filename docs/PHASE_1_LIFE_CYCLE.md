@@ -1,6 +1,6 @@
 # Phase 1 — the life cycle (build spec)
 
-Status: **ready to build**; decisions in §11 are made. Written 2026-11-11, updated 2026-11-12. Part of `docs/ROADMAP_1_0.md`.
+Status: **step 1 built (2026-11-13)**; steps 2–7 ready to build. Decisions in §11 are made. Written 2026-11-11, updated 2026-11-13. Part of `docs/ROADMAP_1_0.md`.
 Read §1 first: it lists two bugs in the live game that block progress today.
 
 ## 1. Findings from the assessment
@@ -212,6 +212,19 @@ Each step ends with tests passing. **Steps 2–6 ship together**: death without 
    - housing sorts itself.
 
    This fixes B1 and B2.
+
+   **Built (2026-11-13):**
+   - `lib/life.js` has `kin`, `recount`, `livingCount`, `beds`, `planHousing` and `autoHouse`. Step 2 adds ages and stages to the same file.
+   - `0NN_life_beds.sql` sets huts to 4, takes the dead out of houses and fixes the stuck population.
+   - `simulation.js` applies the bed rule and the kin rule. The baby sleeps in a parent's house with room, otherwise another house with room.
+   - `autoHouse` runs after each simulation run, after a hut is built or pulled down, and after a death or a new arrival. It moves a housed citizen only when they have just found a partner.
+   - Tier checks and `GET /settlement` use the live count; the settlement also returns `beds`.
+   - Tests: `scripts/life_test.js`.
+   - **Watch after deploy:**
+     - every town's huts double in size at once, so towns with partners will fill their free beds within days;
+     - until step 2, children never grow up: they eat half a ration and do not work. A Camp of 10 adults can gain 10 children and about 5 more food an hour of upkeep.
+
+   Step 2 should follow soon.
 2. **`lib/life.js`** with ages from `born_at`, the migration for existing towns, and stages shown in the client.
 3. **Youths and elders:** apprenticeship, mentors, part-strength work, coming of age.
 4. **Death, families and inheritance:** death rolls, heirs, heirlooms, headship.

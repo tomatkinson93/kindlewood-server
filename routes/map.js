@@ -533,6 +533,7 @@ router.post('/arrive', requireAuth, async (req, res) => {
       // Careers: jobs whose building this species doesn't start with → Forager.
       await require('../lib/careers').fixRoles(settlement.id).catch(e => console.error('[careers] fixRoles:', e.message));
       console.log(`Generated ${citizens.length} citizens for settlement ${settlement.id}`);
+      await require('../lib/life').recount(settlement.id);
     }
 
     res.json({ ok: true, q: tile.q, r: tile.r, terrain: tile.terrain, species, zone });
