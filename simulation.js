@@ -85,6 +85,8 @@ async function runSimulation(settlement, hoursElapsed, lastSimAt) {
   const firstMs = startMs + (hours - simHours) * HOUR;
   // Children of 12+ come of age first, so they can bond and partner this run.
   await LIFE.comeOfAge(settlementId).catch(e => console.error('[life] comeOfAge:', e.message));
+  await require('./lib/inheritance').settleDue(settlementId).catch(e => console.error('[inheritance] settleDue:', e.message));
+  await require('./lib/settlers').arrive(settlementId).catch(e => console.error('[settlers] arrive:', e.message));
 
   const citizenRes = await query(
     `SELECT * FROM citizens WHERE settlement_id = $1 AND COALESCE(life_stage, 'adult') != 'deceased'`,
@@ -92,18 +94,56 @@ async function runSimulation(settlement, hoursElapsed, lastSimAt) {
   );
   const citizens = citizenRes.rows;
   const adults = citizens.filter(c => (c.life_stage || 'adult') === 'adult');
-  if (adults.length < 2) return;
+  if (!citizens.length) return;   // fewer than two adults still age and may die
 
   const hDefs = await require('./lib/happenings').loadLive();
   const sim = await _loadSimState(settlementId, citizens, adults);
+  sim.away = await _awaySet(settlementId);
   for (let h = 0; h < simHours; h++) {
     const at = firstMs + h * HOUR + HOUR / 2;          // mid-hour: the modifiers for this hour
     const ctx = { at, season: seasonAt(at), hMods: HFX.modifiersAt(hDefs, at) };
     _hourRelationships(sim, ctx);
     _hourPartnerships(sim, ctx);
     _hourBreeding(sim, ctx);
+    _hourDeaths(sim, ctx);
   }
   await _persistSimState(settlementId, sim);
+}
+
+// Who is away right now (quests, scouting, the road, an outpost): they don't
+// die of old age until they are home (§4.4).
+async function _awaySet(settlementId) {
+  const out = new Set();
+  try { for (const id of (await require('./lib/careers').awayMap(null, settlementId)).keys()) out.add(Number(id)); } catch (e) { /* none */ }
+  try {
+    const r = await query(`SELECT oc.citizen_id FROM outpost_crew oc JOIN outposts o ON o.id = oc.outpost_id WHERE o.settlement_id = $1`, [settlementId]);
+    r.rows.forEach(x => out.add(Number(x.citizen_id)));
+  } catch (e) { /* no outposts yet */ }
+  return out;
+}
+
+// ── Step 5 (hourly): old age ──────────────────
+// One roll per game year from 70, on the birthday (last_birthday_year
+// guards against rolling twice). Skipped catch-up hours roll nothing. The
+// dead leave the pairs at once, and their bed is free.
+function _hourDeaths(sim, ctx) {
+  for (const c of Object.values(sim.byId)) {
+    if (c._dead) continue;
+    const year = Math.floor(LIFE.ageOf(c, ctx.at));
+    if (c.last_birthday_year == null) { c.last_birthday_year = year; c._bday = true; continue; }   // start counting now
+    if (year <= c.last_birthday_year || year < LIFE.CONFIG.DEATH_FROM) {
+      if (year > c.last_birthday_year) { c.last_birthday_year = year; c._bday = true; }
+      continue;
+    }
+    if (sim.away && sim.away.has(Number(c.id))) continue;   // rolls when home
+    c.last_birthday_year = year; c._bday = true;
+    if (Math.random() >= LIFE.deathChance(year)) continue;
+    c._dead = true;
+    (sim.deaths || (sim.deaths = [])).push({ c, at: ctx.at, age: year });
+    if (typeof sim.freeBeds === 'number') sim.freeBeds++;
+    const house = c.house_id && sim.houses && sim.houses[c.house_id];
+    if (house) house.occupants = Math.max(0, house.occupants - 1);
+  }
 }
 
 // Everything the hourly loop reads or changes, keyed for quick lookup.
@@ -150,6 +190,7 @@ function _happiness(c, ctx) { return (c.life?.happiness ?? 70) + (ctx.hMods.happ
 // ── Step 1 (hourly): relationship scores ─────
 function _hourRelationships(sim, ctx) {
   for (const [a, b] of sim.pairs) {
+    if (a._dead || b._dead) continue;
     const key = `${a.id}_${b.id}`;
     let gain = CFG.BASE_PROXIMITY;
     if (a.house_id && b.house_id && a.house_id === b.house_id) gain += CFG.SAME_HOUSE_GAIN;
@@ -205,6 +246,7 @@ async function awardQuestRelationshipBonus(settlementId, citizenIds) {
 // ── Step 3 (hourly): partnership formation ────
 function _hourPartnerships(sim, ctx) {
   for (const [a, b] of sim.pairs) {
+    if (a._dead || b._dead) continue;
     if (a.partner_id || b.partner_id) continue;
     if (LIFE.kin(a, b)) continue;   // never parent and child, siblings or half-siblings
     const rel = sim.rels[`${a.id}_${b.id}`];
@@ -237,6 +279,7 @@ function _houseForChild(sim, a, b) {
 }
 function _hourBreeding(sim, ctx) {
   for (const [a, b] of sim.pairs) {
+    if (a._dead || b._dead) continue;
     if (a.partner_id !== b.id || a.gender === b.gender) continue;
     if (_freeBeds(sim) <= 0) continue;
     // Both fertile (14–55), two years since their last child, fewer than four.
@@ -299,13 +342,24 @@ async function _persistSimState(settlementId, sim) {
     await query('UPDATE citizens SET partner_id = $1 WHERE id = $2', [b.id, a.id]);
     await query('UPDATE citizens SET partner_id = $1 WHERE id = $2', [a.id, b.id]);
   }
-  for (const e of sim.events) await _addEvent(settlementId, e.type, e.message, e.ids, e.at);
+  for (const e of sim.events) {
+    await _addEvent(settlementId, e.type, e.message, e.ids, e.at);
+    if (e.type === 'partnership') await require('./lib/chronicle').write(settlementId, { kind: 'partnership', text: e.message.replace(/\s*💕\s*$/, ''), citizenIds: e.ids, at: e.at });
+  }
   for (const birth of sim.births) await _createChild(settlementId, birth.pair, birth.at, birth.house);
+  for (const c of Object.values(sim.byId || {})) {
+    if (c._bday && !c._dead) await query('UPDATE citizens SET last_birthday_year = $1 WHERE id = $2', [c.last_birthday_year, c.id]).catch(() => {});
+  }
+  for (const d of sim.deaths || []) {
+    await query('UPDATE citizens SET last_birthday_year = $1 WHERE id = $2', [d.age, d.c.id]).catch(() => {});
+    await require('./deaths').writeDeathEvent({ citizenId: d.c.id, settlementId, cause: 'old_age',
+      narrative: `${_name(d.c)} passed away peacefully at ${d.age}.`, at: d.at });
+  }
   // Housing sorts itself: new partners move in together, and anyone without
   // a home takes a free bed (lib/life.js). Then the population follows.
   await LIFE.autoHouse(settlementId, { couples: sim.newPartners.map(([a, b]) => [a.id, b.id]) })
     .catch(e => console.error('[life] autoHouse:', e.message));
-  if (sim.births.length) await LIFE.recount(settlementId);
+  if (sim.births.length || (sim.deaths && sim.deaths.length)) await LIFE.recount(settlementId);
 }
 
 // ── Step 5: Child creation ────────────────────
@@ -423,6 +477,8 @@ async function _createChild(settlementId, pair, atMs = null, house = null) {
   if (!atMs) await LIFE.recount(settlementId);   // the simulation recounts once after its births
 
   const babyGender = isFemale ? 'daughter' : 'son';
+  await require('./lib/chronicle').write(settlementId, { kind: 'birth', text: `${childName} was born to ${pair.name_a} and ${pair.name_b} in ${houseName}.`,
+    citizenIds: [childId, pair.id_a, pair.id_b], familyId: fam ? fam.id : null, at: atMs });
   await _addEvent(settlementId, 'child_born',
     `New beginnings — ${pair.name_a} and ${pair.name_b} welcome a ${babyGender} into the world. 🍼 May ${childName} grow strong in ${houseName}.`,
     [pair.id_a, pair.id_b, childId], atMs
@@ -462,4 +518,4 @@ function _name(citizen) {
 }
 
 module.exports = { runSimulation, awardQuestRelationshipBonus, _createChild, CFG, SIM_MAX_CATCHUP_HOURS,
-  _hourly: { relationships: _hourRelationships, partnerships: _hourPartnerships, breeding: _hourBreeding } };
+  _hourly: { relationships: _hourRelationships, partnerships: _hourPartnerships, breeding: _hourBreeding, deaths: _hourDeaths } };

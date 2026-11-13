@@ -164,6 +164,30 @@ router.get('/', requireAuth, async (req, res) => {
       if (t && (!e.lastChildAt || t > e.lastChildAt)) e.lastChildAt = t;
     }
 
+    // The dead: memorial lines and inheritances (lib/inheritance). The living:
+    // heirlooms they carry, and the bonus when it is their family's.
+    const H = require('../lib/inheritance');
+    const memorials = {};
+    (await query(`SELECT citizen_ids, text FROM chronicle WHERE settlement_id = $1 AND kind = 'death' ORDER BY at ASC`, [settlement.id]).catch(() => ({ rows: [] }))).rows
+      .forEach(r => { const id = (r.citizen_ids || [])[0]; if (id) memorials[id] = r.text; });
+    const inheritances = {};
+    for (const r of (await query(`SELECT * FROM inheritances WHERE settlement_id = $1`, [settlement.id]).catch(() => ({ rows: [] }))).rows) inheritances[r.deceased_id] = r;
+    const gearRows = (await query(`SELECT id, name, equipped_to, metadata FROM inventory_items WHERE settlement_id = $1 AND (equipped_to IS NOT NULL OR metadata ? 'heirloom')`, [settlement.id]).catch(() => ({ rows: [] }))).rows;
+    const nameById = Object.fromEntries(citizensRes.rows.map(x => [x.id, x.name]));
+    const inheritanceOf = async c => {
+      const r = inheritances[c.id];
+      if (!r) return null;
+      return {
+        status: r.status, heir_id: r.heir_id, heir_name: nameById[r.heir_id] || null,
+        default_heir_id: r.default_heir_id, settle_at: r.settle_at,
+        trade: r.class_key, xp: Number(r.xp) || 0,
+        items: (r.item_ids || []).map(id => (gearRows.find(g => g.id === Number(id)) || {}).name).filter(Boolean),
+        candidates: r.status === 'open' ? await H.candidates(settlement.id, c.id) : [],
+      };
+    };
+    const deadExtras = {};
+    for (const c of citizensRes.rows) if (c.life_stage === 'deceased') deadExtras[c.id] = await inheritanceOf(c);
+
     const citizens = citizensRes.rows.map(c => {
       const context = {
         season,
@@ -244,6 +268,14 @@ router.get('/', requireAuth, async (req, res) => {
         age: Math.floor(LIFE.ageOf(c, now)),
         stage: LIFE.stageOf(c, now),
         family_id: c.family_id || null,
+        heirlooms: gearRows.filter(g => g.equipped_to === c.id && g.metadata && g.metadata.heirloom).map(g => ({
+          name: g.name, from: g.metadata.heirloom.from_name, generations: g.metadata.heirloom.generations || 1,
+          bonus: Math.round(H.heirloomBonus(g, c) * 100),   // 0 when carried outside the family
+        })),
+        ...(c.life_stage === 'deceased' ? {
+          died_at: c.died_at || null, death_cause: c.death_cause || null,
+          memorial: memorials[c.id] || null, inheritance: deadExtras[c.id] || null,
+        } : {}),
         visible_traits: c.visible_traits || [],
         revealed_hidden_traits: [],
         ...(careerInfo.get(c.id) || {}),
@@ -307,6 +339,26 @@ router.get('/:id', requireAuth, async (req, res) => {
 
 // Update citizen role (careers: time so far is credited to the old job; a
 // job needs its building — lib/careers/classes.js).
+// ── POST /api/citizens/:id/heir { heir_id } ──────────────────────────────
+// Answer an inheritance (until moments exist): who takes up the dead
+// citizen's things. Settles at once; unanswered, the default heir inherits
+// when the time is up (docs/PHASE_1_LIFE_CYCLE.md §4.8).
+router.post('/:id/heir', requireAuth, async (req, res) => {
+  try {
+    const sRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const settlement = sRes.rows[0];
+    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+    const heirId = Number((req.body || {}).heir_id);
+    if (!Number.isInteger(heirId) || heirId <= 0) return res.status(400).json({ error: 'Choose an heir.' });
+    const r = await require('../lib/inheritance').choose(settlement.id, Number(req.params.id), heirId);
+    res.json({ ok: true, heir_id: r && r.heir ? r.heir.id : null, worn: r ? r.worn : [], gained: r ? r.gained : 0 });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Failed to pass on their things.' });
+  }
+});
+
 // ── POST /api/citizens/:id/apprentice { class, mentor_id? } ──────────────
 // A youth (7–11) chooses the trade they learn and, optionally, who teaches
 // them (docs/PHASE_1_LIFE_CYCLE.md §4.2). Without a mentor_id the best free

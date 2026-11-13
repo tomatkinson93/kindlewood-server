@@ -40,8 +40,9 @@ The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-fronte
    - death clears `house_id`.
 
    This fixes the two live bugs below.
-3. ~~**The window component**~~ (built 2026-11-13: `KWWindow`, `css/tokens.css`; `LAYOUT_SPEC.md` §3.3a), then **Phase 1 steps 2–7** as one release, with the Families screens built on it.
-4. Then Phase 2, and so on down the roadmap.
+3. ~~**The window component**~~ (built 2026-11-13: `KWWindow`, `css/tokens.css`; `LAYOUT_SPEC.md` §3.3a).
+4. ~~**Phase 1 steps 2–6**~~ (built 2026-11-13; merge as one release), then **step 7**: Dev Tools and tuning.
+5. Then Phase 2, and so on down the roadmap.
 
 All the owner's decisions for Phase 1 are made (`PHASE_1_LIFE_CYCLE.md` §11): the slower life pace, heirlooms with a small bonus, step 1 first.
 
@@ -59,9 +60,9 @@ All the owner's decisions for Phase 1 are made (`PHASE_1_LIFE_CYCLE.md` §11): t
 8. **The dead still take up a place in their house** (`house_id` is never cleared).
 9. **The outpost trickle left haulers, haul settings and three buildings with little purpose.** See `OUTPOST_TRIM.md`.
 
-### ⚠ Do not merge yet
+### Ready to merge: the Phase 1 release
 
-From 2026-11-13 the branch holds **Phase 1 steps 2 onwards**, which ship together at step 6. Merging earlier would give players ageing without inheritance or the chronicle. Everything before that (security fixes, step 1, the deploy fixes, the window component) is already on `main`.
+The branch holds **Phase 1 steps 2–6**, the life cycle, which ships as one release. It is complete and tested. What to watch after the deploy is in `PHASE_1_LIFE_CYCLE.md` §9a. Step 7 (Dev Tools and tuning) can follow in its own merge.
 
 ### Merged
 

@@ -61,3 +61,34 @@ UPDATE citizens c
   FROM families f
  WHERE c.family_id IS NULL AND f.settlement_id = c.settlement_id
    AND f.name = COALESCE(NULLIF(split_part(c.name, ' ', 2), ''), 'Woodkin');
+
+-- Inheritances (step 4, §4.8): opened at a death with the default heir;
+-- the player may pick another from the family until settle_at, then the
+-- default happens by itself. Heirlooms are the item_ids, already tagged.
+CREATE TABLE IF NOT EXISTS inheritances (
+  id               SERIAL PRIMARY KEY,
+  settlement_id    INTEGER NOT NULL REFERENCES settlements(id) ON DELETE CASCADE,
+  deceased_id      INTEGER NOT NULL,
+  family_id        INTEGER,
+  default_heir_id  INTEGER,
+  heir_id          INTEGER,
+  class_key        TEXT,
+  xp               NUMERIC NOT NULL DEFAULT 0,
+  item_ids         JSONB NOT NULL DEFAULT '[]'::jsonb,
+  status           TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'settled')),
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  settle_at        TIMESTAMPTZ NOT NULL DEFAULT NOW() + interval '24 hours',
+  settled_at       TIMESTAMPTZ,
+  UNIQUE (deceased_id)
+);
+CREATE INDEX IF NOT EXISTS idx_inheritances_open ON inheritances (settlement_id) WHERE status = 'open';
+
+-- The head of each family is its oldest living adult.
+UPDATE families f SET head_citizen_id = (
+  SELECT c.id FROM citizens c WHERE c.family_id = f.id AND c.life_stage = 'adult' ORDER BY c.born_at ASC, c.id ASC LIMIT 1)
+ WHERE f.head_citizen_id IS DISTINCT FROM (
+  SELECT c.id FROM citizens c WHERE c.family_id = f.id AND c.life_stage = 'adult' ORDER BY c.born_at ASC, c.id ASC LIMIT 1);
+
+-- Settlers (step 5, §4.7): when the last one arrived. NULL until the town's
+-- first check, which only starts the clock.
+ALTER TABLE settlements ADD COLUMN IF NOT EXISTS last_settler_at TIMESTAMPTZ;

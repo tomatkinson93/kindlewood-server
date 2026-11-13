@@ -5,7 +5,9 @@
 //  their bed. Step 2: ages from born_at, stages, death chance, fertility and
 //  the gap between children, families, the migration for existing towns.
 //  Step 3: apprenticeships and mentors, youth XP and output, elders at 60%,
-//  coming of age.
+//  coming of age. Step 4: death of old age, widows, heirs, heirlooms,
+//  knowledge, headship, memorials. Step 5: settlers. Step 6: the chronicle
+//  everywhere and the families API.
 //   DATABASE_URL=postgres://… QUEST_TEST_BASE=http://localhost:3999 node scripts/life_test.js
 // ══════════════════════════════════════════════════════════════════════════
 'use strict';
@@ -179,6 +181,69 @@ async function main() {
     check(hf.factors.some(f => /elder at home/.test(f.label) && f.value === 3), 'an elder at home is a happiness factor for the household');
   }
 
+  console.log('Old age (step 4, pure)');
+  {
+    const Y = LIFE.YEAR_MS, H = 3600e3;
+    const orig = Math.random; Math.random = () => 0;   // every roll is a death
+    try {
+      const t0 = Date.UTC(2026, 7, 1);
+      const old = mk(1, { born_at: new Date(t0 - (70 * Y - 2 * H)), last_birthday_year: 69, house_id: 1 });   // 70 in two hours
+      const young = mk(2, { born_at: new Date(t0 - 30 * Y), last_birthday_year: 29 });
+      const sim = { byId: { 1: old, 2: young }, pairs: [[old, young]], houses: { 1: { id: 1, capacity: 4, occupants: 2 } }, freeBeds: 2, deaths: [], rels: {}, newPartners: [], events: [], births: [] };
+      for (let h = 0; h < 5; h++) SIM._hourly.deaths(sim, { at: t0 + h * H });
+      check(sim.deaths.length === 1 && sim.deaths[0].c.id === 1 && sim.deaths[0].age === 70, 'the roll comes on the 70th birthday, once');
+      check(sim.deaths[0].at >= t0 + 2 * H && old._dead && sim.freeBeds === 3 && sim.houses[1].occupants === 1, 'back-dated to its hour; the bed is free at once');
+      const s2 = { pairs: [[old, young]], rels: {}, houses: { 1: { id: 1, capacity: 4, occupants: 1 } }, freeBeds: 3, couples: {}, newPartners: [], events: [], births: [] };
+      old.partner_id = 2; young.partner_id = 1;
+      SIM._hourly.breeding(s2, { ...ctx, at: t0 + 6 * H });
+      check(s2.births.length === 0, 'the dead take no part in later hours');
+
+      const away = mk(3, { born_at: new Date(t0 - (75 * Y - H)), last_birthday_year: 74 });
+      const s3 = { byId: { 3: away }, pairs: [], houses: {}, deaths: [], away: new Set([3]) };
+      for (let h = 0; h < 4; h++) SIM._hourly.deaths(s3, { at: t0 + h * H });
+      check(s3.deaths.length === 0 && away.last_birthday_year === 74, 'someone away does not die of old age …');
+      s3.away = new Set();
+      SIM._hourly.deaths(s3, { at: t0 + 5 * H });
+      check(s3.deaths.length === 1, '… until they are home');
+
+      const fresh = mk(4, { born_at: new Date(t0 - 80 * Y), last_birthday_year: null });
+      const s4 = { byId: { 4: fresh }, pairs: [], houses: {}, deaths: [] };
+      SIM._hourly.deaths(s4, { at: t0 });
+      check(s4.deaths.length === 0 && fresh.last_birthday_year === 80, 'no birthday on record: counting starts now, no roll owed');
+      Math.random = () => 0.99;
+      const lucky = mk(5, { born_at: new Date(t0 - (72 * Y - H)), last_birthday_year: 71 });
+      const s5 = { byId: { 5: lucky }, pairs: [], houses: {}, deaths: [] };
+      for (let h = 0; h < 20; h++) SIM._hourly.deaths(s5, { at: t0 + h * H });   // under a game year (28 h)
+      check(s5.deaths.length === 0 && lucky.last_birthday_year === 72, 'a survived roll is not repeated within the year');
+    } finally { Math.random = orig; }
+
+    const IH = require('../lib/inheritance');
+    const item = gen => ({ metadata: { heirloom: { family_id: 7, generations: gen } } });
+    check(IH.heirloomBonus(item(1), { family_id: 7 }) === 0.05 && Math.abs(IH.heirloomBonus(item(3), { family_id: 7 }) - 0.07) < 1e-9 && IH.heirloomBonus(item(9), { family_id: 7 }) === 0.1,
+      'heirloom bonus: +5%, +1% a generation, at most +10%');
+    check(IH.heirloomBonus(item(1), { family_id: 8 }) === 0 && IH.heirloomBonus({ metadata: {} }, { family_id: 7 }) === 0, 'nothing outside the family, nothing for ordinary gear');
+    const line = IH.memorialLine({ name: 'Hazel Oakbrook', role: 'farmer' }, { age: 78, wasHead: true, top: { level: 12, hours_worked: 0 }, cause: 'old_age', heirName: 'Rowan Oakbrook', items: 1 });
+    check(/Hazel Oakbrook passed away peacefully at 78/.test(line) && /farmer of level 12/.test(line) && /head of the Oakbrook family/.test(line) && /pass to Rowan Oakbrook/.test(line), 'a memorial says who they were');
+  }
+
+  console.log('Settlers (step 5, pure)');
+  {
+    const ST = require('../lib/settlers'), D = 864e5, now = Date.UTC(2026, 8, 1);
+    check(ST.plan({ last: now - 6.9 * D, now, freeBeds: 5, working: 10 }).length === 0 && ST.plan({ last: now - 7 * D, now, freeBeds: 5, working: 10 }).length === 1,
+      'while a bed is free, one settler every 7 days');
+    const two = ST.plan({ last: now - 15 * D, now, freeBeds: 5, working: 10 });
+    check(two.length === 2 && two[0] === now - 8 * D && two[1] === now - D, 'away for 15 days: two, each dated to when they would have come');
+    check(ST.plan({ last: now - 2.5 * D, now, freeBeds: 5, working: 4 }).length === 2, 'fewer than 6 working adults: one arrives the next day (and the next)');
+    const rescue = ST.plan({ last: now - 30 * D, now, freeBeds: 9, working: 5 });
+    check(rescue.length === 3 && rescue[1] - rescue[0] === 7 * D, 'once the rescue brings them to 6, back to every 7 days; never more than 3 at once');
+    check(ST.plan({ last: now - 30 * D, now, freeBeds: 0, working: 2 }).length === 0 && ST.plan({ last: now - 30 * D, now, freeBeds: 1, working: 2 }).length === 1, 'never more settlers than free beds');
+    const { LAST_NAMES } = require('../citizens');
+    const taken = new Set(LAST_NAMES.slice(1));
+    check(ST.newSurname(taken) === LAST_NAMES[0], 'a settler takes a surname no family in the town uses');
+    const coined = ST.newSurname(new Set(LAST_NAMES));
+    check(!LAST_NAMES.includes(coined) && /^[A-Z][a-z]+$/.test(coined), `when every listed surname is taken, a new one is coined (${coined})`);
+  }
+
   // ── Against the database and the running API ─────────────────────────────
   const { pool } = require('../db');
   const jwt = require('jsonwebtoken');
@@ -317,6 +382,170 @@ async function main() {
     await q("UPDATE citizens SET born_at = $1, apprentice_class = 'farmer' WHERE id = $2", [LIFE.bornAtFor(12.5).toISOString(), y2]);
     await LIFE.comeOfAge(s.id);
     check((await q('SELECT role FROM citizens WHERE id = $1', [y2])).rows[0].role === 'forager', 'a trade the town has no building for becomes Forager');
+  }
+
+  console.log('Death, heirs and heirlooms (step 4)');
+  {
+    const IH = require('../lib/inheritance');
+    // The Ashby family: an old miner (the head, Lv 10, a pick), her partner,
+    // two grown children (the elder a miner), and a stranger.
+    const gran = await cit('Hazel Ashby', { gender: 'female', age: 76 });
+    const gramps = await cit('Tobias Ashby', { gender: 'male', age: 74 });
+    const kid1 = await cit('Rowan Ashby', { age: 40, parent_ids: [gran, gramps] });
+    const kid2 = await cit('Sorrel Ashby', { age: 33, parent_ids: [gran, gramps] });
+    const stranger = await cit('Moss Fernley', { age: 50 });
+    await q("UPDATE citizens SET role = 'miner' WHERE id = ANY($1)", [[gran, kid1]]);
+    await q('UPDATE citizens SET partner_id = $1 WHERE id = $2', [gramps, gran]);
+    await q('UPDATE citizens SET partner_id = $1 WHERE id = $2', [gran, gramps]);
+    await q('UPDATE citizens SET family_id = NULL WHERE id = ANY($1)', [[gran, gramps, kid1, kid2, stranger]]);
+    await LIFE.assignFamilies(s.id);
+    await q("INSERT INTO citizen_classes (citizen_id, settlement_id, class_key, xp, level, hours_worked) VALUES ($1, $2, 'miner', 4000, 10, 900)", [gran, s.id]);
+    const pick = (await q(`INSERT INTO inventory_items (settlement_id, item_key, name, category, equip_slot, stat_bonuses, equipped_to)
+      VALUES ($1, 'iron_pick', 'Iron Pick', 'equipment', 'tool', '{"mining":2}', $2) RETURNING id`, [s.id, gran])).rows[0].id;
+    const fam = (await q('SELECT family_id FROM citizens WHERE id = $1', [gran])).rows[0].family_id;
+    check((await q('SELECT head_citizen_id FROM families WHERE id = $1', [fam])).rows[0].head_citizen_id === gran, 'the oldest living adult heads the family');
+
+    await require('../deaths').writeDeathEvent({ citizenId: gran, settlementId: s.id, cause: 'old_age', narrative: 'passed away.' });
+    const g = (await q('SELECT life_stage, died_at, death_cause, house_id FROM citizens WHERE id = $1', [gran])).rows[0];
+    check(g.life_stage === 'deceased' && g.died_at && g.death_cause === 'old_age', 'death of old age records when and why');
+    check((await q('SELECT partner_id FROM citizens WHERE id = $1', [gramps])).rows[0].partner_id === null, 'the widowed partner can partner again');
+    const it = (await q('SELECT name, equipped_to, metadata FROM inventory_items WHERE id = $1', [pick])).rows[0];
+    check(it.name === "Hazel's Iron Pick" && it.equipped_to === null && it.metadata.heirloom && it.metadata.heirloom.family_id === fam && it.metadata.heirloom.generations === 1,
+      "her pick becomes an heirloom, \"Hazel's Iron Pick\", waiting in the stores");
+    const inh = (await q('SELECT * FROM inheritances WHERE deceased_id = $1', [gran])).rows[0];
+    check(inh && inh.status === 'open' && inh.default_heir_id === kid1 && Number(inh.xp) === 4000 && inh.class_key === 'miner', 'an inheritance opens; the default heir is the eldest adult child');
+    check(new Date(inh.settle_at) - Date.now() > 23 * 3600e3, 'the player has a day to choose another');
+    check((await q('SELECT head_citizen_id FROM families WHERE id = $1', [fam])).rows[0].head_citizen_id === gramps, 'headship passes to the oldest living adult');
+    const mem = (await q("SELECT message FROM settlement_events WHERE settlement_id = $1 AND type = 'memorial' AND citizen_ids @> $2::jsonb", [s.id, JSON.stringify([gran])])).rows;
+    const chr = (await q("SELECT text FROM chronicle WHERE settlement_id = $1 AND kind = 'death' AND citizen_ids @> $2::jsonb", [s.id, JSON.stringify([gran])])).rows;
+    check(mem.length === 1 && chr.length === 1 && /head of the Ashby family/.test(chr[0].text), 'the head of a family gets a memorial notice and a chronicle line');
+
+    const cands = await IH.candidates(s.id, gran);
+    check(cands.some(c => c.id === gramps && c.relation === 'partner') && cands.some(c => c.id === kid2 && c.relation === 'child') && !cands.some(c => c.id === stranger), 'heirs: the partner, the children, the family; not a stranger');
+    check((await api('POST', `/api/citizens/${gran}/heir`, { heir_id: stranger })).status === 400, 'a stranger cannot inherit');
+    const cr = await api('GET', '/api/citizens');
+    const dead = cr.body.citizens.find(c => c.id === gran);
+    check(dead && dead.memorial && dead.inheritance && dead.inheritance.status === 'open' && dead.inheritance.items.includes("Hazel's Iron Pick") && dead.inheritance.candidates.length >= 3,
+      'the citizens API shows the memorial and the open inheritance');
+    const ch = await api('POST', `/api/citizens/${gran}/heir`, { heir_id: kid1 });
+    check(ch.status === 200 && ch.body.heir_id === kid1, 'the player picks Rowan');
+    check(Number((await q("SELECT xp FROM citizen_classes WHERE citizen_id = $1 AND class_key = 'miner'", [kid1])).rows[0].xp) === 1000, 'a miner heir gains a quarter of her mining XP (4000 → 1000)');
+    check((await q('SELECT equipped_to FROM inventory_items WHERE id = $1', [pick])).rows[0].equipped_to === kid1, 'and carries the pick');
+    check((await api('POST', `/api/citizens/${gran}/heir`, { heir_id: kid2 })).status === 404, 'it settles once');
+    const inhChr = (await q("SELECT text FROM chronicle WHERE settlement_id = $1 AND kind = 'inheritance' AND citizen_ids @> $2::jsonb", [s.id, JSON.stringify([kid1])])).rows;
+    check(inhChr.length === 1 && /Rowan Ashby inherits from Hazel Ashby/.test(inhChr[0].text), 'a chronicle line for the inheritance');
+    const state = await require('../lib/careers').loadState(null, s.id);
+    const prof = require('../lib/careers/profiles').buildProfiles(state.citizens.filter(c => c.life_stage === 'adult'), state.classRows, state.gear, { now: Date.now() }).byId.get(kid1);
+    check(prof && prof.sources.some(x => /heirloom/.test(x.source) && x.type === 'output' && Math.abs(x.value - 0.05) < 1e-9), 'carried in the family, the heirloom gives +5% output');
+    const cr2 = await api('GET', '/api/citizens');
+    const r1 = cr2.body.citizens.find(c => c.id === kid1);
+    check(r1 && r1.heirlooms.length === 1 && r1.heirlooms[0].bonus === 5 && r1.heirlooms[0].from === 'Hazel Ashby', 'the citizens API lists the heirloom and its bonus');
+
+    // An ordinary death (Sorrel: not the head, no master of a trade): a gentle
+    // line, and the default heir (no child, no partner: the head, Tobias).
+    await require('../deaths').writeDeathEvent({ citizenId: kid2, settlementId: s.id, cause: 'old_age', narrative: 'passed away.' });
+    const gentle = (await q("SELECT message FROM settlement_events WHERE settlement_id = $1 AND type = 'death_old_age' AND citizen_ids @> $2::jsonb", [s.id, JSON.stringify([kid2])])).rows;
+    check(gentle.length === 1 && /passed away peacefully/.test(gentle[0].message), 'everyone else gets one gentle line and a toast');
+    check((await q("SELECT COUNT(*)::int AS n FROM settlement_events WHERE type = 'memorial' AND citizen_ids @> $1::jsonb", [JSON.stringify([kid2])])).rows[0].n === 0, '(and no memorial)');
+    await q("UPDATE inheritances SET settle_at = NOW() - interval '1 minute' WHERE deceased_id = $1", [kid2]);
+    const settled = await IH.settleDue(s.id);
+    check(settled.length === 1 && (await q('SELECT heir_id FROM inheritances WHERE deceased_id = $1', [kid2])).rows[0].heir_id === gramps, 'unanswered, the default heir (the family head) inherits when the day is up');
+    // Dying twice does nothing more.
+    await require('../deaths').writeDeathEvent({ citizenId: kid2, settlementId: s.id, cause: 'combat', narrative: 'again?' });
+    check((await q('SELECT COUNT(*)::int AS n FROM inheritances WHERE deceased_id = $1', [kid2])).rows[0].n === 1, 'a second death of the same citizen opens nothing new');
+
+    // The real simulation: a 79-year-old turning 80 dies of old age.
+    const elder = await cit('Old Bramble', { age: 80 + 1 / 28 });   // turned 80 an hour ago
+    await q('UPDATE citizens SET last_birthday_year = 79 WHERE id = $1', [elder]);
+    const orig = Math.random; Math.random = () => 0;
+    try {
+      const last = new Date(Date.now() - 3.2 * 3600e3);
+      await q('UPDATE settlements SET last_sim_tick = $1 WHERE id = $2', [last, s.id]);
+      await SIM.runSimulation({ id: s.id }, 3.2, (await q('SELECT last_sim_tick FROM settlements WHERE id = $1', [s.id])).rows[0].last_sim_tick);
+    } finally { Math.random = orig; }
+    const eb = (await q('SELECT life_stage, death_cause, last_birthday_year FROM citizens WHERE id = $1', [elder])).rows[0];
+    check(eb.life_stage === 'deceased' && eb.death_cause === 'old_age' && eb.last_birthday_year === 80, 'the hourly simulation rolls on the birthday and an 80-year-old may die');
+  }
+
+  console.log('Settlers arrive (step 5)');
+  {
+    const ST = require('../lib/settlers');
+    // A small town of its own: two adults and a hut with room for two more.
+    const un = `settle_${RUN}`;
+    const u2 = (await q("INSERT INTO users (username, email, password_hash, species) VALUES ($1,$2,'x','Mice') RETURNING id", [un, `${un}@t.l`])).rows[0];
+    const t2 = (await q(`INSERT INTO settlements (user_id, name, world_version, tier, tile_q, tile_r, last_tick) VALUES ($1,'Thornvale',2,'camp',$2,0,NOW()) RETURNING id`, [u2.id, tq - 40])).rows[0].id;
+    await q("INSERT INTO houses (settlement_id, name, building_type, capacity) VALUES ($1, 'Hut', 'starter_house', 4)", [t2]);
+    for (const nm of ['Ada Fernbrook', 'Bo Fernbrook']) {
+      await q("INSERT INTO citizens (settlement_id, name, gender, role, born_at, last_birthday_year) VALUES ($1, $2, 'female', 'forager', $3, 30)", [t2, nm, LIFE.bornAtFor(30).toISOString()]);
+    }
+    await LIFE.assignFamilies(t2);
+    check((await ST.arrive(t2)).length === 0 && (await q('SELECT last_settler_at FROM settlements WHERE id = $1', [t2])).rows[0].last_settler_at, "a town's first check only starts the clock");
+    await q("UPDATE settlements SET last_settler_at = NOW() - interval '2.5 days' WHERE id = $1", [t2]);
+    const came = await ST.arrive(t2);
+    check(came.length === 2, 'two working adults: a settler on each of the two days since (rescue), up to the free beds');
+    check((await ST.arrive(t2)).length === 0, 'they arrive once (the window is claimed)');
+    const rows = (await q('SELECT c.name, c.born_at, c.house_id, c.family_id, f.name AS fam FROM citizens c LEFT JOIN families f ON f.id = c.family_id WHERE c.id = ANY($1)', [came.map(x => x.id)])).rows;
+    check(rows.every(r => { const a = LIFE.ageOf(r); return a >= 12 && a < 26; }), 'settlers are 12–24');
+    check(rows.every(r => r.fam && r.fam !== 'Fernbrook' && r.name.endsWith(' ' + r.fam)) && new Set(rows.map(r => r.fam)).size === 2, 'each founds a new family with a new surname');
+    check(rows.every(r => r.house_id), 'and is housed');
+    check((await q('SELECT population FROM settlements WHERE id = $1', [t2])).rows[0].population === 4, 'the population counts them');
+    const chr = (await q("SELECT COUNT(*)::int AS n FROM chronicle WHERE settlement_id = $1 AND kind = 'settler'", [t2])).rows[0].n;
+    const ev = (await q("SELECT COUNT(*)::int AS n FROM settlement_events WHERE settlement_id = $1 AND type = 'settler'", [t2])).rows[0].n;
+    check(chr === 2 && ev === 2, 'a chronicle line and a toast each');
+    await q("UPDATE settlements SET last_settler_at = NOW() - interval '30 days' WHERE id = $1", [t2]);
+    check((await ST.arrive(t2)).length === 0, 'the town is full (4 of 4 beds): nobody comes');
+  }
+
+  console.log('The chronicle and the families API (step 6)');
+  {
+    const lines = async (kind, extra = '') => (await q(`SELECT text, citizen_ids FROM chronicle WHERE settlement_id = $1 AND kind = $2 ${extra} ORDER BY id`, [s.id, kind])).rows;
+    check((await lines('birth')).length >= 1 && /was born to Mum and Dad/.test((await lines('birth'))[0].text), 'births are written to the chronicle');
+    // A partnership in the simulation.
+    const p1 = await cit('Ivy Hollins', { gender: 'female' }), p2 = await cit('Oak Pemberly', { gender: 'male' });
+    const [lo, hi] = [Math.min(p1, p2), Math.max(p1, p2)];
+    await q(`INSERT INTO citizen_relationships (settlement_id, citizen_a_id, citizen_b_id, score, state) VALUES ($1,$2,$3,95,'bonded')
+             ON CONFLICT (citizen_a_id, citizen_b_id) DO UPDATE SET score = 95, state = 'bonded'`, [s.id, lo, hi]);
+    await q("UPDATE citizens SET life = jsonb_set(COALESCE(life, '{}'::jsonb), '{happiness}', '95') WHERE id = ANY($1)", [[p1, p2]]);
+    const orig = Math.random; Math.random = () => 0;
+    try {
+      await q("UPDATE settlements SET last_sim_tick = NOW() - interval '1.2 hours' WHERE id = $1", [s.id]);
+      await SIM.runSimulation({ id: s.id }, 1.2, (await q('SELECT last_sim_tick FROM settlements WHERE id = $1', [s.id])).rows[0].last_sim_tick);
+    } finally { Math.random = orig; }
+    check((await lines('partnership', `AND citizen_ids @> '${JSON.stringify([p1])}'::jsonb`)).length === 1, 'partnerships are written too');
+    // A discovery and a raid line.
+    await require('../lib/resources').discover(null, s.id, 'copper', 'mine');
+    check((await lines('discovery')).some(r => /copper for the first time/.test(r.text)), 'named discoveries are written');
+    const before = (await lines('raid')).length;
+    await require('../lib/chronicle').write(s.id, { kind: 'raid', text: 'Raiders from the Withered were driven off.' });
+    check((await lines('raid')).length === before + 1, 'the chronicle takes raid lines (lib/raids writes one after each raid)');
+    check(/require\('\.\/chronicle'\)\.write\(out\.settlementId, \{ kind: 'raid'/.test(require('fs').readFileSync(require.resolve('../lib/raids'), 'utf8'))
+      && /kind: 'quest'/.test(require('fs').readFileSync(require.resolve('../routes/quests'), 'utf8'))
+      && /kind: 'craft'/.test(require('fs').readFileSync(require.resolve('../lib/crafting'), 'utf8')), 'raids, party quests and fine crafts call the chronicle');
+
+    // The Ashby children were made in SQL; births in the game set generation 2.
+    await q("UPDATE citizens SET generation = 2 WHERE name IN ('Rowan Ashby', 'Sorrel Ashby') AND settlement_id = $1", [s.id]);
+    const fl = await api('GET', '/api/families');
+    check(fl.status === 200 && Array.isArray(fl.body.families) && fl.body.families.length >= 3, 'GET /api/families lists the lines');
+    const ash = fl.body.families.find(f => f.name === 'Ashby');
+    check(ash && ash.head && ash.head.name === 'Tobias Ashby' && ash.remembered >= 2 && ash.living.some(m => m.name === 'Rowan Ashby'), 'a line shows its head (Tobias, the oldest living adult), its living and how many are remembered');
+    check(ash && ash.heirlooms.some(h => h.name === "Hazel's Iron Pick" && h.carrier === 'Rowan Ashby' && h.from === 'Hazel Ashby'), "and its heirlooms, who carries them and whose they were");
+    check(ash && typeof ash.stages.adult === 'number' && ash.generations >= 2, 'with counts by stage and its generations');
+    const one = await api('GET', `/api/families/${ash.id}`);
+    check(one.status === 200 && one.body.members.some(m => m.name === 'Hazel Ashby' && m.stage === 'deceased' && m.died_at) && one.body.members.some(m => m.parent_ids.length === 2),
+      'GET /api/families/:id gives the tree: the living and the dead, with parents');
+    const ch = await api('GET', `/api/families/${ash.id}/chronicle`);
+    check(ch.status === 200 && ch.body.entries.some(e => e.kind === 'death' && /Hazel Ashby/.test(e.text)) && ch.body.entries.some(e => e.kind === 'inheritance'),
+      "the family's record: the deaths and the inheritance");
+    const dates = ch.body.entries.map(e => new Date(e.at).getTime());
+    check(dates.every((d, i) => i === 0 || d <= dates[i - 1]), 'newest first');
+    const page = await api('GET', `/api/families/all/chronicle?limit=2`);
+    const page2 = await api('GET', `/api/families/all/chronicle?limit=2&before=${page.body.more}`);
+    check(page.body.entries.length === 2 && page.body.more && page2.body.entries.length >= 1 && !page2.body.entries.some(e => page.body.entries.some(x => x.id === e.id)),
+      'the town chronicle pages (older entries, no repeats)');
+    check((await api('GET', '/api/families/999999')).status === 404 && (await api('GET', '/api/families/999999/chronicle')).status === 404, "another town's family is not found");
+    const A = require('../lib/away_report');
+    check(['child_born', 'came_of_age', 'death_old_age', 'memorial', 'settler', 'inheritance', 'partnership'].every(t => A.eventFromSettlementEvent({ type: t, message: 'x', created_at: new Date() }).category === 'families'),
+      'the away report groups births, comings of age, deaths, settlers and inheritances under Families');
   }
 
   console.log('Migration for existing towns');

@@ -282,6 +282,10 @@ router.get('/settlement', requireAuth, async (req, res) => {
     // Children of 12+ come of age (lib/life.js), then population and beds
     // from live counts (docs/PHASE_1_LIFE_CYCLE.md §5).
     await require('../lib/life').comeOfAge(settlement.id).catch(e => console.error('[life] comeOfAge:', e.message));
+    // Inheritances whose time is up go to their heir (lib/inheritance).
+    await require('../lib/inheritance').settleDue(settlement.id).catch(e => console.error('[inheritance] settleDue:', e.message));
+    // Settlers who are due arrive (lib/settlers).
+    await require('../lib/settlers').arrive(settlement.id).catch(e => console.error('[settlers] arrive:', e.message));
     settlement.population = await require('../lib/life').recount(settlement.id);
     const bedInfo = await require('../lib/life').beds(settlement.id);
 
