@@ -225,6 +225,8 @@ async function part2() {
   console.log('Tier upgrades in metal');
   const t = await user('tier');
   await q("UPDATE settlements SET tier = 'village', population = 50, food = 9000, timber = 9000, stone = 9000, metal = 9000, wealth = 9000, bronze = 0 WHERE id=$1", [t.sid]);
+  // Tier checks count living citizens (lib/life.js), not settlements.population.
+  await q("INSERT INTO citizens (settlement_id, name, role) SELECT $1, 'Folk ' || g, 'idle' FROM generate_series(1, 50) g", [t.sid]);
   for (const b of ['farm', 'lumber_camp', 'granary', 'mine', 'market', 'smithy']) await q('INSERT INTO buildings (settlement_id, type, level) VALUES ($1,$2,1)', [t.sid, b]);
   const ti = await api(t, 'GET', '/api/game/tier-info');
   check(ti.body.requirements.resources.bronze === 40 && ti.body.requirementsMet.current.bronze === 0 && !ti.body.canUpgrade, 'Village → Town needs 40 bronze, and says how much you have');

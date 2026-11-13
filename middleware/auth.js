@@ -2,13 +2,10 @@ const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = require('../lib/jwt_secret');
 
 module.exports = function requireAuth(req, res, next) {
-  // Accept Bearer token from Authorization header OR cookie
-  let token = req.cookies.token;
-
+  // Bearer token only. The sign-in cookie is not read: with SameSite=None it
+  // let other websites act as a signed-in player (SECURITY_REVIEW.md S2).
   const authHeader = req.headers.authorization;
-  if (!token && authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.slice(7);
-  }
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
 
   if (!token) return res.status(401).json({ error: 'Not authenticated.' });
 

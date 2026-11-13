@@ -7,6 +7,7 @@ const { query } = require('./db');
 const { seasonAt } = require('./seasons');
 const HFX = require('./lib/happening_effects');
 const { VISIBLE_TRAITS, HIDDEN_TRAITS, MALE_NAMES, FEMALE_NAMES, LAST_NAMES } = require('./citizens');
+const LIFE = require('./lib/life');
 
 // ── Relationship score thresholds ─────────────
 const REL_STATES = [
@@ -122,7 +123,11 @@ async function _loadSimState(settlementId, citizens, adults) {
       pairs.push([a, b]);
     }
   }
-  return { byId, rels, houses, pairs, newPartners: [], events: [], births: [] };
+  // The bed rule: a birth needs a free bed somewhere in town (living
+  // citizens fewer than the beds in every house), not room in one house.
+  const totalBeds = houseRes.rows.reduce((n, h) => n + (Number(h.capacity) || 0), 0);
+  const freeBeds = Math.max(0, totalBeds - citizens.length);
+  return { byId, rels, houses, pairs, freeBeds, newPartners: [], events: [], births: [] };
 }
 
 function _happiness(c, ctx) { return (c.life?.happiness ?? 70) + (ctx.hMods.happiness || 0); }
@@ -186,6 +191,7 @@ async function awardQuestRelationshipBonus(settlementId, citizenIds) {
 function _hourPartnerships(sim, ctx) {
   for (const [a, b] of sim.pairs) {
     if (a.partner_id || b.partner_id) continue;
+    if (LIFE.kin(a, b)) continue;   // never parent and child, siblings or half-siblings
     const rel = sim.rels[`${a.id}_${b.id}`];
     if (!rel || Math.min(100, rel.score + rel.gain) < CFG.PARTNER_SCORE_THRESHOLD) continue;
     if (_happiness(a, ctx) < CFG.PARTNER_MIN_HAPPINESS || _happiness(b, ctx) < CFG.PARTNER_MIN_HAPPINESS) continue;
@@ -199,13 +205,27 @@ function _hourPartnerships(sim, ctx) {
 }
 
 // ── Step 4 (hourly): breeding ─────────────────
-// Partnered opposite-gender adults sharing a house with room for a child.
+// Partnered opposite-gender adults, with a free bed anywhere in town
+// (docs/PHASE_1_LIFE_CYCLE.md §4.6). They need not share a house.
+function _freeBeds(sim) {
+  if (typeof sim.freeBeds === 'number') return sim.freeBeds;
+  return Object.values(sim.houses || {}).reduce((n, h) => n + Math.max(0, h.capacity - h.occupants), 0);
+}
+// Where the baby sleeps: a parent's house with room, else a house that
+// already has someone in it, else any house with room.
+function _houseForChild(sim, a, b) {
+  const open = h => h && h.occupants < h.capacity;
+  const own = [sim.houses[a.house_id], sim.houses[b.house_id]].find(open);
+  if (own) return own;
+  const all = Object.values(sim.houses || {}).filter(open);
+  return all.find(h => h.occupants > 0) || all[0] || null;
+}
 function _hourBreeding(sim, ctx) {
   for (const [a, b] of sim.pairs) {
     if (a.partner_id !== b.id || a.gender === b.gender) continue;
-    if (!a.house_id || a.house_id !== b.house_id) continue;
-    const house = sim.houses[a.house_id];
-    if (!house || house.occupants >= house.capacity) continue;
+    if (_freeBeds(sim) <= 0) continue;
+    const house = _houseForChild(sim, a, b);
+    if (!house) continue;
 
     const happA = _happiness(a, ctx), happB = _happiness(b, ctx);
     if (happA < CFG.BREED_MIN_HAPPINESS || happB < CFG.BREED_MIN_HAPPINESS) continue;
@@ -220,6 +240,7 @@ function _hourBreeding(sim, ctx) {
     if (Math.random() > chance) continue;
 
     house.occupants++;
+    if (typeof sim.freeBeds === 'number') sim.freeBeds--;
     sim.births.push({ at: ctx.at, house, pair: {
       id_a: a.id, name_a: a.name, id_b: b.id, name_b: b.name,
       gen_a: a.generation, gen_b: b.generation,
@@ -258,12 +279,19 @@ async function _persistSimState(settlementId, sim) {
     await query('UPDATE citizens SET partner_id = $1 WHERE id = $2', [a.id, b.id]);
   }
   for (const e of sim.events) await _addEvent(settlementId, e.type, e.message, e.ids, e.at);
-  for (const birth of sim.births) await _createChild(settlementId, birth.pair, birth.at, birth.house.name);
+  for (const birth of sim.births) await _createChild(settlementId, birth.pair, birth.at, birth.house);
+  // Housing sorts itself: new partners move in together, and anyone without
+  // a home takes a free bed (lib/life.js). Then the population follows.
+  await LIFE.autoHouse(settlementId, { couples: sim.newPartners.map(([a, b]) => [a.id, b.id]) })
+    .catch(e => console.error('[life] autoHouse:', e.message));
+  if (sim.births.length) await LIFE.recount(settlementId);
 }
 
 // ── Step 5: Child creation ────────────────────
 
-async function _createChild(settlementId, pair, atMs = null, houseNameKnown = null) {
+// house: { id, name } chosen by the simulation. Without it (the admin
+// birth) the child is placed by lib/life.js autoHouse.
+async function _createChild(settlementId, pair, atMs = null, house = null) {
   // Determine gender
   const isFemale = Math.random() < 0.5;
 
@@ -346,7 +374,7 @@ async function _createChild(settlementId, pair, atMs = null, houseNameKnown = nu
       JSON.stringify({ fertility: 50, genetic_quality: 60, compatibility: 50 }),
       JSON.stringify(inheritedTraits),
       JSON.stringify(hiddenTraits),
-      pair.house_a,
+      house && house.id ? house.id : null,
       JSON.stringify([pair.id_a, pair.id_b]),
     ]
   );
@@ -358,11 +386,13 @@ async function _createChild(settlementId, pair, atMs = null, houseNameKnown = nu
   for (const pid of [pair.id_a, pair.id_b]) careers.revealOnEvent(settlementId, pid, 'child').catch(() => {});
 
   // House name for the event
-  let houseName = houseNameKnown;
+  let houseName = house && house.name;
   if (!houseName) {
-    const houseRes = await query('SELECT name FROM houses WHERE id = $1', [pair.house_a]);
+    if (!(house && house.id)) await LIFE.autoHouse(settlementId).catch(() => {});
+    const houseRes = await query('SELECT h.name FROM citizens c JOIN houses h ON h.id = c.house_id WHERE c.id = $1', [childId]);
     houseName = houseRes.rows[0]?.name || 'a Willow Hut';
   }
+  if (!atMs) await LIFE.recount(settlementId);   // the simulation recounts once after its births
 
   const babyGender = isFemale ? 'daughter' : 'son';
   await _addEvent(settlementId, 'child_born',

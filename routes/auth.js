@@ -9,11 +9,29 @@ const { RANK_LABELS } = require('../lib/clan_permissions');
 const router = express.Router();
 const { JWT_SECRET } = require('../lib/jwt_secret');
 
-const COOKIE_OPTIONS = {
+const names = require('../lib/names');
+const { rateLimit } = require('../lib/rate_limit');
+
+// SECURITY_REVIEW.md S3. req.ip is the player's address because index.js
+// sets `trust proxy` for Render's proxy.
+const loginLimit = rateLimit({
+  name: 'login', windowMs: 60 * 1000, max: 10,
+  keys: req => [req.ip, req.body && typeof req.body.email === 'string' ? 'e:' + req.body.email.trim() : null],
+  message: 'Too many sign-in attempts. Please wait a minute and try again.',
+});
+const registerLimit = rateLimit({
+  name: 'register', windowMs: 60 * 60 * 1000, max: 5,
+  keys: req => [req.ip],
+  message: 'Too many new accounts from this address. Please try again later.',
+});
+
+// Sign-in is by Bearer token only. The old `token` cookie (SameSite=None)
+// let other websites act as a signed-in player (SECURITY_REVIEW.md S2), so
+// it is no longer set or read. Logout still clears any old one.
+const OLD_COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
   sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-  maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
 const SPECIES_VALID = ['Mice', 'Badgers', 'Otters', 'Moles', 'Foxes', 'Hares'];
@@ -27,14 +45,19 @@ const STARTER_BUILDINGS = {
   Hares:   ['granary', 'barracks', 'farm'],
 };
 
-router.post('/register', async (req, res) => {
-  const { username, email, password, species } = req.body;
-  if (!username || !email || !password)
+router.post('/register', registerLimit, async (req, res) => {
+  const body = req.body || {};
+  const { password, species } = body;
+  if (!body.username || !body.email || !password)
     return res.status(400).json({ error: 'All fields are required.' });
+  const username = names.cleanUsername(body.username);
+  if (!username) return res.status(400).json({ error: names.USERNAME_RULE });
+  const email = names.cleanEmail(body.email);
+  if (!email) return res.status(400).json({ error: 'Please enter a valid email address.' });
   if (species && !SPECIES_VALID.includes(species))
     return res.status(400).json({ error: 'Invalid species.' });
-  if (password.length < 8)
-    return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+  const pwProblem = names.passwordProblem(password);
+  if (pwProblem) return res.status(400).json({ error: pwProblem });
 
   try {
     const existing = await query(
@@ -60,11 +83,8 @@ router.post('/register', async (req, res) => {
     // Starter buildings added during arrival when species is confirmed
 
 
+    // The client stores this token and sends it as a Bearer header.
     const token = jwt.sign({ userId, username, species }, JWT_SECRET, { expiresIn: '7d' });
-    res.cookie('token', token, COOKIE_OPTIONS);
-    // Also return the token in the body. The site and API are different
-    // origins, so the cookie above is third-party and browsers often drop
-    // it; the client stores this token and sends it as a Bearer header.
     res.json({ ok: true, username, species, token });
   } catch (err) {
     console.error(err);
@@ -72,10 +92,12 @@ router.post('/register', async (req, res) => {
   }
 });
 
-router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password)
+router.post('/login', loginLimit, async (req, res) => {
+  const { email, password } = req.body || {};
+  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password)
     return res.status(400).json({ error: 'Email and password are required.' });
+  if (email.length > names.EMAIL_MAX || Buffer.byteLength(password, 'utf8') > 1024)
+    return res.status(401).json({ error: 'Invalid email or password.' });
 
   try {
     const result = await query('SELECT * FROM users WHERE email=$1', [email]);
@@ -87,7 +109,6 @@ router.post('/login', async (req, res) => {
       { userId: user.id, username: user.username, species: user.species },
       JWT_SECRET, { expiresIn: '7d' }
     );
-    res.cookie('token', token, COOKIE_OPTIONS);
     res.json({ ok: true, username: user.username, species: user.species, token });
   } catch (err) {
     console.error(err);
@@ -96,14 +117,13 @@ router.post('/login', async (req, res) => {
 });
 
 router.post('/logout', (req, res) => {
-  res.clearCookie('token', COOKIE_OPTIONS);
+  res.clearCookie('token', OLD_COOKIE_OPTIONS);
   res.json({ ok: true });
 });
 
 router.get('/me', (req, res) => {
-  let token = req.cookies.token;
   const authHeader = req.headers.authorization;
-  if (!token && authHeader && authHeader.startsWith('Bearer ')) token = authHeader.slice(7);
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Not authenticated.' });
   try {
     const payload = jwt.verify(token, JWT_SECRET);

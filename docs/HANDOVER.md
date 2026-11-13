@@ -12,7 +12,7 @@ The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-fronte
 | Doc | What it is |
 |---|---|
 | `docs/ROADMAP_1_0.md` | The agreed plan: pillars, phases, onboarding, the owner's decisions |
-| `docs/SECURITY_REVIEW.md` | **Fix S1 and S2 first.** Two high-severity holes in the live game |
+| `docs/SECURITY_REVIEW.md` | S1–S4 fixed; S5–S8 open |
 | `docs/PHASE_1_LIFE_CYCLE.md` | **The next feature work**, as a spec with a build order and tests |
 | `docs/LAYOUT_SPEC.md` | The window component (needed from Phase 1) and the five-place navigation (Phase 4) |
 | `docs/PHASE_2_MOMENTS.md` | The moments engine and the first thirty moments |
@@ -30,8 +30,8 @@ The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-fronte
 
 ### What to do next, in order
 
-1. **Security fixes S1 and S2** (`SECURITY_REVIEW.md`): validate and escape usernames and town names; stop using the sign-in cookie. Both are small. Then S4 and S3.
-2. **Phase 1, step 1** (`PHASE_1_LIFE_CYCLE.md` §9), shipped on its own:
+1. ~~Security fixes S1–S4~~ (done 2026-11-13; S5 a file at a time as files are touched).
+2. ~~**Phase 1, step 1**~~ (built 2026-11-13; see `PHASE_1_LIFE_CYCLE.md` §9 for what to watch after deploy), shipped on its own:
    - houses hold 4;
    - births need a free bed in town;
    - the population number follows the real count;
@@ -47,6 +47,8 @@ All the owner's decisions for Phase 1 are made (`PHASE_1_LIFE_CYCLE.md` §11): t
 
 ### Findings from the assessment (2026-11-11 and 12)
 
+(Findings 1, 2, 5, 6, 7 and 8 are fixed as of 2026-11-13.)
+
 1. **Births cannot happen in the live game.** A birth needs a couple sharing a house with a free place, and every house holds 2. Details in `PHASE_1_LIFE_CYCLE.md` §1.1.
 2. **No ordinary player can leave Camp.** `settlements.population` is stuck at 10 (only admin tools and the traveller event raise it) and a Village needs 20. Everything gated by tier is unreachable without Dev Tools.
 3. **Citizens do not age.** Age is a fixed number; children never grow up; nobody dies of old age.
@@ -57,15 +59,16 @@ All the owner's decisions for Phase 1 are made (`PHASE_1_LIFE_CYCLE.md` §11): t
 8. **The dead still take up a place in their house** (`house_id` is never cleared).
 9. **The outpost trickle left haulers, haul settings and three buildings with little purpose.** See `OUTPOST_TRIM.md`.
 
-### Nothing since R5 is merged
+### Merged
 
-Everything from R6 onwards is on the branch `claude/vigilant-feynman-npuc6r` in both repos: four rounds of outpost work, Phase 0, and these docs. No pull requests are open. The owner has been advised to merge and play before Phase 1 goes far.
+Everything up to the pre-Phase 1 reviews is on `main` in both repos (server PR 94, frontend PR 56).
 
-**Before that branch is merged:**
+**Check on Render:**
 
-- **Render must have `JWT_SECRET` set** (16+ characters). With `NODE_ENV=production` the server now refuses to start without it.
-- **GitHub secrets for the frontend deploy:** `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD` (optional `FTP_DIR`). Without them the workflow only attaches the built site to the run.
-- The first deploy after merging turns the trickle on: the top bar's rates change for anyone with outposts.
+- `JWT_SECRET` is set (16+ characters). With `NODE_ENV=production` the server refuses to start without it.
+- After deploying the security fixes, check that sign-in rate limits key on the player's address (`SECURITY_REVIEW.md`, "What was done", S3).
+
+**GitHub secrets for the frontend deploy:** `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD` (optional `FTP_DIR`). Without them the workflow only attaches the built site to the run.
 
 ### Which model for what
 
@@ -75,7 +78,7 @@ The owner plans to build with Opus and bring Fable back for judgement calls. Goo
 
 ## 1. Where things stand
 
-- **`main`** holds everything up to R5 and the loading fixes. See "Nothing since R5 is merged" above.
+- **`main`** holds everything up to the pre-Phase 1 reviews. See "Merged" above.
 - **Deploying:**
   - **Server:** `tomatkinson93/kindlewood-server` deploys itself from `main` on Render (`https://kindlewood-api.onrender.com`). The API is on the **Starter** plan ($7 a month), which does not sleep; the database is Basic-256mb ($6.30). The database is the first limit that will be reached.
   - **Frontend:** `tomatkinson93/kindlewood-frontend` serves kindlewood.quest from cPanel. Until the deploy workflow has its FTP secrets, run `npm run build` and upload the contents of `dist/` by hand (including `.htaccess`: turn on "Show hidden files").

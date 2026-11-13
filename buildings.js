@@ -104,14 +104,14 @@ const BUILDINGS = {
     id: 'starter_house',
     imgFile: 'willowhut.png',
     label: 'Willow Hut',
-    desc: 'A simple home for two citizens. Housed citizens are happier and more productive.',
+    desc: 'A simple home for four citizens. Housed citizens are happier and more productive.',
     icon: '🏡',
     cost: { timber: 40, stone: 20 },
     maxLevel: 60,
     effect: () => ({}),
     citizenSlots: () => 0,
     requires: [],
-    capacity: 2,  // citizens per house instance
+    capacity: 4,  // citizens per house instance (lib/life.js CONFIG.HOUSE_BEDS)
     isHousing: true,
     // Soft cap per tier (enforced in route) — camp:5, village:15, town:30, city:60
     tierCaps: { camp: 5, village: 15, town: 30, city: 60 },

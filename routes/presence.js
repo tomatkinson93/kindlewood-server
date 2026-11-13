@@ -19,7 +19,7 @@ const ONLINE_WINDOW_MS = 70 * 1000;   // seen within 70s ⇒ online (2 missed pi
 const online = new Map(); // userId -> { name, lastSeen }
 
 function user(req) {
-  let token = req.cookies && req.cookies.token;
+  let token = null;   // no cookie: Bearer header or ?token= only (SECURITY_REVIEW S2)
   const h = req.headers.authorization;
   if (!token && h && h.startsWith('Bearer ')) token = h.slice(7);
   if (!token && req.query && req.query.token) token = String(req.query.token);

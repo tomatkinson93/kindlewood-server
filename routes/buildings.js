@@ -250,6 +250,7 @@ router.post('/build', requireAuth, async (req, res) => {
     // Create a house record for every housing build
     if (def.isHousing) {
       await createHouseForSettlement(settlement.id, buildingId);
+      await require('../lib/life').autoHouse(settlement.id).catch(e => console.error('[life] autoHouse:', e.message));
     }
 
     res.json({ ok: true, building: buildingId, newLevel: currentLevel + 1, cost });
@@ -301,6 +302,7 @@ router.post('/remove', requireAuth, async (req, res) => {
     // Remove associated house if this is a housing building
     if (def?.isHousing) {
       await removeHouseForSettlement(settlement.id, buildingId);
+      await require('../lib/life').autoHouse(settlement.id).catch(e => console.error('[life] autoHouse:', e.message));
     }
 
     // Unassign any citizens working this building
