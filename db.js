@@ -11,9 +11,56 @@ const CURRENT_WORLD_VERSION = 2;
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  // Fail with an error instead of waiting forever when the database can't
+  // be reached or has no free connections (a silent wait looked like a hung
+  // deploy: "No open ports detected").
+  connectionTimeoutMillis: 15000,
 });
 
+// ── Boot mode ────────────────────────────────────────────────────────────────
+// The schema statements in initDB re-run on every boot. Some (ALTER TABLE …
+// ADD COLUMN IF NOT EXISTS) take a full table lock even when nothing changes.
+// During a deploy the old server is still running; if it holds a long
+// transaction, those statements used to wait forever and the new server never
+// opened its port. In boot mode each statement gives up a lock wait after
+// BOOT_LOCK_TIMEOUT, logs who holds the lock, and retries a few times.
+let _booting = false;
+let _bootStep = 'connecting';
+const BOOT_LOCK_TIMEOUT = process.env.BOOT_LOCK_TIMEOUT || '20s';
+const BOOT_LOCK_RETRIES = Number(process.env.BOOT_LOCK_RETRIES) || 6;
+
+async function logLockHolders(client) {
+  try {
+    const r = await client.query(
+      `SELECT pid, state, now() - xact_start AS in_transaction_for, wait_event_type, left(query, 160) AS query
+         FROM pg_stat_activity
+        WHERE datname = current_database() AND pid <> pg_backend_pid()
+          AND (state LIKE 'idle in transaction%' OR now() - xact_start > interval '15 seconds')
+        ORDER BY xact_start NULLS LAST LIMIT 10`);
+    for (const row of r.rows) console.error('[boot]   holder?', JSON.stringify(row));
+    if (!r.rows.length) console.error('[boot]   no long transactions visible right now');
+  } catch (e) { console.error('[boot]   could not list sessions:', e.message); }
+}
+
+async function bootQuery(text, params) {
+  for (let attempt = 1; ; attempt++) {
+    const client = await pool.connect();
+    try {
+      await client.query(`SET lock_timeout = '${BOOT_LOCK_TIMEOUT}'`);
+      return await client.query(text, params);
+    } catch (e) {
+      if (e.code !== '55P03' || attempt >= BOOT_LOCK_RETRIES) throw e;   // 55P03: lock_not_available
+      console.error(`[boot] waited ${BOOT_LOCK_TIMEOUT} for a table lock during "${_bootStep}" (try ${attempt}/${BOOT_LOCK_RETRIES}); another session holds it:`);
+      await logLockHolders(client);
+    } finally {
+      try { await client.query('RESET lock_timeout'); } catch (_) {}
+      client.release();
+    }
+  }
+}
+
 async function query(text, params) {
+  if (_booting) return bootQuery(text, params);
   const client = await pool.connect();
   try {
     return await client.query(text, params);
@@ -22,7 +69,35 @@ async function query(text, params) {
   }
 }
 
+// Logs where boot is if it takes a while, and what the database is doing.
+function bootWatchdog() {
+  const t0 = Date.now();
+  const timer = setInterval(async () => {
+    console.error(`[boot] still starting after ${Math.round((Date.now() - t0) / 1000)}s; at: ${_bootStep}`);
+    try {
+      const c = await pool.connect();
+      try { await logLockHolders(c); } finally { c.release(); }
+    } catch (e) { console.error('[boot]   cannot get a database connection:', e.message); }
+  }, 45000);
+  timer.unref();
+  return () => clearInterval(timer);
+}
+
 async function initDB() {
+  _booting = true;
+  const stopWatchdog = bootWatchdog();
+  const t0 = Date.now();
+  try {
+    await _initDB();
+    console.log(`[boot] database ready in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  } finally {
+    _booting = false;
+    stopWatchdog();
+  }
+}
+
+async function _initDB() {
+  _bootStep = 'core tables';
   await query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -157,6 +232,7 @@ async function initDB() {
     )
   `);
 
+  _bootStep = 'world map and column updates';
   // Seed map if empty
   const tileCount = await query("SELECT COUNT(*) FROM tiles WHERE EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tiles' AND column_name='q')").catch(()=>({rows:[{count:'0'}]}));
   if (parseInt(tileCount.rows[0].count) === 0) {
@@ -606,6 +682,7 @@ async function initDB() {
   // real migration number at deploy time doesn't break boot.
   await applyMigrationFiles(['clans_core', 'clan_territory', 'chat_hub', 'community_channels', 'moderation', 'clan_profile', 'clan_quests', 'time_gated_enemies', 'happenings', 'happening_modifiers', 'away_report', 'market', 'market_items', 'market_v2', 'market_npc', 'market_ledger', 'careers', 'crafting', 'resources', 'smelter', 'research', 'career_tuning', 'tavern', 'feedback', 'mail', 'rankings', 'cards', 'rares', 'town', 'wonders', 'r4_quests', 'r4_combat', 'raids', 'clan_treasury', 'defences', 'raid_extras', 'r5', 'outpost_store', 'outpost_buildings', 'outpost_r6c', 'milestones', 'outpost_trickle', 'name_cleanup', 'life_beds']);
 
+  _bootStep = 'world dimensions';
   // Apply persisted dimensions to mapgen module so all consumers see live values.
   try {
     const r = await query('SELECT map_w, map_h FROM world_meta WHERE id=1');
@@ -630,6 +707,7 @@ async function applyMigrationFiles(names) {
   for (const name of names) {
     const file = files.find(f => f.endsWith(`_${name}.sql`));
     if (!file) throw new Error(`Migration file for "${name}" not found in migrations/`);
+    _bootStep = `migration ${file}`;
     await query(fs.readFileSync(path.join(dir, file), 'utf8'));
   }
 }
