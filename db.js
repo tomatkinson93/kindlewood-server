@@ -15,6 +15,9 @@ const pool = new Pool({
   // be reached or has no free connections (a silent wait looked like a hung
   // deploy: "No open ports detected").
   connectionTimeoutMillis: 15000,
+  // Postgres ends any transaction left open and idle for 2 minutes. A leaked
+  // one kept its table locks forever, and every later deploy hung behind it.
+  idle_in_transaction_session_timeout: 120000,
 });
 
 // ── Boot mode ────────────────────────────────────────────────────────────────
