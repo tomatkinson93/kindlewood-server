@@ -150,6 +150,20 @@ router.get('/', requireAuth, async (req, res) => {
       houseChildCount[c.house_id] = (houseChildCount[c.house_id] || 0) + 1;
     });
 
+    // Ages and stages (lib/life.js), the town's free beds, each couple's children.
+    const LIFE = require('../lib/life');
+    const now = Date.now();
+    const bedInfo = await LIFE.beds(settlement.id);
+    const coupleKids = {};
+    for (const k of citizensRes.rows) {
+      const [x, y] = LIFE.parentsOf(k).sort((m, n) => m - n);
+      if (!x || !y) continue;
+      const e = coupleKids[`${x}_${y}`] || (coupleKids[`${x}_${y}`] = { children: 0, lastChildAt: null });
+      e.children++;
+      const t = k.born_at ? new Date(k.born_at).getTime() : null;
+      if (t && (!e.lastChildAt || t > e.lastChildAt)) e.lastChildAt = t;
+    }
+
     const citizens = citizensRes.rows.map(c => {
       const context = {
         season,
@@ -172,15 +186,19 @@ router.get('/', requireAuth, async (req, res) => {
         const canBreed = (isMale && partnerIsFemale) || (isFemale && partnerIsMale);
 
         if (canBreed) {
+          // The rules simulation.js applies (docs/PHASE_1_LIFE_CYCLE.md §4.6):
+          // a free bed anywhere in town, both fertile, the gap, four at most.
           const sameHouse = c.house_id && partner?.house_id && c.house_id === partner.house_id;
           const myHappy   = (c.life?.happiness ?? 70) + (hMods.happiness || 0);
           const ptHappy   = (partner?.life?.happiness ?? 70) + (hMods.happiness || 0);
           const happyOk   = myHappy >= 60 && ptHappy >= 60;
-          const residentCount = c.house_id ? (houseResidents[c.house_id]?.length || 1) : 0;
+          const ck = c.id < c.partner_id ? `${c.id}_${c.partner_id}` : `${c.partner_id}_${c.id}`;
+          const lifeBlockers = partner ? LIFE.birthBlockers(c, partner, coupleKids[ck] || {}, now) : ['Partner not found'];
+          const bedFree = bedInfo.free > 0;
 
           // Calculate chance
           let chance = 0.04;
-          if (sameHouse && happyOk) {
+          if (bedFree && happyOk && !lifeBlockers.length) {
             chance += season.birthChanceBonus || 0;
             chance += hMods.birth_chance || 0;
             const avgHappy = (myHappy + ptHappy) / 2;
@@ -200,9 +218,11 @@ router.get('/', requireAuth, async (req, res) => {
             chance: Math.round(chance * 100),
             season: season.id,
             seasonBonus: Math.round((season.birthChanceBonus || 0) * 100),
+            bedFree,
             blockers: [
-              !sameHouse   ? 'Not living together'          : null,
+              !bedFree     ? 'No free bed in town (build a Willow Hut)' : null,
               !happyOk     ? 'Happiness too low (need 60+)' : null,
+              ...lifeBlockers,
             ].filter(Boolean),
           };
         }
@@ -216,7 +236,11 @@ router.get('/', requireAuth, async (req, res) => {
         role: c.role,
         stats: c.life_stage === 'child' ? {} : (c.stats || {}),
         skills: c.life_stage === 'child' ? {} : (c.skills || {}),
-        life: c.life || {},
+        // Age moves from born_at; the stored life.age is no longer read (§4.1).
+        life: { ...(c.life || {}), age: Math.floor(LIFE.ageOf(c, now)) },
+        age: Math.floor(LIFE.ageOf(c, now)),
+        stage: LIFE.stageOf(c, now),
+        family_id: c.family_id || null,
         visible_traits: c.visible_traits || [],
         revealed_hidden_traits: [],
         ...(careerInfo.get(c.id) || {}),
@@ -264,7 +288,9 @@ router.get('/:id', requireAuth, async (req, res) => {
       citizen: {
         id: c.id, name: c.name, gender: c.gender, generation: c.generation,
         role: c.role, stats: c.stats || {}, skills: c.skills || {},
-        life: c.life || {}, repro: c.repro || {},
+        life: { ...(c.life || {}), age: Math.floor(require('../lib/life').ageOf(c)) }, repro: c.repro || {},
+        age: Math.floor(require('../lib/life').ageOf(c)),
+        stage: require('../lib/life').stageOf(c),
         visible_traits: c.visible_traits || [],
         revealed_hidden_traits: c.revealed_traits || [],
         born_at: c.born_at,

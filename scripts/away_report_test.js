@@ -64,6 +64,7 @@ const T0 = Date.parse('2026-11-05T03:00:00Z');   // post-cutover: 7h seasons
 
   console.log('Citizen simulation catch-up');
   const mkCit = (id, over = {}) => Object.assign({ id, name: 'C' + id, gender: id % 2 ? 'male' : 'female', life_stage: 'adult', role: 'idle', house_id: 1,
+    born_at: new Date(T0 - 30 * 28 * 3600e3),   // 30 at T0 (lib/life.js): fertile
     life: { happiness: 80 }, hidden_traits: [], visible_traits: [], stats: {}, skills: {}, partner_id: null, generation: 1 }, over);
   const ctxAt = (at, hMods = {}) => ({ at, season: S.seasonAt(at), hMods });
   await test('3a relationship gain adds up per hour (24h away ≈ 24 hourly ticks)', () => {
@@ -90,11 +91,14 @@ const T0 = Date.parse('2026-11-05T03:00:00Z');   // post-cutover: 7h seasons
   await test('3d breeding rolls every hour but never overfills the town (free beds)', () => {
     const orig = Math.random; Math.random = () => 0;     // every roll succeeds
     try {
+      // Two couples, two free beds: one birth each in the first hour, then none
+      // (one couple alone would wait two years for a second child).
       const a = mkCit(1, { partner_id: 2 }), b = mkCit(2, { partner_id: 1 });
-      const sim = { pairs: [[a, b]], rels: {}, houses: { 1: { id: 1, capacity: 4, occupants: 2, name: 'Oak Hut' } }, newPartners: [], events: [], births: [] };
+      const c = mkCit(3, { partner_id: 4 }), d = mkCit(4, { partner_id: 3 });
+      const sim = { pairs: [[a, b], [c, d]], rels: {}, houses: { 1: { id: 1, capacity: 6, occupants: 4, name: 'Oak Hut' } }, newPartners: [], events: [], births: [] };
       for (let h = 0; h < 12; h++) SIM._hourly.breeding(sim, ctxAt(T0 + h * H));
       assert.strictEqual(sim.births.length, 2);
-      assert.deepStrictEqual(sim.births.map(x => x.at), [T0, T0 + H]);
+      assert.deepStrictEqual(sim.births.map(x => x.at), [T0, T0]);
     } finally { Math.random = orig; }
   });
   await test('3e the season birth bonus is the one in force that hour', () => {

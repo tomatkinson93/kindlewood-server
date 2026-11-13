@@ -1,6 +1,6 @@
 # Phase 1 — the life cycle (build spec)
 
-Status: **step 1 built (2026-11-13)**; steps 2–7 ready to build. Decisions in §11 are made. Written 2026-11-11, updated 2026-11-13. Part of `docs/ROADMAP_1_0.md`.
+Status: **steps 1–2 built (2026-11-13)**; steps 3–7 ready to build. **Steps 2–6 ship together:** do not merge the branch until step 6 is done. Decisions in §11 are made. Written 2026-11-11, updated 2026-11-13. Part of `docs/ROADMAP_1_0.md`.
 Read §1 first: it lists two bugs in the live game that block progress today.
 
 ## 1. Findings from the assessment
@@ -226,6 +226,18 @@ Each step ends with tests passing. **Steps 2–6 ship together**: death without 
 
    Step 2 should follow soon.
 2. **`lib/life.js`** with ages from `born_at`, the migration for existing towns, and stages shown in the client.
+
+   **Built (2026-11-13, not merged):**
+   - `lib/life.js` gains `CONFIG` (the §2 numbers), `ageOf`, `stageOf`, `deathChance`, `fertile`, `bornAtFor`, `birthBlockers` and `assignFamilies`.
+   - `0NN_life_cycle.sql` adds the §3 columns, `families` and `chronicle`. As a one-off (`migration_marks` key `life_cycle_ages`) it moves living adults' `born_at` to their shown age, capped at 45, and sets `last_birthday_year` so no death rolls are owed. On every boot it gives any citizen without a family the one named for their surname.
+   - Births also need: both partners fertile (14–55), two years since the couple's last child, fewer than four children. A child counts towards its parents' total even after it dies. These rules were in §4.6 but not in a step; they live here because they need ages.
+   - A child's `born_at` is the hour it was born, and it joins the parent's family line with fewer living members (§4.7, from step 4: it needed the families table).
+   - Arrivals, the traveller and admin citizens get a `born_at` that matches their rolled age, and a family. Typing an age in the Dev Tools citizen editor moves `born_at`.
+   - `GET /api/citizens` adds `age`, `stage` and `family_id`; `life.age` is the computed age, so every existing display moves with time and the stored value is never read.
+   - The "can they have a child" box uses the current rules: a free bed in town, fertility, the gap and at most four children. It used to say "Not living together", which has been wrong since step 1 went live.
+   - Client: stage tags in the profile and lists. The settlement panel shows Children, Youths, Adults, Elders and "Beds n/m"; it used to count dead citizens as adults.
+   - The Oldest ranking shows game years.
+   - Tests: `scripts/life_test.js` (step 2 sections), `verify/life_proofs.js`.
 3. **Youths and elders:** apprenticeship, mentors, part-strength work, coming of age.
 4. **Death, families and inheritance:** death rolls, heirs, heirlooms, headship.
 5. **Settlers.**

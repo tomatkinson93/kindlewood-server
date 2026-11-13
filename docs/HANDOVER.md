@@ -59,6 +59,10 @@ All the owner's decisions for Phase 1 are made (`PHASE_1_LIFE_CYCLE.md` §11): t
 8. **The dead still take up a place in their house** (`house_id` is never cleared).
 9. **The outpost trickle left haulers, haul settings and three buildings with little purpose.** See `OUTPOST_TRIM.md`.
 
+### ⚠ Do not merge yet
+
+From 2026-11-13 the branch holds **Phase 1 steps 2 onwards**, which ship together at step 6. Merging earlier would give players ageing without inheritance or the chronicle. Everything before that (security fixes, step 1, the deploy fixes, the window component) is already on `main`.
+
 ### Merged
 
 Everything up to the pre-Phase 1 reviews is on `main` in both repos (server PR 94, frontend PR 56).

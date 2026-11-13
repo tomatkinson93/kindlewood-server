@@ -1,7 +1,9 @@
 // ══════════════════════════════════════════════════════════════════════════
-//  life_test — the life cycle (docs/PHASE_1_LIFE_CYCLE.md). Step 1 so far:
-//  houses hold 4, births need a free bed in town, the population follows
-//  the living, the kin rule, housing sorts itself, the dead free their bed.
+//  life_test — the life cycle (docs/PHASE_1_LIFE_CYCLE.md).
+//  Step 1: houses hold 4, births need a free bed in town, the population
+//  follows the living, the kin rule, housing sorts itself, the dead free
+//  their bed. Step 2: ages from born_at, stages, death chance, fertility and
+//  the gap between children, families, the migration for existing towns.
 //   DATABASE_URL=postgres://… QUEST_TEST_BASE=http://localhost:3999 node scripts/life_test.js
 // ══════════════════════════════════════════════════════════════════════════
 'use strict';
@@ -29,7 +31,7 @@ async function main() {
   console.log('Partnerships skip kin');
   const T0 = Date.UTC(2026, 0, 1);
   const ctx = { at: T0, season: S.seasonAt(T0), hMods: {} };
-  const mk = (id, over = {}) => Object.assign({ id, name: 'C' + id, gender: id % 2 ? 'male' : 'female', life_stage: 'adult', house_id: 1,
+  const mk = (id, over = {}) => Object.assign({ id, name: 'C' + id, gender: id % 2 ? 'male' : 'female', life_stage: 'adult', house_id: 1, born_at: LIFE.bornAtFor(30, T0),
     life: { happiness: 90 }, hidden_traits: [], visible_traits: [], stats: {}, skills: {}, partner_id: null, generation: 1, parent_ids: [] }, over);
   {
     const orig = Math.random; Math.random = () => 0;
@@ -51,11 +53,13 @@ async function main() {
     try {
       const a = mk(1, { partner_id: 2, house_id: 1 }), b = mk(2, { partner_id: 1, house_id: 2 });
       const houses = { 1: { id: 1, capacity: 4, occupants: 4, name: 'Oak' }, 2: { id: 2, capacity: 4, occupants: 3, name: 'Ash' }, 3: { id: 3, capacity: 4, occupants: 0, name: 'Elm' } };
-      const sim = { pairs: [[a, b]], rels: {}, houses, freeBeds: 2, newPartners: [], events: [], births: [] };
+      // A second couple, both in the full Oak (one baby per couple: the two-year gap).
+      const c = mk(5, { partner_id: 6, house_id: 1 }), d = mk(6, { partner_id: 5, house_id: 1 });
+      const sim = { pairs: [[a, b], [c, d]], rels: {}, houses, freeBeds: 2, newPartners: [], events: [], births: [] };
       for (let h = 0; h < 10; h++) SIM._hourly.breeding(sim, { ...ctx, at: T0 + h * 3600e3 });
-      check(sim.births.length === 2, 'a couple in different houses has children while the town has beds (2 free → 2 births)');
+      check(sim.births.length === 2, 'couples in different houses have children while the town has beds (2 free → 2 births, then none)');
       check(sim.births[0].house.id === 2, "the first baby sleeps in a parent's house with room (Ash, not the full Oak)");
-      check(sim.births[1].house.id === 3, 'when both parents\' houses are full, the next goes to a house with room');
+      check(sim.births[1].house.id === 3, 'when both parents\' houses are full, the baby goes to a house with room');
       check(sim.freeBeds === 0, 'free beds count down');
       const full = { pairs: [[mk(1, { partner_id: 2 }), mk(2, { partner_id: 1 })]], rels: {}, houses: { 1: { id: 1, capacity: 4, occupants: 2 } }, freeBeds: 0, newPartners: [], events: [], births: [] };
       SIM._hourly.breeding(full, ctx);
@@ -88,6 +92,45 @@ async function main() {
     check(m.length === 12, 'never more people than beds (12 beds, 14 people: 2 stay unhoused)');
   }
 
+  console.log('Ages and stages (step 2)');
+  {
+    const Y = LIFE.YEAR_MS, now = Date.UTC(2026, 5, 1);
+    const at = (age, stored) => ({ born_at: new Date(now - age * Y), life_stage: stored || (age < 12 ? 'child' : 'adult') });
+    check(Y === 28 * 3600e3 && Math.abs(LIFE.ageOf(at(30), now) - 30) < 1e-9, 'one game year is 28 real hours; age is time since born_at');
+    check(LIFE.ageOf({ life: { age: 22 } }, now) === 22, 'without a born_at, the old stored age (until the migration runs)');
+    const st = [[0, 'child'], [6.99, 'child'], [7, 'youth'], [11.99, 'youth'], [12, 'adult'], [59.99, 'adult'], [60, 'elder'], [90, 'elder']]
+      .map(([a, want]) => LIFE.stageOf(at(a), now) === want);
+    check(st.every(Boolean), 'stages: child 0–6, youth 7–11, adult 12–59, elder 60+');
+    check(LIFE.stageOf(at(13, 'child'), now) === 'youth', 'a stored child stays a child or youth until it comes of age (step 3)');
+    check(LIFE.stageOf({ ...at(40), life_stage: 'deceased' }, now) === 'deceased', 'the dead are deceased at any age');
+    check(LIFE.deathChance(69) === 0 && Math.abs(LIFE.deathChance(70) - 0.06) < 1e-9 && Math.abs(LIFE.deathChance(80) - 0.36) < 1e-9 && LIFE.deathChance(120) === 0.6,
+      'death chance: none before 70, 6% at 70, +3% a year, at most 60%');
+    check(!LIFE.fertile(at(13.9), now) && LIFE.fertile(at(14), now) && LIFE.fertile(at(55.5), now) && !LIFE.fertile(at(56), now) && !LIFE.fertile(at(30, 'child'), now),
+      'fertile: adults aged 14 to 55');
+    const m = { gender: 'male', ...at(30) }, f = { gender: 'female', ...at(30) };
+    check(LIFE.birthBlockers(m, f, { children: 1, lastChildAt: now - 3 * Y }, now).length === 0, 'a couple of 30 with one child three years old can have another');
+    check(LIFE.birthBlockers(m, f, { children: 1, lastChildAt: now - 1 * Y }, now).some(b => /very young/.test(b)), 'not within two years of their last child');
+    check(LIFE.birthBlockers(m, f, { children: 4 }, now).some(b => /4 children/.test(b)), 'not after four children');
+    check(LIFE.birthBlockers(m, { gender: 'female', ...at(58) }, {}, now).some(b => /14–55/.test(b)), 'not if either partner is past 55');
+    check(Math.abs(LIFE.ageOf({ born_at: LIFE.bornAtFor(25, now) }, now) - 25) < 1e-9, 'bornAtFor gives the born_at for an age');
+  }
+
+  console.log('Births follow the age rules (step 2)');
+  {
+    const orig = Math.random; Math.random = () => 0;
+    try {
+      const a = mk(1, { partner_id: 2 }), b = mk(2, { partner_id: 1 });
+      const sim = { pairs: [[a, b]], rels: {}, houses: { 1: { id: 1, capacity: 20, occupants: 2 } }, freeBeds: 18, couples: {}, newPartners: [], events: [], births: [] };
+      for (let h = 0; h < 200; h++) SIM._hourly.breeding(sim, { ...ctx, at: T0 + h * 3600e3 });
+      const gaps = sim.births.slice(1).map((x, i) => (x.at - sim.births[i].at) / LIFE.YEAR_MS);
+      check(sim.births.length === 4 && gaps.every(g => g >= 2), `with beds to spare: four children, two years apart (${sim.births.length}; gaps ${gaps.map(g => g.toFixed(1)).join(', ')})`);
+      const old = mk(3, { partner_id: 4, born_at: LIFE.bornAtFor(57, T0) }), young = mk(4, { partner_id: 3 });
+      const s2 = { pairs: [[old, young]], rels: {}, houses: { 1: { id: 1, capacity: 20, occupants: 2 } }, freeBeds: 18, couples: {}, newPartners: [], events: [], births: [] };
+      for (let h = 0; h < 10; h++) SIM._hourly.breeding(s2, { ...ctx, at: T0 + h * 3600e3 });
+      check(s2.births.length === 0, 'no births when a partner is past 55');
+    } finally { Math.random = orig; }
+  }
+
   // ── Against the database and the running API ─────────────────────────────
   const { pool } = require('../db');
   const jwt = require('jsonwebtoken');
@@ -106,9 +149,10 @@ async function main() {
     return { status: r.status, body: await r.json().catch(() => ({})) };
   };
   const cit = async (name, over = {}) => (await q(
-    `INSERT INTO citizens (settlement_id, name, gender, role, house_id, partner_id, parent_ids, life_stage)
-     VALUES ($1,$2,$3,'idle',$4,$5,$6,$7) RETURNING id`,
-    [s.id, name, over.gender || 'female', over.house_id || null, over.partner_id || null, JSON.stringify(over.parent_ids || []), over.life_stage || 'adult'])).rows[0].id;
+    `INSERT INTO citizens (settlement_id, name, gender, role, house_id, partner_id, parent_ids, life_stage, born_at)
+     VALUES ($1,$2,$3,'idle',$4,$5,$6,$7,$8) RETURNING id`,
+    [s.id, name, over.gender || 'female', over.house_id || null, over.partner_id || null, JSON.stringify(over.parent_ids || []), over.life_stage || 'adult',
+     LIFE.bornAtFor(over.age != null ? over.age : 30).toISOString()])).rows[0].id;
 
   console.log('Population follows the living');
   const ids = [];
@@ -150,6 +194,7 @@ async function main() {
   await q('UPDATE citizens SET partner_id = $1 WHERE id = $2', [dad, mum]);
   await q('UPDATE citizens SET partner_id = $1 WHERE id = $2', [mum, dad]);
   await q("UPDATE citizens SET life = jsonb_set(COALESCE(life, '{}'::jsonb), '{happiness}', '95') WHERE settlement_id = $1", [s.id]);
+  await LIFE.assignFamilies(s.id);   // as arrival and the migration do for every citizen
   const before = await LIFE.livingCount(s.id);
   const orig = Math.random; Math.random = () => 0;
   try {
@@ -165,6 +210,30 @@ async function main() {
   const beds = await LIFE.beds(s.id);
   check(beds.living <= beds.beds, `the town is never overfilled (${beds.living}/${beds.beds})`);
 
+  console.log('A child: born at its hour, in the smaller family line (step 2)');
+  {
+    const famRows = (await q('SELECT c.id, c.born_at, c.family_id, f.name AS fam, c.last_birthday_year FROM citizens c LEFT JOIN families f ON f.id = c.family_id WHERE c.id = $1', [kids[0].id])).rows[0];
+    const parents = (await q('SELECT id, family_id, last_child_at FROM citizens WHERE id = ANY($1)', [[mum, dad]])).rows;
+    check(famRows.born_at && Date.now() - new Date(famRows.born_at).getTime() < 3 * 3600e3 && famRows.last_birthday_year === 0, 'the child\'s born_at is the hour it was born');
+    check(parents.every(p => p.last_child_at), 'both parents remember when their last child was born');
+    check(famRows.family_id && parents.some(p => p.family_id === famRows.family_id), "the child is in one of its parents' families");
+  }
+
+  console.log('The citizens API shows age and stage (step 2)');
+  {
+    await q('UPDATE citizens SET born_at = $1 WHERE id = $2', [LIFE.bornAtFor(64).toISOString(), ids[1]]);
+    await q("UPDATE citizens SET life = jsonb_set(COALESCE(life, '{}'::jsonb), '{age}', '19') WHERE id = $1", [ids[1]]);
+    const cr = await api('GET', '/api/citizens');
+    const elder = cr.body.citizens.find(c => c.id === ids[1]);
+    check(cr.status === 200 && elder && elder.age === 64 && elder.stage === 'elder', 'an adult born 64 years ago is 64 and an elder');
+    check(elder && elder.life.age === 64, 'life.age is the computed age, not the stored 19 (§4.1)');
+    const kid = cr.body.citizens.find(c => c.id === kids[0].id);
+    check(kid && kid.stage === 'child' && kid.age === 0, 'a newborn is a child of 0');
+    const pm = cr.body.citizens.find(c => c.id === mum);
+    check(pm && pm.breeding_status && !pm.breeding_status.blockers.includes('Not living together'), 'the "can they have a child" box no longer asks them to share a house');
+    check(pm && pm.breeding_status && pm.breeding_status.blockers.some(b => /very young/.test(b)), 'it says their last child is still very young');
+  }
+
   console.log('Migration for existing towns');
   const oldHouse = (await q("INSERT INTO houses (settlement_id, name, building_type, capacity) VALUES ($1, 'Old Hut', 'starter_house', 2) RETURNING id", [s.id])).rows[0].id;
   const ghost = await cit('Ghost', { life_stage: 'deceased', house_id: oldHouse });
@@ -176,6 +245,26 @@ async function main() {
   check((await q('SELECT capacity FROM houses WHERE id = $1', [oldHouse])).rows[0].capacity === 4, 'old huts of 2 now hold 4');
   check((await q('SELECT house_id FROM citizens WHERE id = $1', [ghost])).rows[0].house_id === null, 'the dead are taken out of their houses');
   check((await q('SELECT population FROM settlements WHERE id = $1', [s.id])).rows[0].population === await LIFE.livingCount(s.id), 'the stuck population is set to the living count');
+
+  console.log('Migration, step 2: ages and families');
+  {
+    const lc = fs.readFileSync(path.join(__dirname, '..', 'migrations', fs.readdirSync(path.join(__dirname, '..', 'migrations')).find(f => f.endsWith('_life_cycle.sql'))), 'utf8');
+    const old1 = await cit('Hazel Oakbrook', { age: 0 }), old2 = await cit('Rowan Oakbrook', { age: 0 }), old3 = await cit('Pip Thistle', { age: 0 });
+    await q("UPDATE citizens SET family_id = NULL, born_at = NOW(), last_birthday_year = NULL, life = jsonb_build_object('age', a.age) FROM (VALUES ($1::int, 30), ($2::int, 70), ($3::int, 20)) a(id, age) WHERE citizens.id = a.id", [old1, old2, old3]);
+    await q("DELETE FROM migration_marks WHERE key = 'life_cycle_ages'");
+    await q(lc); await q(lc);   // twice is the same as once
+    const r = (await q('SELECT c.id, c.born_at, c.last_birthday_year, f.name AS fam FROM citizens c LEFT JOIN families f ON f.id = c.family_id WHERE c.id = ANY($1) ORDER BY c.id', [[old1, old2, old3]])).rows;
+    const ageNow = row => LIFE.ageOf(row);
+    check(Math.abs(ageNow(r[0]) - 30) < 0.1 && Math.abs(ageNow(r[2]) - 20) < 0.1, 'existing adults start ageing from their shown age');
+    check(Math.abs(ageNow(r[1]) - 45) < 0.1, 'capped at 45, so nobody is suddenly elderly or dead');
+    check(r.every(x => x.last_birthday_year === Math.floor(ageNow(x))), 'no death rolls owed for years before the life cycle');
+    check(r[0].fam === 'Oakbrook' && r[1].fam === 'Oakbrook' && r[2].fam === 'Thistle', 'one family per surname in the town');
+    const fams = (await q("SELECT COUNT(*)::int AS n FROM families WHERE settlement_id = $1 AND name = 'Oakbrook'", [s.id])).rows[0].n;
+    check(fams === 1, 'running it again makes no duplicate families');
+    await q("UPDATE citizens SET born_at = NOW() - interval '1 hour' WHERE id = $1", [old1]);
+    await q(lc);
+    check(Math.abs(LIFE.ageOf((await q('SELECT born_at FROM citizens WHERE id = $1', [old1])).rows[0]) - 1 / 28) < 0.01, 'the ageing part runs only once (a later boot leaves born_at alone)');
+  }
 
   await pool.end();
 }
