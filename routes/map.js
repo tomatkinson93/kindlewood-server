@@ -520,19 +520,22 @@ router.post('/arrive', requireAuth, async (req, res) => {
       const citizens = generateStartingCitizens(10);
       for (const c of citizens) {
         await query(
-          `INSERT INTO citizens (settlement_id, name, gender, generation, role, stats, skills, life, repro, visible_traits, hidden_traits)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          `INSERT INTO citizens (settlement_id, name, gender, generation, role, stats, skills, life, repro, visible_traits, hidden_traits, born_at, last_birthday_year)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
           [
             settlement.id, c.name, c.gender, c.generation, c.role,
             JSON.stringify(c.stats), JSON.stringify(c.skills),
             JSON.stringify(c.life), JSON.stringify(c.repro),
             JSON.stringify(c.visible_traits), JSON.stringify(c.hidden_traits),
+            // Age moves from born_at (lib/life.js); the founders start at their rolled age.
+            require('../lib/life').bornAtFor(c.life.age).toISOString(), Math.floor(c.life.age),
           ]
         );
       }
       // Careers: jobs whose building this species doesn't start with → Forager.
       await require('../lib/careers').fixRoles(settlement.id).catch(e => console.error('[careers] fixRoles:', e.message));
       console.log(`Generated ${citizens.length} citizens for settlement ${settlement.id}`);
+      await require('../lib/life').assignFamilies(settlement.id);
       await require('../lib/life').recount(settlement.id);
     }
 

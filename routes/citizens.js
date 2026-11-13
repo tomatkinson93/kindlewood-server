@@ -150,6 +150,20 @@ router.get('/', requireAuth, async (req, res) => {
       houseChildCount[c.house_id] = (houseChildCount[c.house_id] || 0) + 1;
     });
 
+    // Ages and stages (lib/life.js), the town's free beds, each couple's children.
+    const LIFE = require('../lib/life');
+    const now = Date.now();
+    const bedInfo = await LIFE.beds(settlement.id);
+    const coupleKids = {};
+    for (const k of citizensRes.rows) {
+      const [x, y] = LIFE.parentsOf(k).sort((m, n) => m - n);
+      if (!x || !y) continue;
+      const e = coupleKids[`${x}_${y}`] || (coupleKids[`${x}_${y}`] = { children: 0, lastChildAt: null });
+      e.children++;
+      const t = k.born_at ? new Date(k.born_at).getTime() : null;
+      if (t && (!e.lastChildAt || t > e.lastChildAt)) e.lastChildAt = t;
+    }
+
     const citizens = citizensRes.rows.map(c => {
       const context = {
         season,
@@ -157,6 +171,9 @@ router.get('/', requireAuth, async (req, res) => {
         onExpedition: !!expByCitizen[c.id] || !!questByCitizen[c.id] || !!tradeByCitizen[c.id]?.on_road,
         partnerHouseId: c.partner_id ? partnerHouseMap[c.partner_id] : null,
         houseChildCount: houseChildCount[c.house_id] || 0,
+        // Someone else in the house is an elder (60+).
+        elderInHouse: c.house_id && citizensRes.rows.some(o => o.id !== c.id && o.house_id === c.house_id && LIFE.stageOf(o, now) === 'elder')
+          ? LIFE.CONFIG.ELDER_HOME_HAPPINESS : 0,
         happeningHappiness: hMods.happiness || 0,
         jobMood: (careerInfo.get(c.id) || {}).job_mood || 0,
       };
@@ -172,15 +189,19 @@ router.get('/', requireAuth, async (req, res) => {
         const canBreed = (isMale && partnerIsFemale) || (isFemale && partnerIsMale);
 
         if (canBreed) {
+          // The rules simulation.js applies (docs/PHASE_1_LIFE_CYCLE.md §4.6):
+          // a free bed anywhere in town, both fertile, the gap, four at most.
           const sameHouse = c.house_id && partner?.house_id && c.house_id === partner.house_id;
           const myHappy   = (c.life?.happiness ?? 70) + (hMods.happiness || 0);
           const ptHappy   = (partner?.life?.happiness ?? 70) + (hMods.happiness || 0);
           const happyOk   = myHappy >= 60 && ptHappy >= 60;
-          const residentCount = c.house_id ? (houseResidents[c.house_id]?.length || 1) : 0;
+          const ck = c.id < c.partner_id ? `${c.id}_${c.partner_id}` : `${c.partner_id}_${c.id}`;
+          const lifeBlockers = partner ? LIFE.birthBlockers(c, partner, coupleKids[ck] || {}, now) : ['Partner not found'];
+          const bedFree = bedInfo.free > 0;
 
           // Calculate chance
           let chance = 0.04;
-          if (sameHouse && happyOk) {
+          if (bedFree && happyOk && !lifeBlockers.length) {
             chance += season.birthChanceBonus || 0;
             chance += hMods.birth_chance || 0;
             const avgHappy = (myHappy + ptHappy) / 2;
@@ -200,9 +221,11 @@ router.get('/', requireAuth, async (req, res) => {
             chance: Math.round(chance * 100),
             season: season.id,
             seasonBonus: Math.round((season.birthChanceBonus || 0) * 100),
+            bedFree,
             blockers: [
-              !sameHouse   ? 'Not living together'          : null,
+              !bedFree     ? 'No free bed in town (build a Willow Hut)' : null,
               !happyOk     ? 'Happiness too low (need 60+)' : null,
+              ...lifeBlockers,
             ].filter(Boolean),
           };
         }
@@ -216,7 +239,11 @@ router.get('/', requireAuth, async (req, res) => {
         role: c.role,
         stats: c.life_stage === 'child' ? {} : (c.stats || {}),
         skills: c.life_stage === 'child' ? {} : (c.skills || {}),
-        life: c.life || {},
+        // Age moves from born_at; the stored life.age is no longer read (§4.1).
+        life: { ...(c.life || {}), age: Math.floor(LIFE.ageOf(c, now)) },
+        age: Math.floor(LIFE.ageOf(c, now)),
+        stage: LIFE.stageOf(c, now),
+        family_id: c.family_id || null,
         visible_traits: c.visible_traits || [],
         revealed_hidden_traits: [],
         ...(careerInfo.get(c.id) || {}),
@@ -264,7 +291,9 @@ router.get('/:id', requireAuth, async (req, res) => {
       citizen: {
         id: c.id, name: c.name, gender: c.gender, generation: c.generation,
         role: c.role, stats: c.stats || {}, skills: c.skills || {},
-        life: c.life || {}, repro: c.repro || {},
+        life: { ...(c.life || {}), age: Math.floor(require('../lib/life').ageOf(c)) }, repro: c.repro || {},
+        age: Math.floor(require('../lib/life').ageOf(c)),
+        stage: require('../lib/life').stageOf(c),
         visible_traits: c.visible_traits || [],
         revealed_hidden_traits: c.revealed_traits || [],
         born_at: c.born_at,
@@ -278,6 +307,43 @@ router.get('/:id', requireAuth, async (req, res) => {
 
 // Update citizen role (careers: time so far is credited to the old job; a
 // job needs its building — lib/careers/classes.js).
+// ── POST /api/citizens/:id/apprentice { class, mentor_id? } ──────────────
+// A youth (7–11) chooses the trade they learn and, optionally, who teaches
+// them (docs/PHASE_1_LIFE_CYCLE.md §4.2). Without a mentor_id the best free
+// adult of that trade teaches them (one mentor, two youths at most).
+router.post('/:id/apprentice', requireAuth, async (req, res) => {
+  try {
+    const LIFE = require('../lib/life');
+    const C = require('../lib/careers/classes');
+    const sRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const settlement = sRes.rows[0];
+    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+    const body = req.body || {};
+    const classKey = typeof body.class === 'string' ? body.class : null;
+    if (!classKey || !C.ASSIGNABLE.includes(classKey)) return res.status(400).json({ error: 'Choose a trade.' });
+    const c = (await query('SELECT * FROM citizens WHERE id=$1 AND settlement_id=$2', [req.params.id, settlement.id])).rows[0];
+    if (!c) return res.status(404).json({ error: 'Citizen not found.' });
+    if (LIFE.stageOf(c) !== 'youth') return res.status(400).json({ error: `Only youths (${LIFE.CONFIG.YOUTH_FROM}–${LIFE.CONFIG.ADULT_FROM - 1}) can take up an apprenticeship.` });
+    let mentorId = null;
+    if (body.mentor_id != null && body.mentor_id !== '') {
+      const m = (await query(
+        `SELECT id, role, life_stage FROM citizens WHERE id=$1 AND settlement_id=$2 AND life_stage = 'adult'`, [body.mentor_id, settlement.id])).rows[0];
+      if (!m || m.role !== classKey) return res.status(400).json({ error: 'A mentor must be an adult working that trade.' });
+      mentorId = m.id;
+    }
+    await query('UPDATE citizens SET apprentice_class=$1, mentor_id=$2 WHERE id=$3', [classKey, mentorId, c.id]);
+    // What it comes to, with everyone else's apprenticeships considered.
+    const careers = require('../lib/careers');
+    const state = await careers.loadState(null, settlement.id);
+    const a = LIFE.apprenticeships(state.citizens, state.classRows).get(c.id) || {};
+    res.json({ ok: true, apprentice: { class_key: a.classKey, chosen: a.chosen, mentor_id: a.mentorId, mentor_name: a.mentorName, rate: a.rate, hint: a.hint },
+      note: mentorId && a.mentorId !== mentorId ? 'That mentor already teaches two youths; another will teach for now.' : null });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to set the apprenticeship.' });
+  }
+});
+
 router.patch('/:id/role', requireAuth, async (req, res) => {
   try {
     const { role } = req.body;

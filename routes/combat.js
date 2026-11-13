@@ -942,7 +942,7 @@ router.post('/admin/inflict', requireAuth, requireAdmin, async (req, res) => {
     if (!sett) return res.status(404).json({ error: 'No settlement.' });
 
     const cit = await query(
-      'SELECT id, name, life_stage FROM citizens WHERE id=$1 AND settlement_id=$2',
+      'SELECT id, name, life_stage, born_at FROM citizens WHERE id=$1 AND settlement_id=$2',
       [cid, sett.id]
     );
     if (!cit.rows.length) return res.status(404).json({ error: 'Citizen not found.' });
@@ -950,7 +950,7 @@ router.post('/admin/inflict', requireAuth, requireAdmin, async (req, res) => {
 
     // Use the same roll machinery so admin injuries look like normal ones.
     // If severity/body_part overrides are provided, splice them in afterwards.
-    const rolled = combatResolver.rollInjuryFor({ life_stage: citizen.life_stage });
+    const rolled = combatResolver.rollInjuryFor({ life_stage: citizen.born_at ? require('../lib/life').stageOf(citizen) : citizen.life_stage });
     if (severity) {
       rolled.severity = severity;
       // Recompute stat modifiers & heal_days for the overridden severity

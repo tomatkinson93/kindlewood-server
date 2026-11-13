@@ -279,7 +279,9 @@ router.get('/settlement', requireAuth, async (req, res) => {
     await research.settle(settlement.id).catch(e => console.error('[research] settle failed:', e.message));
     const discovered = await resourcesLib.discoveredKeys(null, settlement.id);
     const newDiscoveries = await resourcesLib.unseen(null, settlement.id);
-    // Population and beds from live counts (docs/PHASE_1_LIFE_CYCLE.md §5).
+    // Children of 12+ come of age (lib/life.js), then population and beds
+    // from live counts (docs/PHASE_1_LIFE_CYCLE.md §5).
+    await require('../lib/life').comeOfAge(settlement.id).catch(e => console.error('[life] comeOfAge:', e.message));
     settlement.population = await require('../lib/life').recount(settlement.id);
     const bedInfo = await require('../lib/life').beds(settlement.id);
 
@@ -468,14 +470,16 @@ router.post('/cheat/citizen', requireAuth, requireAdmin, async (req, res) => {
 
     const citizen = generateCitizen(1);
     await query(
-      `INSERT INTO citizens (settlement_id, name, gender, generation, role, stats, skills, life, repro, visible_traits, hidden_traits, born_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())`,
+      `INSERT INTO citizens (settlement_id, name, gender, generation, role, stats, skills, life, repro, visible_traits, hidden_traits, born_at, last_birthday_year)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       [settlement.id, citizen.name, citizen.gender, citizen.generation, citizen.role,
        JSON.stringify(citizen.stats), JSON.stringify(citizen.skills),
        JSON.stringify(citizen.life), JSON.stringify(citizen.repro),
-       JSON.stringify(citizen.visible_traits), JSON.stringify(citizen.hidden_traits)]
+       JSON.stringify(citizen.visible_traits), JSON.stringify(citizen.hidden_traits),
+       require('../lib/life').bornAtFor(citizen.life.age).toISOString(), Math.floor(citizen.life.age)]
     );
     const life = require('../lib/life');
+    await life.assignFamilies(settlement.id);
     await life.recount(settlement.id);
     await life.autoHouse(settlement.id);
     res.json({ ok: true, name: citizen.name });
@@ -716,6 +720,10 @@ router.patch('/cheat/citizen/:id', requireAuth, requireAdmin, async (req, res) =
     if (role       !== undefined) { updates.push(`role=$${i++}`);       vals.push(role); }
     if (life_stage !== undefined) { updates.push(`life_stage=$${i++}`); vals.push(life_stage); }
     if (life_stage === 'deceased') updates.push('house_id=NULL');
+    if (life && life.age != null && Number.isFinite(Number(life.age))
+        && Number(life.age) !== Math.floor(require('../lib/life').ageOf(c))) {
+      updates.push(`born_at=$${i++}`); vals.push(require('../lib/life').bornAtFor(Number(life.age)).toISOString());
+    }
     if (generation !== undefined) { updates.push(`generation=$${i++}`); vals.push(generation); }
     if (stats !== undefined) {
       const merged = { ...(c.stats || {}), ...stats };

@@ -83,6 +83,8 @@ async function runSimulation(settlement, hoursElapsed, lastSimAt) {
   }
   const simHours = Math.min(hours, SIM_MAX_CATCHUP_HOURS);
   const firstMs = startMs + (hours - simHours) * HOUR;
+  // Children of 12+ come of age first, so they can bond and partner this run.
+  await LIFE.comeOfAge(settlementId).catch(e => console.error('[life] comeOfAge:', e.message));
 
   const citizenRes = await query(
     `SELECT * FROM citizens WHERE settlement_id = $1 AND COALESCE(life_stage, 'adult') != 'deceased'`,
@@ -127,7 +129,20 @@ async function _loadSimState(settlementId, citizens, adults) {
   // citizens fewer than the beds in every house), not room in one house.
   const totalBeds = houseRes.rows.reduce((n, h) => n + (Number(h.capacity) || 0), 0);
   const freeBeds = Math.max(0, totalBeds - citizens.length);
-  return { byId, rels, houses, pairs, freeBeds, newPartners: [], events: [], births: [] };
+  // Each couple's children so far (living or not) and the newest one's birth.
+  const couples = {};
+  const kidRes = await query(
+    `SELECT parent_ids, born_at FROM citizens
+      WHERE settlement_id = $1 AND jsonb_typeof(parent_ids) = 'array' AND jsonb_array_length(parent_ids) = 2`, [settlementId]);
+  for (const k of kidRes.rows) {
+    const [x, y] = LIFE.parentsOf(k).sort((m, n) => m - n);
+    if (!x || !y) continue;
+    const c = couples[`${x}_${y}`] || (couples[`${x}_${y}`] = { children: 0, lastChildAt: null });
+    c.children++;
+    const t = k.born_at ? new Date(k.born_at).getTime() : null;
+    if (t && (!c.lastChildAt || t > c.lastChildAt)) c.lastChildAt = t;
+  }
+  return { byId, rels, houses, pairs, freeBeds, couples, newPartners: [], events: [], births: [] };
 }
 
 function _happiness(c, ctx) { return (c.life?.happiness ?? 70) + (ctx.hMods.happiness || 0); }
@@ -224,6 +239,10 @@ function _hourBreeding(sim, ctx) {
   for (const [a, b] of sim.pairs) {
     if (a.partner_id !== b.id || a.gender === b.gender) continue;
     if (_freeBeds(sim) <= 0) continue;
+    // Both fertile (14–55), two years since their last child, fewer than four.
+    const ck = a.id < b.id ? `${a.id}_${b.id}` : `${b.id}_${a.id}`;
+    const couple = (sim.couples || (sim.couples = {}))[ck] || (sim.couples[ck] = { children: 0, lastChildAt: null });
+    if (LIFE.birthBlockers(a, b, couple, ctx.at).length) continue;
     const house = _houseForChild(sim, a, b);
     if (!house) continue;
 
@@ -241,6 +260,8 @@ function _hourBreeding(sim, ctx) {
 
     house.occupants++;
     if (typeof sim.freeBeds === 'number') sim.freeBeds--;
+    couple.children++;
+    couple.lastChildAt = ctx.at;
     sim.births.push({ at: ctx.at, house, pair: {
       id_a: a.id, name_a: a.name, id_b: b.id, name_b: b.name,
       gen_a: a.generation, gen_b: b.generation,
@@ -297,8 +318,10 @@ async function _createChild(settlementId, pair, atMs = null, house = null) {
 
   const pickRandom = arr => arr[Math.floor(Math.random() * arr.length)];
 
-  // Child takes one parent's last name
-  const parentLastName = pair.name_a.split(' ')[1] || pair.name_b.split(' ')[1] || 'Woodkin';
+  // The child joins whichever parent's family line has fewer living members,
+  // and takes that surname (keeps small lines alive; §4.7).
+  const fam = await _familyForChild(settlementId, pair);
+  const parentLastName = fam ? fam.name : (pair.name_a.split(' ')[1] || pair.name_b.split(' ')[1] || 'Woodkin');
   const citMod = require('./citizens');
   const firstName = pickRandom(isFemale ? citMod.FEMALE_NAMES : citMod.MALE_NAMES);
   const childName = `${firstName} ${parentLastName}`;
@@ -357,11 +380,13 @@ async function _createChild(settlementId, pair, atMs = null, house = null) {
 
   const generation = Math.max(pair.gen_a || 1, pair.gen_b || 1) + 1;
 
+  const bornAt = new Date(atMs ? Math.min(atMs, Date.now()) : Date.now());
   const result = await query(
     `INSERT INTO citizens
        (settlement_id, name, gender, generation, role, stats, skills, life,
-        repro, visible_traits, hidden_traits, house_id, life_stage, parent_ids)
-     VALUES ($1,$2,$3,$4,'idle',$5,$6,$7,$8,$9,$10,$11,'child',$12)
+        repro, visible_traits, hidden_traits, house_id, life_stage, parent_ids,
+        born_at, family_id, last_birthday_year)
+     VALUES ($1,$2,$3,$4,'idle',$5,$6,$7,$8,$9,$10,$11,'child',$12,$13,$14,0)
      RETURNING id`,
     [
       settlementId,
@@ -376,8 +401,11 @@ async function _createChild(settlementId, pair, atMs = null, house = null) {
       JSON.stringify(hiddenTraits),
       house && house.id ? house.id : null,
       JSON.stringify([pair.id_a, pair.id_b]),
+      bornAt.toISOString(),
+      fam ? fam.id : null,
     ]
   );
+  await query('UPDATE citizens SET last_child_at = $1 WHERE id = ANY($2::int[])', [bornAt.toISOString(), [pair.id_a, pair.id_b]]).catch(() => {});
 
   const childId = result.rows[0]?.id;
   require('./lib/milestones').birth(settlementId).catch(() => {});   // new-player funnel
@@ -399,6 +427,21 @@ async function _createChild(settlementId, pair, atMs = null, house = null) {
     `New beginnings — ${pair.name_a} and ${pair.name_b} welcome a ${babyGender} into the world. 🍼 May ${childName} grow strong in ${houseName}.`,
     [pair.id_a, pair.id_b, childId], atMs
   );
+}
+
+// The parents' family lines; the one with fewer living members wins (ties:
+// the first parent's). Null before the families table exists.
+async function _familyForChild(settlementId, pair) {
+  try {
+    const r = await query(
+      `SELECT f.id, f.name,
+              (SELECT COUNT(*) FROM citizens m WHERE m.family_id = f.id AND ${LIFE.LIVING})::int AS living
+         FROM citizens c JOIN families f ON f.id = c.family_id
+        WHERE c.id = ANY($1::int[]) AND c.settlement_id = $2
+        ORDER BY living ASC, (c.id = $3) DESC LIMIT 1`,
+      [[pair.id_a, pair.id_b], settlementId, pair.id_a]);
+    return r.rows[0] || null;
+  } catch (e) { return null; }
 }
 
 // ── Events ────────────────────────────────────

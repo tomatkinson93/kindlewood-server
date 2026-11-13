@@ -58,7 +58,7 @@ async function main() {
   check(r.body.rows[0].name === `Cit0_${RUN}` && r.body.rows[0].values[1] === 'Lv 20' && /Farmer/.test(r.body.rows[0].values[0]) && /Hollow/.test(r.body.rows[0].sub), 'Most Skilled: the citizen, their career and level, their town');
   await q("UPDATE citizens SET born_at = '1990-01-01' WHERE id = $1", [small.cits[5]]);
   r = await get('oldest');
-  check(r.body.rows[0].name === `Cit5_${RUN}` && /days/.test(r.body.rows[0].values[0]), 'Oldest: the longest-lived citizen');
+  check(r.body.rows[0].name === `Cit5_${RUN}` && /years/.test(r.body.rows[0].values[0]), 'Oldest: the longest-lived citizen (in game years)');
   await q(`INSERT INTO settlement_quests (settlement_id, user_id, citizen_id, quest_id, status, party_ids, completes_at)
            SELECT $1, $2, $3, 'x', 'completed', $4::jsonb, NOW() FROM generate_series(1, 500)`, [big.sid, big.id, big.cits[1], JSON.stringify([big.cits[1]])]).catch(e => console.log('   (quest insert:', e.message + ')'));
   r = await get('adventurous');
