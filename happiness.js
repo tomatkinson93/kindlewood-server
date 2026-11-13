@@ -41,6 +41,10 @@ function calculateHappinessFactors(citizen, context = {}) {
     if (context.houseChildCount > 0) {
       factors.push(HAPPINESS_FACTORS.child_in_house);
     }
+    // An elder at home (docs/PHASE_1_LIFE_CYCLE.md §4.3)
+    if (context.elderInHouse) {
+      factors.push({ label: 'An elder at home', value: context.elderInHouse, icon: '🦉' });
+    }
   } else {
     factors.push(HAPPINESS_FACTORS.unhoused);
   }

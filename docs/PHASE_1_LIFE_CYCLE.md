@@ -1,6 +1,6 @@
 # Phase 1 — the life cycle (build spec)
 
-Status: **steps 1–2 built (2026-11-13)**; steps 3–7 ready to build. **Steps 2–6 ship together:** do not merge the branch until step 6 is done. Decisions in §11 are made. Written 2026-11-11, updated 2026-11-13. Part of `docs/ROADMAP_1_0.md`.
+Status: **steps 1–3 built (2026-11-13)**; steps 4–7 ready to build. **Steps 2–6 ship together:** do not merge the branch until step 6 is done. Decisions in §11 are made. Written 2026-11-11, updated 2026-11-13. Part of `docs/ROADMAP_1_0.md`.
 Read §1 first: it lists two bugs in the live game that block progress today.
 
 ## 1. Findings from the assessment
@@ -239,6 +239,21 @@ Each step ends with tests passing. **Steps 2–6 ship together**: death without 
    - The Oldest ranking shows game years.
    - Tests: `scripts/life_test.js` (step 2 sections), `verify/life_proofs.js`.
 3. **Youths and elders:** apprenticeship, mentors, part-strength work, coming of age.
+
+   **Built (2026-11-13, not merged):**
+   - `lib/life.js` gains `apprenticeships` (each youth's trade, mentor and rate), `defaultTrade`, `aptitudeHint` and `comeOfAge`.
+   - `lib/chronicle.js` `write()` is the one chronicle writer; step 6 calls it from everything else.
+   - Youths:
+     - The trade is the player's choice (`POST /api/citizens/:id/apprentice { class, mentor_id? }`) or, by default, a parent's.
+     - A mentor is chosen, or else the best free adult or elder of that trade; each mentor takes two pupils at most.
+     - XP is paid in `careers.settleIn` at half the passive rate, or the full rate with a mentor, counting only the hours since they turned 7.
+     - Output: a quarter of an adult's basic output, as `loadWorkforce().youths`, added in `calculateRates` and shown as its own row in the breakdown. It brings no crew share.
+     - A hidden aversion or knack shows as a hint.
+     - Choosing happens in the citizen profile until moments exist.
+   - Coming of age at 12: atomic, run from `GET /settlement` and at the start of the simulation. The new adult takes their trade, or Forager if the town lacks its building, and keeps their XP. It writes one chronicle line and one `came_of_age` event (a toast), and the `first_coming_of_age` milestone. Children of 12+ in existing towns come of age on the first tick.
+   - Elders: output ×0.6 in `buildProfiles`; the elder injury modifier in combat and admin injuries; famine upkeep by computed stage (elders 0.75, youths as children); an "elder at home" happiness factor (+3) for the household.
+   - Client: the Apprenticeship block in the profile (trade and mentor pickers, progress, rate, hint) and an elder note.
+   - Tests: `life_test` step 3 sections, `verify/life_proofs.js` §3.
 4. **Death, families and inheritance:** death rolls, heirs, heirlooms, headship.
 5. **Settlers.**
 6. **The chronicle and the Families screen.**

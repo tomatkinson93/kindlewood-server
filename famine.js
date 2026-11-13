@@ -115,7 +115,13 @@ function interpolate(template, vars) {
 // season is optional; pass the quantum's season so winter's foodConsumption
 // x1.20 (already defined in seasons.js) applies.
 function upkeepPerHour(citizen, season = null) {
-  const stage = citizen.life_stage || 'adult';
+  // The stage from age (lib/life.js) when born_at is known: elders eat less;
+  // youths are still children here.
+  let stage = citizen.life_stage || 'adult';
+  if (citizen.born_at && stage !== 'deceased') {
+    const s = require('./lib/life').stageOf(citizen);
+    stage = s === 'youth' ? 'child' : s;
+  }
   let u = UPKEEP_BY_STAGE[stage] != null ? UPKEEP_BY_STAGE[stage] : UPKEEP_BY_STAGE.adult;
   if (u === 0) return 0;
   if (stage === 'adult' && PHYSICAL_ROLES.has(citizen.role)) u *= PHYSICAL_ROLE_MULT;
@@ -294,7 +300,7 @@ async function applyConsumption(settlementId) {
 
   // Load living citizens + their active starving conditions.
   const cRes = await query(
-    `SELECT id, name, life_stage, role, visible_traits, life
+    `SELECT id, name, life_stage, born_at, role, visible_traits, life
        FROM citizens
       WHERE settlement_id=$1 AND life_stage != 'deceased'`,
     [settlementId]
@@ -329,6 +335,7 @@ async function applyConsumption(settlementId) {
       id: c.id,
       name: c.name,
       life_stage: c.life_stage || 'adult',
+      born_at: c.born_at,   // upkeep by age (lib/life.js stageOf)
       role: c.role,
       visible_traits: c.visible_traits || [],
       hunger:    c.life?.hunger    ?? 30,
@@ -434,7 +441,7 @@ async function getFamineSummary(settlementId, foodProductionPerHour = 0) {
   const food = Number(sRes.rows[0]?.food) || 0;
 
   const cRes = await query(
-    `SELECT id, life_stage, role, visible_traits, life
+    `SELECT id, life_stage, born_at, role, visible_traits, life
        FROM citizens WHERE settlement_id=$1 AND life_stage != 'deceased'`,
     [settlementId]
   );
@@ -482,7 +489,7 @@ async function getFamineSummary(settlementId, foodProductionPerHour = 0) {
 // Push onto breakdown.food.sources and add .value (negative) to the total.
 async function buildUpkeepBreakdownSource(settlementId) {
   const cRes = await query(
-    `SELECT id, name, life_stage, role, visible_traits, life
+    `SELECT id, name, life_stage, born_at, role, visible_traits, life
        FROM citizens WHERE settlement_id=$1 AND life_stage != 'deceased'`,
     [settlementId]
   );

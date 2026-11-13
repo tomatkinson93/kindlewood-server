@@ -279,7 +279,9 @@ router.get('/settlement', requireAuth, async (req, res) => {
     await research.settle(settlement.id).catch(e => console.error('[research] settle failed:', e.message));
     const discovered = await resourcesLib.discoveredKeys(null, settlement.id);
     const newDiscoveries = await resourcesLib.unseen(null, settlement.id);
-    // Population and beds from live counts (docs/PHASE_1_LIFE_CYCLE.md §5).
+    // Children of 12+ come of age (lib/life.js), then population and beds
+    // from live counts (docs/PHASE_1_LIFE_CYCLE.md §5).
+    await require('../lib/life').comeOfAge(settlement.id).catch(e => console.error('[life] comeOfAge:', e.message));
     settlement.population = await require('../lib/life').recount(settlement.id);
     const bedInfo = await require('../lib/life').beds(settlement.id);
 

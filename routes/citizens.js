@@ -171,6 +171,9 @@ router.get('/', requireAuth, async (req, res) => {
         onExpedition: !!expByCitizen[c.id] || !!questByCitizen[c.id] || !!tradeByCitizen[c.id]?.on_road,
         partnerHouseId: c.partner_id ? partnerHouseMap[c.partner_id] : null,
         houseChildCount: houseChildCount[c.house_id] || 0,
+        // Someone else in the house is an elder (60+).
+        elderInHouse: c.house_id && citizensRes.rows.some(o => o.id !== c.id && o.house_id === c.house_id && LIFE.stageOf(o, now) === 'elder')
+          ? LIFE.CONFIG.ELDER_HOME_HAPPINESS : 0,
         happeningHappiness: hMods.happiness || 0,
         jobMood: (careerInfo.get(c.id) || {}).job_mood || 0,
       };
@@ -304,6 +307,43 @@ router.get('/:id', requireAuth, async (req, res) => {
 
 // Update citizen role (careers: time so far is credited to the old job; a
 // job needs its building — lib/careers/classes.js).
+// ── POST /api/citizens/:id/apprentice { class, mentor_id? } ──────────────
+// A youth (7–11) chooses the trade they learn and, optionally, who teaches
+// them (docs/PHASE_1_LIFE_CYCLE.md §4.2). Without a mentor_id the best free
+// adult of that trade teaches them (one mentor, two youths at most).
+router.post('/:id/apprentice', requireAuth, async (req, res) => {
+  try {
+    const LIFE = require('../lib/life');
+    const C = require('../lib/careers/classes');
+    const sRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
+    const settlement = sRes.rows[0];
+    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
+    const body = req.body || {};
+    const classKey = typeof body.class === 'string' ? body.class : null;
+    if (!classKey || !C.ASSIGNABLE.includes(classKey)) return res.status(400).json({ error: 'Choose a trade.' });
+    const c = (await query('SELECT * FROM citizens WHERE id=$1 AND settlement_id=$2', [req.params.id, settlement.id])).rows[0];
+    if (!c) return res.status(404).json({ error: 'Citizen not found.' });
+    if (LIFE.stageOf(c) !== 'youth') return res.status(400).json({ error: `Only youths (${LIFE.CONFIG.YOUTH_FROM}–${LIFE.CONFIG.ADULT_FROM - 1}) can take up an apprenticeship.` });
+    let mentorId = null;
+    if (body.mentor_id != null && body.mentor_id !== '') {
+      const m = (await query(
+        `SELECT id, role, life_stage FROM citizens WHERE id=$1 AND settlement_id=$2 AND life_stage = 'adult'`, [body.mentor_id, settlement.id])).rows[0];
+      if (!m || m.role !== classKey) return res.status(400).json({ error: 'A mentor must be an adult working that trade.' });
+      mentorId = m.id;
+    }
+    await query('UPDATE citizens SET apprentice_class=$1, mentor_id=$2 WHERE id=$3', [classKey, mentorId, c.id]);
+    // What it comes to, with everyone else's apprenticeships considered.
+    const careers = require('../lib/careers');
+    const state = await careers.loadState(null, settlement.id);
+    const a = LIFE.apprenticeships(state.citizens, state.classRows).get(c.id) || {};
+    res.json({ ok: true, apprentice: { class_key: a.classKey, chosen: a.chosen, mentor_id: a.mentorId, mentor_name: a.mentorName, rate: a.rate, hint: a.hint },
+      note: mentorId && a.mentorId !== mentorId ? 'That mentor already teaches two youths; another will teach for now.' : null });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to set the apprenticeship.' });
+  }
+});
+
 router.patch('/:id/role', requireAuth, async (req, res) => {
   try {
     const { role } = req.body;

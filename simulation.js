@@ -83,6 +83,8 @@ async function runSimulation(settlement, hoursElapsed, lastSimAt) {
   }
   const simHours = Math.min(hours, SIM_MAX_CATCHUP_HOURS);
   const firstMs = startMs + (hours - simHours) * HOUR;
+  // Children of 12+ come of age first, so they can bond and partner this run.
+  await LIFE.comeOfAge(settlementId).catch(e => console.error('[life] comeOfAge:', e.message));
 
   const citizenRes = await query(
     `SELECT * FROM citizens WHERE settlement_id = $1 AND COALESCE(life_stage, 'adult') != 'deceased'`,

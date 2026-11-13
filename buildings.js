@@ -329,6 +329,14 @@ function calculateRates(buildings, citizens, species, outposts = [], opts = {}) 
       if (rates[r] !== undefined) rates[r] += val;
     }
   }
+  // Youths learning a trade add a quarter of an adult's basic output
+  // (lib/careers loadWorkforce → .youths; no crew share).
+  if (citizens && Array.isArray(citizens.youths) && citizens.youths.length) {
+    const y = require('./lib/careers/profiles').citizenContributions(buildings, citizens.youths, null);
+    for (const out of y.perCitizen.values()) {
+      for (const [res, val] of Object.entries(out)) if (rates[res] !== undefined) rates[res] += val;
+    }
+  }
   for (const r of Object.keys(rates)) rates[r] = Math.round(rates[r] * 100) / 100;
 
   // Outpost yields (010) — primary × level per outpost (secondaries are a
@@ -476,6 +484,21 @@ function calculateRatesBreakdown(buildings, citizens, species, outposts = []) {
     for (const m of citizens) { const v = (contrib.perCitizen.get(m.id) || {})['crew_' + res]; if (v) cits.push({ id: m.id, name: m.name, value: Math.round(v * 100) / 100 }); }
     breakdown[res].sources.push({ kind: 'citizen_crew', label: val > 0 ? 'Skilled crews' : 'Unskilled crews', value: val, citizens: cits });
     breakdown[res].total += val;
+  }
+  // Youths learning a trade: a quarter of an adult's basic output (as calculateRates).
+  if (citizens && Array.isArray(citizens.youths) && citizens.youths.length) {
+    const y = require('./lib/careers/profiles').citizenContributions(buildings, citizens.youths, null);
+    const byRes = {};
+    for (const m of citizens.youths) {
+      for (const [res, val] of Object.entries(y.perCitizen.get(m.id) || {})) (byRes[res] = byRes[res] || []).push({ id: m.id, name: m.name, value: val });
+    }
+    for (const [res, rows] of Object.entries(byRes)) {
+      if (breakdown[res] === undefined) continue;
+      const total = Math.round(rows.reduce((a, r) => a + r.value, 0) * 100) / 100;
+      if (!total) continue;
+      breakdown[res].sources.push({ kind: 'citizen_youth', label: `Youths learning a trade (×${rows.length})`, value: total, count: rows.length, citizens: rows });
+      breakdown[res].total += total;
+    }
   }
   for (const res of Object.keys(breakdown)) breakdown[res].total = Math.round(breakdown[res].total * 100) / 100;
 
