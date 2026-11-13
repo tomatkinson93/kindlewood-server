@@ -485,7 +485,12 @@ async function main() {
     const came = await ST.arrive(t2);
     check(came.length === 2, 'two working adults: a settler on each of the two days since (rescue), up to the free beds');
     check((await ST.arrive(t2)).length === 0, 'they arrive once (the window is claimed)');
-    const rows = (await q('SELECT c.name, c.born_at, c.house_id, c.family_id, f.name AS fam FROM citizens c LEFT JOIN families f ON f.id = c.family_id WHERE c.id = ANY($1)', [came.map(x => x.id)])).rows;
+    // Each waits at the gate (moment M7); welcoming them is the default.
+    check(came.every(x => x.moment), 'each waits at the gate as a moment');
+    const MO = require('../lib/moments');
+    for (const x of came) await MO.choose(t2, x.moment, 'welcome');
+    const rows = (await q('SELECT c.name, c.born_at, c.house_id, c.family_id, f.name AS fam FROM citizens c LEFT JOIN families f ON f.id = c.family_id WHERE c.settlement_id = $1 AND c.name = ANY($2)', [t2, came.map(x => x.name)])).rows;
+    check(rows.length === 2, 'welcomed, both come in');
     check(rows.every(r => { const a = LIFE.ageOf(r); return a >= 12 && a < 26; }), 'settlers are 12–24');
     check(rows.every(r => r.fam && r.fam !== 'Fernbrook' && r.name.endsWith(' ' + r.fam)) && new Set(rows.map(r => r.fam)).size === 2, 'each founds a new family with a new surname');
     check(rows.every(r => r.house_id), 'and is housed');

@@ -1,6 +1,6 @@
 # Phase 2 — Moments (build spec)
 
-Status: **steps 1–2 built (2026-11-13)**; steps 3–6 ready to build. Written 2026-11-12. Part of `docs/ROADMAP_1_0.md`.
+Status: **steps 1–3 built (2026-11-13)**; steps 4–6 ready to build. Written 2026-11-12. Part of `docs/ROADMAP_1_0.md`.
 
 ## 1. What a moment is
 
@@ -192,6 +192,46 @@ One change: M24 (lost traveller) merges into M7 when Phase 1's settlers exist.
 - Tests:
   - `scripts/moments_test.js` (43 checks), `verify/moments_proofs.js` (22);
   - a browser pass of the stack and dialogue box at desktop and phone sizes against a local API (16 checks; scratch script).
+
+**Step 3, the family moments (`lib/moments_family.js`):**
+- **M1 A name for the baby.**
+  - Asked within 3 days of a birth, once per child, when both parents are living.
+  - Choices:
+    - after the mother's mother, or her father if she has no mother (default; they gain 8 happiness, or the name honours them if they have died). With no grandparent at all, the mother's own name;
+    - after the father's closest friend outside the family (their bond +12);
+    - let the town choose (everyone +3).
+  - The child keeps the family name.
+- **M2 A child's wish.**
+  - A youth of 7–8 with no apprenticeship yet wants a trade other than their parent's: their hidden knack's trade if they have one, else another trade the town has.
+  - Following the parent is the default (−8 happiness); the wish gives +6 and reveals the knack.
+  - This is the "choosing a youth's trade" prompt from Phase 1. Youths nobody is asked about still follow their parent's trade, as before.
+- **M3 A proposal across families.**
+  - Two unpartnered adults from different families who are not kin, with a bond of 75 or more. The objector is the oldest adult of either family who is older than both.
+  - Blessing it is the default: they become partners and are housed together, and the objector loses 10 happiness. Asking them to wait costs their bond 15.
+- **M4 An elder's last request.**
+  - The oldest elder of the death age or more, once each.
+  - Granting it costs 150 food and gives the family +6. If the food isn't there when the default is taken, they are gently refused instead.
+- **M5 Who inherits?**
+  - Asked at a death (from `lib/inheritance.js` `onDeath`) when there are heirlooms, the eldest adult child doesn't work the trade, and a sibling does.
+  - The eldest is the default, the same heir the inheritance already names. If the 24 hours to choose run out first, the moment says the things were already passed on.
+- **M6 A quarrel between neighbours.**
+  - Two adult housemates who are not partners, parent or child.
+  - Letting it blow over is the default (bond −12). Moving the younger to a house with room, and a peacemaker (someone with the visible `charming` trait; bond +10), appear only when possible.
+- **M7 A settler at the gate.**
+  - `lib/settlers.js` `arrive()` no longer brings settlers in: each due settler is rolled once, kept in the moment's data, and waits at the gate. Welcoming them is the default.
+  - "Work the outpost" appears when an outpost has a free worker place. That settler needs no bed in town and starts 10 happiness down.
+  - If the beds have filled by the time a settler is welcomed, they go on elsewhere.
+  - Dev Tools' "send a settler now" still brings one straight in.
+- **M8 A gifted child.**
+  - A youth with an unrevealed career knack.
+  - Letting them be a child is the default (+8). Early training sets the apprenticeship, reveals the knack and grants 200 XP in the trade, for −8 happiness.
+- Gentle (a new town's first moment can be one of these): M1 and M8.
+  - A brand-new town has neither babies nor youths, so its first moment comes once something fits; the outpost harvest and cache are gentle too.
+  - The year moments in step 4 will give every new town a first moment.
+- **Engine changes:**
+  - when a default can't be carried out, the other choices are tried in turn, so a moment never stays stuck;
+  - a kind can write its own chronicle line (M7 does), returning `chronicle: false` so there aren't two.
+- Tests: `scripts/moments_test.js` (82 checks: every family kind's eligibility, choices and outcomes, the settler flow and M5 at a death); `scripts/life_test.js` (181; settlers are now welcomed through M7).
 
 ## 7. Tests
 
