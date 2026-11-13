@@ -92,3 +92,11 @@ UPDATE families f SET head_citizen_id = (
 -- Settlers (step 5, §4.7): when the last one arrived. NULL until the town's
 -- first check, which only starts the clock.
 ALTER TABLE settlements ADD COLUMN IF NOT EXISTS last_settler_at TIMESTAMPTZ;
+
+-- The life numbers changed in Dev Tools (step 7, lib/tuning.js LIFE_KEYS).
+-- No row = the default. career_tuning only takes multipliers of 0–5.
+CREATE TABLE IF NOT EXISTS life_tuning (
+  key         TEXT PRIMARY KEY,
+  value       NUMERIC NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

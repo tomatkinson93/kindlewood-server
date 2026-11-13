@@ -1,6 +1,6 @@
 # Phase 1 — the life cycle (build spec)
 
-Status: **steps 1–6 built (2026-11-13)**: the release (steps 2–6) is ready to merge. Step 7 (Dev Tools and tuning) is left. Decisions in §11 are made. Written 2026-11-11, updated 2026-11-13. Part of `docs/ROADMAP_1_0.md`.
+Status: **Phase 1 complete (2026-11-13).** Steps 1–6 are live; step 7 (Dev Tools and tuning) is built. Decisions in §11 are made. Written 2026-11-11, updated 2026-11-13. Part of `docs/ROADMAP_1_0.md`.
 Read §1 first: it lists two bugs in the live game that block progress today.
 
 ## 1. Findings from the assessment
@@ -313,6 +313,27 @@ Each step ends with tests passing. **Steps 2–6 ship together**: death without 
    - **Not done, by choice:** moving the whole citizen profile onto `KWWindow` (`LAYOUT_SPEC.md` §5 lists it for Phase 1). The release doesn't need it, the new profile blocks are in, and it touches many proofs. It moves in Phase 4 with the other old screens.
    - Tests: `life_test` step 6 sections (155 checks), `verify/life_proofs.js` §5, and a browser pass of the Families window at desktop and phone sizes against a local API (18 checks; scratch script).
 7. **Dev Tools and a tuning pass** using `scripts/population_model.js` and the funnel.
+
+   **Built (2026-11-13):**
+   - The §2 numbers can be tuned live:
+     - `lib/tuning.js` `LIFE_KEYS` holds 14 numbers (ages, death odds, fertility, the birth gap, children per couple, settler pace, hours to choose an heir), each with a default and bounds, stored in `life_tuning`;
+     - `career_tuning` only takes 0–5 multipliers, so it isn't used for these;
+     - the tunable `CONFIG` entries in `lib/life.js`, `lib/settlers.js` and `lib/inheritance.js` are live getters, so a change applies at once with no other code edits.
+   - `routes/life_admin.js` (`/api/life/admin/*`, admins only, on the admin's own town):
+     - status: beds, stages, working adults, the next settler and why, open inheritances, the oldest and their odds, couples and what blocks them;
+     - age everyone by N years (at most one death roll each for the jump);
+     - set a citizen's stage;
+     - a death of old age;
+     - a settler now (needs a bed);
+     - settle open inheritances;
+     - read, change and reset the numbers.
+   - Client: Dev Tools → 👪 Life (`js/life-admin.js`).
+   - **Tuning pass:** `scripts/population_model.js` re-run with the numbers as built, 300 runs each:
+     - Camp (K): never dies out; 20 people by about day 10; a death every 4.6 days; working adults swing between about 9 and 20 (fewest 7);
+     - Village (L): a death every 2.1 days;
+     - Town (M): a death every 1.2 days.
+     These are the §1.3 figures, so **the numbers stay as agreed.** There's no live data yet. Look at the funnel (`first_birth`, `first_coming_of_age`, `first_inheritance`, `village`) after a week or two, and change numbers from Dev Tools if towns grow too slowly or the swing hurts.
+   - Tests: `life_test` step 7 sections (179 checks), `verify/life_proofs.js` §6.
 
 ## 9a. Before and after merging the release
 

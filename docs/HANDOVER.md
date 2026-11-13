@@ -41,8 +41,8 @@ The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-fronte
 
    This fixes the two live bugs below.
 3. ~~**The window component**~~ (built 2026-11-13: `KWWindow`, `css/tokens.css`; `LAYOUT_SPEC.md` §3.3a).
-4. ~~**Phase 1 steps 2–6**~~ (built 2026-11-13; merge as one release), then **step 7**: Dev Tools and tuning.
-5. Then Phase 2, and so on down the roadmap.
+4. ~~**Phase 1 steps 2–7**~~ (built 2026-11-13; steps 1–6 live).
+5. **Phase 2: Moments** (`docs/PHASE_2_MOMENTS.md`). Settlers and heir choices become moments with defaults, as their notes in Phase 1 say. Ask for a Fable review of Phase 1 first ("does this still serve the pitch, and what should be cut?").
 
 All the owner's decisions for Phase 1 are made (`PHASE_1_LIFE_CYCLE.md` §11): the slower life pace, heirlooms with a small bonus, step 1 first.
 
@@ -60,9 +60,9 @@ All the owner's decisions for Phase 1 are made (`PHASE_1_LIFE_CYCLE.md` §11): t
 8. **The dead still take up a place in their house** (`house_id` is never cleared).
 9. **The outpost trickle left haulers, haul settings and three buildings with little purpose.** See `OUTPOST_TRIM.md`.
 
-### Ready to merge: the Phase 1 release
+### Phase 1 is complete
 
-The branch holds **Phase 1 steps 2–6**, the life cycle, which ships as one release. It is complete and tested. What to watch after the deploy is in `PHASE_1_LIFE_CYCLE.md` §9a. Step 7 (Dev Tools and tuning) can follow in its own merge.
+The life cycle (steps 1–6) is live. Step 7 (Dev Tools → 👪 Life, numbers tunable live) is on the branch. What to watch now is in `PHASE_1_LIFE_CYCLE.md` §9a and step 7's notes.
 
 ### Merged
 
