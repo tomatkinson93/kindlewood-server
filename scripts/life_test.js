@@ -7,7 +7,8 @@
 //  Step 3: apprenticeships and mentors, youth XP and output, elders at 60%,
 //  coming of age. Step 4: death of old age, widows, heirs, heirlooms,
 //  knowledge, headship, memorials. Step 5: settlers. Step 6: the chronicle
-//  everywhere and the families API.
+//  everywhere and the families API. Step 7: Dev Tools and the tunable numbers
+//  (set CRAFTING_TEST_ADMIN_ID for the admin routes).
 //   DATABASE_URL=postgres://… QUEST_TEST_BASE=http://localhost:3999 node scripts/life_test.js
 // ══════════════════════════════════════════════════════════════════════════
 'use strict';
@@ -546,6 +547,87 @@ async function main() {
     const A = require('../lib/away_report');
     check(['child_born', 'came_of_age', 'death_old_age', 'memorial', 'settler', 'inheritance', 'partnership'].every(t => A.eventFromSettlementEvent({ type: t, message: 'x', created_at: new Date() }).category === 'families'),
       'the away report groups births, comings of age, deaths, settlers and inheritances under Families');
+  }
+
+  console.log('Dev Tools and the numbers (step 7)');
+  {
+    const TU = require('../lib/tuning');
+    await TU.resetLife();
+    check(LIFE.CONFIG.ADULT_FROM === 12 && require('../lib/settlers').CONFIG.EVERY_DAYS === 7 && require('../lib/inheritance').CONFIG.CHOOSE_HOURS === 24, 'the numbers start at the agreed defaults');
+    let nums = await TU.setLife('ADULT_FROM', 10);
+    check(LIFE.CONFIG.ADULT_FROM === 10 && nums.find(n => n.key === 'ADULT_FROM').changed, 'a number changed in Dev Tools applies at once (live CONFIG)');
+    const Y = LIFE.YEAR_MS;
+    check(LIFE.stageOf({ born_at: new Date(Date.now() - 11 * Y), life_stage: 'adult' }) === 'adult', 'and the rules follow it (an 11-year-old adult is no youth now)');
+    await TU.setLife('DEATH_BASE', 0.5);
+    check(LIFE.deathChance(70) === 0.5, 'death odds follow too');
+    let bad = null; try { await TU.setLife('ADULT_FROM', 99); } catch (e) { bad = e; }
+    check(bad && bad.status === 400 && /between 6 and 25/.test(bad.message), 'out-of-range values are refused');
+    bad = null; try { await TU.setLife('NOPE', 1); } catch (e) { bad = e; }
+    check(bad && bad.status === 400, 'unknown numbers are refused');
+    await TU.resetLife('ADULT_FROM');
+    check(LIFE.CONFIG.ADULT_FROM === 12 && LIFE.CONFIG.DEATH_BASE === 0.5, 'one number resets on its own');
+    await TU.resetLife();
+    check(LIFE.CONFIG.DEATH_BASE === 0.06, 'and all of them together');
+    check(TU.T('passive_xp') === 1 && (await TU.all()).length === Object.keys(TU.KEYS).length, 'the career multipliers are untouched');
+
+    // A fresh player (the test's own user can be id 1, which some setups list as an admin).
+    const pn = `lifeplayer_${RUN}`;
+    const pu = (await q("INSERT INTO users (username, email, password_hash, species) VALUES ($1,$2,'x','Mice') RETURNING id", [pn, `${pn}@t.l`])).rows[0];
+    const pr = await fetch(BASE + '/api/life/admin/status', { headers: { Authorization: 'Bearer ' + jwt.sign({ userId: pu.id, username: pn, species: 'Mice' }, SECRET) } });
+    check(pr.status === 403, 'players cannot use the life Dev Tools');
+    const ADMIN = Number(process.env.CRAFTING_TEST_ADMIN_ID || process.env.TEST_ADMIN_ID || 0);
+    if (ADMIN) {
+      const an = `lifeadm_${RUN}`;
+      await q("INSERT INTO users (id, username, email, password_hash, species) VALUES ($1,$2,$3,'x','Mice') ON CONFLICT (id) DO UPDATE SET username = users.username", [ADMIN, an, `${an}@t.l`]);
+      let as = (await q('SELECT id FROM settlements WHERE user_id = $1', [ADMIN])).rows[0];
+      if (!as) as = (await q(`INSERT INTO settlements (user_id, name, world_version, tier, tile_q, tile_r, last_tick) VALUES ($1,$2,2,'camp',$3,0,NOW()) RETURNING id`, [ADMIN, an, tq - 80])).rows[0];
+      const aTok = jwt.sign({ userId: ADMIN, username: an, species: 'Mice' }, SECRET);
+      const adm = async (method, pth, body) => {
+        const r = await fetch(BASE + '/api/life/admin' + pth, { method, headers: { Authorization: 'Bearer ' + aTok, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+        return { status: r.status, body: await r.json().catch(() => ({})) };
+      };
+      await q("INSERT INTO houses (settlement_id, name, building_type, capacity) VALUES ($1, 'Dev Hut', 'starter_house', 4)", [as.id]);
+      const mk2 = async (name, age, gender) => (await q(`INSERT INTO citizens (settlement_id, name, gender, role, born_at, last_birthday_year) VALUES ($1,$2,$3,'forager',$4,$5) RETURNING id`,
+        [as.id, name, gender, LIFE.bornAtFor(age).toISOString(), Math.floor(age)])).rows[0].id;
+      const da = await mk2(`Dev Ada ${RUN}`, 30, 'female'), db2 = await mk2(`Dev Bo ${RUN}`, 30, 'male');
+      await q('UPDATE citizens SET partner_id = $1 WHERE id = $2', [db2, da]);
+      await q('UPDATE citizens SET partner_id = $1 WHERE id = $2', [da, db2]);
+      const st = await adm('GET', '/status');
+      const couple = (st.body.couples || []).find(c => [c.a.id, c.b.id].includes(da));
+      check(st.status === 200 && st.body.beds && st.body.stages && st.body.settler && couple, 'status: beds, stages, the next settler, couples');
+      check(couple && typeof couple.fertile === 'boolean' && Array.isArray(couple.blockers), 'each couple says whether they can have a child, and what blocks them');
+      const before = LIFE.ageOf((await q('SELECT born_at FROM citizens WHERE id = $1', [da])).rows[0]);
+      const ag = await adm('POST', '/age', { years: 1 });
+      const after = LIFE.ageOf((await q('SELECT born_at FROM citizens WHERE id = $1', [da])).rows[0]);
+      check(ag.status === 200 && Math.abs(after - before - 1) < 0.01, 'age everyone by N years');
+      check((await adm('POST', '/age', { years: 500 })).status === 400, 'within reason');
+      const sy = await adm('POST', '/stage', { citizen_id: da, stage: 'elder' });
+      const row = (await q('SELECT born_at, life_stage FROM citizens WHERE id = $1', [da])).rows[0];
+      check(sy.status === 200 && LIFE.stageOf(row) === 'elder', 'make a citizen an elder');
+      await adm('POST', '/stage', { citizen_id: db2, stage: 'youth' });
+      const rb = (await q('SELECT born_at, life_stage, role FROM citizens WHERE id = $1', [db2])).rows[0];
+      check(rb.life_stage === 'child' && LIFE.stageOf(rb) === 'youth' && rb.role === 'idle', 'or a youth (a child again, no job)');
+      await adm('POST', '/stage', { citizen_id: db2, stage: 'adult' });
+      const ra = (await q('SELECT born_at, life_stage, role FROM citizens WHERE id = $1', [db2])).rows[0];
+      check(ra.life_stage === 'adult' && LIFE.stageOf(ra) === 'adult' && ra.role !== 'idle', 'or an adult again, with a job');
+      const dd = await adm('POST', '/death', { citizen_id: da });
+      const dr = (await q('SELECT life_stage, death_cause FROM citizens WHERE id = $1', [da])).rows[0];
+      check(dd.status === 200 && dr.life_stage === 'deceased' && dr.death_cause === 'old_age', 'trigger a death of old age');
+      check((await q("SELECT status FROM inheritances WHERE deceased_id = $1", [da])).rows[0].status === 'open', '(which opens an inheritance like any death)');
+      const ss = await adm('POST', '/inheritances/settle');
+      check(ss.status === 200 && ss.body.settled >= 1, 'settle open inheritances now');
+      const sn = await adm('POST', '/settler');
+      check(sn.status === 200 && sn.body.settler && sn.body.settler.age >= 12, 'send a settler now');
+      await q("UPDATE houses SET capacity = 0 WHERE settlement_id = $1", [as.id]);
+      const full = await adm('POST', '/settler');
+      check(full.status === 400 && /No free bed/.test(full.body.error), 'not without a free bed');
+      await q("UPDATE houses SET capacity = 4 WHERE settlement_id = $1", [as.id]);
+      const nr = await adm('POST', '/numbers', { key: 'MAX_CHILDREN', value: 6 });
+      check(nr.status === 200 && nr.body.numbers.find(n => n.key === 'MAX_CHILDREN').value === 6, 'numbers can be changed through the API');
+      const rr = await adm('POST', '/numbers/reset', {});
+      check(rr.status === 200 && rr.body.numbers.every(n => !n.changed), 'and reset');
+      await TU.refresh();
+    } else console.log('  (admin routes skipped — set CRAFTING_TEST_ADMIN_ID)');
   }
 
   console.log('Migration for existing towns');
