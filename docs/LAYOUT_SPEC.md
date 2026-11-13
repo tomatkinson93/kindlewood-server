@@ -1,6 +1,6 @@
 # Layout rework — navigation and the window component (build spec)
 
-Status: **§3 and §4 built (2026-11-13)**; the rest ready to build. Written 2026-11-12. It turns the rework list in `docs/ROADMAP_1_0.md` §10 into a concrete design.
+Status: **§3 and §4 built (2026-11-13); §2 step 1, the five places, built (2026-11-13)**; the rest of §2 ready to build (see §2.8). Written 2026-11-12. It turns the rework list in `docs/ROADMAP_1_0.md` §10 into a concrete design.
 The window component (§3) is needed from **Phase 1**, for the new Families screens. The navigation change (§2) is **Phase 4**.
 
 ## 1. Principles
@@ -64,6 +64,40 @@ The bell opens a single list: open moments first, then the chronicle (newest fir
 ### 2.7 Phone map controls
 
 One vertical stack at the lower right (centre on town, paths, zoom if added), never overlapping. The joystick becomes an option in Settings, off by default: dragging already pans.
+
+### 2.8 Build order and what was built
+
+Phase 4 is built a step at a time, each one shippable:
+
+1. **The five places** (built 2026-11-13; below).
+2. **The context panel** (§2.4): the sidebar shows only what is selected; the tier card becomes a header strip; the sidebar tabs and the 11-button action grid go (each action already has a place).
+3. **One place for news** (§2.5): the bell opens moments and the chronicle with filters; the Events button and panel go; Happenings move to the season badge's pop-up.
+4. **The top bar and phone map controls** (§2.6, §2.7): the version string into Settings, a stores chip, a sideways-scrolling resource row on phones with wealth pinned; one stack of floating map buttons; the joystick an option in Settings, off by default.
+5. **Dev Tools on its own page** (§6), loaded only for admins.
+6. **Merging the small duplicates and the outpost trim** (`docs/OUTPOST_TRIM.md`): Journeys into The Land, the old Stores into Home, then the trim itself.
+7. Windows move onto `KWWindow` as each step touches them (§5).
+
+The tier pacing pass in the roadmap needs the funnel numbers from real play, so it waits, like the moments budget tuning.
+
+**Step 1, the five places (`js/places.js` `KWPlaces`, `css/places.css`):**
+- **A place bar** replaces the community bar on desktop, and is the tab bar on phones (the phone shell no longer builds its own). Each place has a line icon (five added to the sprite), a label and an unread dot. Keys 1–5, and `#home`, `#families`, `#land`, `#road`, `#clan` in the address, so back and forward work.
+- **Home** is the painted settlement scene. The game opens on it once the player presses Start playing, or on the address's place. Its tools (Stores, Upgrade, Tavern, Fishing, then Research, Crafting, Festival and Wonders when unlocked) sit beside the places on desktop, and on their own strip above the places on phones.
+  - The scene's back button now reads "The Land". The scene is a view, not an overlay, and on phones it stops above the places and the strip.
+  - The tavern and the fishing post open over the map, so their tools leave the scene first.
+- **The Land** is the map. Its tools: Scout, Outposts, Journeys, Centre. On phones these are chips; the old floating Scout and Centre buttons are hidden, and the joystick and moment cards float above the chips.
+- **The Road** and **The Clan** are hub windows (size M), each entry opening the screen it always had: Quests, Battles, Decks and Market; the clan hall and Chat. Villages has no screen of its own yet, so it is not listed.
+- **Families** opens the Families window.
+- **The profile menu** takes Messages, Rankings, Online (with the count), World events and Feedback. Unread messages light the profile button. "Your Kingdom" is gone: it is Home.
+- **Dots:**
+  - the old community-bar buttons stay in the page, hidden, because features light their dots there;
+  - the places read them: a waiting battle lights The Road, a clan request The Clan;
+  - `KWShell.syncBadges()` and a watcher on the old buttons keep the dots current.
+- A one-time note, "Where things moved", on first sight.
+- `KWWindow` now announces `kww:open` and `kww:close`, so the marker follows windows opened from anywhere.
+- **Changes from §2.3:** places don't appear on unlock yet. The Road and The Clan show from the start, because hiding Quests until a Tavern exists would change the game for current players. Unlock pacing belongs to Phase 3 (onboarding), where the first hour is designed.
+- Tests:
+  - `verify/nav_proofs.js` (32 checks); the style check now covers `css/places.css`;
+  - a browser pass at 1400×900, 390×844 and 844×390 against a local API (49 checks; scratch script): opening on Home, every place by click and key, back and forward, Escape, a hub entry, the Stores and Tavern tools on top, the phone strip tappable above the bar, the profile menu, the old bar hidden, no page errors.
 
 ## 3. The window component
 
