@@ -422,7 +422,9 @@ router.get('/resource-breakdown', requireAuth, async (req, res) => {
       const f = tfNow[r], b = breakdown[r];
       if (!b || f === 1) continue;
       const value = Math.round(b.total * (f - 1) * 10) / 10;
-      b.sources.push({ kind: 'town_bonus', label: `🏛 Town bonuses (×${f.toFixed(2)})`, value, delta: value });
+      // Name what is behind it (the festival, wonders, a moment's effect…).
+      const why = town.sources.filter(s => s.all_production || s[r + '_production']).map(s => s.label).slice(0, 3).join(', ');
+      b.sources.push({ kind: 'town_bonus', label: `🏛 Town bonuses (×${f.toFixed(2)}${why ? ': ' + why : ''})`, value, delta: value });
       b.total = Math.round((b.total + value) * 10) / 10;
     }
     if (town.upkeep.wonders) {

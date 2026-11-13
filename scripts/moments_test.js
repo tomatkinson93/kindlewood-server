@@ -25,14 +25,21 @@ async function main() {
       deceased: P(10, 'Pa Elm'), eldest: P(8, 'Ben Elm'), crafter: { ...P(11, 'Cal Elm'), trade: 'farmer' }, items: ["Pa's Hoe"], mover: P(8, 'Ben Elm'), house: P(1, 'Willow Hut'),
       charmer: P(12, 'Sly Fox'), settler: { name: 'Nell Moss', surname: 'Moss', age: 20 }, outpost: P(1, 'Camp'), trait: 'green_thumb', cls: 'farmer' };
     const bare = { ...fam, grand: null, friend: null, house: null, charmer: null, outpost: null, knack: null };
+    // The year and quests (M9–M17).
+    const yq = { year: 1, speaker: 'Fen Furrow', youths: 2, cost: { food: 80, wealth: 40 }, food: 10, need: 90, deficit: 80, price: 80, village: P(1, 'Oakmere'), elders: [9],
+      young: [{ ...P(6, 'Kit Reed'), cls: 'farmer' }], family: P(1, 'Reed'), frightened: P(6, 'Kit Reed'), finder: P(5, 'Bo Fern'), party: [5, 7],
+      item: { name: 'Bronze Knife', icon: '🔪', item_key: 'bronze_knife' }, kindest: P(7, 'Ann Ash'), stranger: { name: 'Nell Moss', surname: 'Moss', age: 20 },
+      title: 'The Fallen Watchtree', who: { ...P(5, 'Bo Fern'), fighter: true } };
+    const yqBare = { ...yq, speaker: null, youths: 0, village: null, elders: [], family: null, who: { ...yq.who, fighter: false } };
+    const samples = k => (['year', 'quest'].includes(M.DEFS[k].source) ? [{ ...sample, ...yq }, { ...sample, ...yqBare }] : [{ ...sample, ...fam }, { ...sample, ...bare }]);
     const bad = [];
-    for (const k of Object.keys(M.DEFS)) for (const data of [{ ...sample, ...fam }, { ...sample, ...bare }]) for (const p of M.check(k, data)) bad.push(`${k}: ${p}`);
+    for (const k of Object.keys(M.DEFS)) for (const data of samples(k)) for (const p of M.check(k, data)) bad.push(`${k}: ${p}`);
     const texts = [];
-    for (const k of Object.keys(M.DEFS)) if (M.DEFS[k].source === 'family') for (const data of [{ ...sample, ...fam }, { ...sample, ...bare }]) {
+    for (const k of Object.keys(M.DEFS)) if (['family', 'year', 'quest'].includes(M.DEFS[k].source)) for (const data of samples(k)) {
       const all = M.DEFS[k].text(data) + ' ' + M.DEFS[k].options(data).map(o => o.label + ' ' + o.hint).join(' ');
       if (/undefined|null|NaN|\[object/.test(all)) texts.push(`${k}: ${all}`);
     }
-    check(texts.length === 0, 'family moments read cleanly with and without their optional parts' + (texts.length ? ' — ' + texts.join(' | ') : ''));
+    check(texts.length === 0, 'family, year and quest moments read cleanly with and without their optional parts' + (texts.length ? ' — ' + texts.join(' | ') : ''));
     check(['name_baby', 'child_wish', 'proposal', 'last_request', 'who_inherits', 'quarrel', 'settler_gate', 'gifted_child'].every(k => M.DEFS[k] && M.DEFS[k].source === 'family'), 'the eight family moments are registered');
     check(M.DEFS.who_inherits.triggerOnly && M.DEFS.settler_gate.triggerOnly, 'who inherits and the settler at the gate are only ever triggered');
     check(bad.length === 0, 'every option has a hint; every default is an option and never the single worst' + (bad.length ? ' — ' + bad.join('; ') : ''));
@@ -311,6 +318,172 @@ async function main() {
       await M.choose(sid2, g2.id, 'outpost');
       const oc = (await q(`SELECT c.house_id, oc.post FROM citizens c JOIN outpost_crew oc ON oc.citizen_id = c.id WHERE c.settlement_id = $1 AND c.name = $2`, [sid2, g2.data.settler.name])).rows[0];
       check(oc && oc.post === 'worker' && oc.house_id === null && oid, 'M7: sent to the outpost, they work there without a bed in town');
+    }
+  }
+
+  // ── The year (M9–M13) and quests (M14–M17) ─────────────────────────────
+  {
+    const LIFE = require('../lib/life');
+    const TE = require('../lib/town_effects');
+    const TM = require('../lib/town_mods');
+    const { seasonAt } = require('../seasons');
+    const H = 3600e3;
+    // A moment in a season: the first time in the next game year that season is under way.
+    const when = id => { for (let t = Date.now(); t < Date.now() + 29 * H; t += 10 * 60e3) { const x = seasonAt(t); if (x.id === id && x.progress < 0.3) return t; } return null; };
+    const house = async (sid, cap = 4) => (await q("INSERT INTO houses (settlement_id, name, building_type, capacity) VALUES ($1,'Hut','starter_house',$2) RETURNING id", [sid, cap])).rows[0].id;
+    const cit = async (sid, name, o = {}) => (await q(
+      `INSERT INTO citizens (settlement_id, name, gender, role, house_id, parent_ids, life_stage, born_at, last_birthday_year, visible_traits, stats, life)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'{"strength":5}','{"happiness":70}') RETURNING id`,
+      [sid, name, o.gender || 'female', o.role || 'forager', o.house_id || null, JSON.stringify(o.parent_ids || []),
+       (o.age != null ? o.age : 30) < 12 ? 'child' : 'adult', LIFE.bornAtFor(o.age != null ? o.age : 30).toISOString(), Math.floor(o.age != null ? o.age : 30), JSON.stringify(o.visible || [])])).rows[0].id;
+    const st = async (sid, kind, now) => { const m = await M.start(sid, kind, { now }); if (m) m.data = (await q('SELECT data FROM moments WHERE id = $1', [m.id])).rows[0].data; return m; };
+    const effects = async sid => (await q('SELECT key, mods, starts_at, ends_at FROM town_effects WHERE settlement_id = $1 ORDER BY id', [sid])).rows;
+    const res = async (sid, cols) => (await q(`SELECT ${cols} FROM settlements WHERE id = $1`, [sid])).rows[0];
+
+    console.log('Timed town effects');
+    {
+      const sid = await town('eff');
+      const s0 = (await q('SELECT * FROM settlements WHERE id = $1', [sid])).rows[0];
+      const now = Date.now();
+      await TE.add(null, sid, { key: 'test', label: 'Test', mods: { all_production: 0.10, happiness: 4, food_upkeep: -0.25, birth_chance: 0.05 }, startsAt: now - H, endsAt: now + H });
+      const t = await TM.load(null, s0, now);
+      check(t.mods.happiness >= 4 && t.mods.food_upkeep === -0.25 && t.sources.some(x => x.key === 'effect:test'), 'a live effect counts in the town\'s mods and is listed as a source');
+      const f = TM.productionFactors(t, s0, now - 2 * H, now);
+      check(Math.abs(f.food - 1.05) < 1e-9, 'production counts it only for the hours it overlapped (half of two hours: +5%)');
+      check(Math.abs(TM.productionFactors(t, s0, now, now + 1).food - 1.10) < 1e-9, 'and in full while it runs');
+      check(TE.modsAt(await TE.recent(null, sid), now).birth_chance === 0.05 && !TE.modsAt(await TE.recent(null, sid), now + 2 * H).birth_chance, 'birth chance while it runs, not after');
+    }
+
+    console.log('The year');
+    {
+      // M9 Spring.
+      const sid = await town('yr1'); const h = await house(sid);
+      await cit(sid, 'Fen Furrow', { role: 'farmer', house_id: h });
+      const sp = when('spring');
+      check(!(await st(sid, 'spring_planting', when('summer'))), 'M9: only in spring');
+      const m9 = await st(sid, 'spring_planting', sp);
+      check(m9 && m9.options.map(o => o.key).join() === 'usual,flax,fallow' && m9.fallback === 'usual' && /^Fen asks/.test(m9.text), 'M9: three ways to plant; the usual fields are the default');
+      await M.choose(sid, m9.id, 'flax');
+      const e9 = await effects(sid);
+      check(e9.length === 2 && e9[0].mods.food_production < 0 && e9[1].mods.wealth_production > 0 && new Date(e9[0].ends_at).getTime() === new Date(e9[1].starts_at).getTime()
+        && seasonAt(new Date(e9[1].starts_at).getTime() + 60e3).id === 'autumn', 'M9: flax costs food until autumn, then pays wealth all autumn');
+      check(!(await st(sid, 'spring_planting', sp + 60e3)), 'M9: once a year');
+      // M10 Summer.
+      const su = when('summer');
+      const kid = await cit(sid, 'Pip Furrow', { age: 9, house_id: h });
+      await q('UPDATE settlements SET tile_q = tile_q WHERE id = $1', [sid]);
+      const m10 = await st(sid, 'summer_days', su);
+      check(m10 && m10.options.map(o => o.key).join() === 'rest,late,explore' && m10.fallback === 'rest', 'M10: rest, work late, or send the young ones exploring');
+      const uid = (await res(sid, 'user_id')).user_id;
+      const fog0 = (await q('SELECT COUNT(*)::int AS n FROM fog_of_war WHERE user_id = $1', [uid])).rows[0].n;
+      await q('UPDATE moments SET data = jsonb_set(data, \'{lost}\', \'null\') WHERE id = $1', [m10.id]);
+      const r10 = await M.choose(sid, m10.id, 'explore');
+      check(r10.ok && (await q('SELECT COUNT(*)::int AS n FROM fog_of_war WHERE user_id = $1', [uid])).rows[0].n === fog0 + 6, 'M10: exploring maps six new places nearby');
+      // M11 Autumn.
+      const au = when('autumn');
+      const m11 = await st(sid, 'autumn_feast', au);
+      check(m11 && m11.fallback === 'modest' && m11.data.cost.food >= 40, 'M11: a modest supper by default; a feast costs food and wealth');
+      await q('UPDATE settlements SET food = 0 WHERE id = $1', [sid]);
+      check((await M.choose(sid, m11.id, 'feast')).status === 400, 'M11: a feast needs the food');
+      await q('UPDATE settlements SET food = 500, wealth = 500 WHERE id = $1', [sid]);
+      await M.choose(sid, m11.id, 'feast');
+      const e11 = (await effects(sid)).filter(e => e.mods.birth_chance);
+      check(e11.length === 1 && seasonAt(new Date(e11[0].starts_at).getTime() + 60e3).id === 'spring', 'M11: the feast makes births more likely next spring');
+      check(Number((await res(sid, 'food')).food) === 500 - m11.data.cost.food, 'M11: and is paid for');
+    }
+    {
+      // M12 Winter: short stores.
+      const sid = await town('yr2'); const h = await house(sid);
+      for (const n of ['Ann', 'Bo', 'Cy']) await cit(sid, n + ' Frost', { house_id: h });
+      const old = await cit(sid, 'Old Frost', { age: 70, house_id: h });
+      const wi = when('winter');
+      await q('UPDATE settlements SET food = 2000 WHERE id = $1', [sid]);
+      check(!(await st(sid, 'winter_stores', wi)), 'M12: not asked when the stores will last');
+      await q('UPDATE settlements SET food = 0, wealth = 1000 WHERE id = $1', [sid]);
+      const m12 = await st(sid, 'winter_stores', wi);
+      check(m12 && m12.fallback === 'even' && m12.options.map(o => o.key).join() === 'even,young,buy' && m12.data.deficit > 0, 'M12: short stores: ration, feed the young first, or buy grain');
+      await M.choose(sid, m12.id, 'buy');
+      const r = await res(sid, 'food, wealth');
+      check(Number(r.food) === m12.data.deficit && Number(r.wealth) === 1000 - m12.data.price, 'M12: grain bought: the shortfall in food for its price in wealth');
+      // Rationing (a second town, same winter).
+      const sid2 = await town('yr3'); const h2 = await house(sid2);
+      await cit(sid2, 'Dee Frost', { house_id: h2 });
+      await q('UPDATE settlements SET food = 0 WHERE id = $1', [sid2]);
+      const m12b = await st(sid2, 'winter_stores', wi);
+      check(m12b && !m12b.options.some(o => o.key === 'young'), 'M12: with no elders, nobody to go without');
+      await M.choose(sid2, m12b.id, 'even');
+      const e = (await effects(sid2))[0];
+      check(e && e.mods.food_upkeep === -0.25 && e.mods.happiness < 0, 'M12: rationing: the food lasts longer, everyone a little hungry');
+      check(old > 0, '(an elder lives in the first town)');
+      // M13 Stories by the fire.
+      const k1 = await cit(sid2, 'Kit Frost', { age: 8, house_id: h2 }), k2 = await cit(sid2, 'Lu Frost', { age: 9, house_id: h2 });
+      const m13 = await st(sid2, 'winter_stories', wi + 60e3);
+      check(m13 && m13.fallback === 'old' && m13.data.young.length === 2, 'M13: the children gather for a story; the old tales are the default');
+      const r13 = await M.choose(sid2, m13.id, 'old');
+      const xp = (await q('SELECT citizen_id, xp FROM citizen_classes WHERE citizen_id = ANY($1::int[])', [[k1, k2]])).rows;
+      check(r13.ok && xp.length === 2 && xp.every(x => Number(x.xp) > 0), 'M13: each child learns a little of a trade');
+    }
+
+    console.log('Quests and the road');
+    {
+      const MQ = require('../lib/moments_quest');
+      const seq = (...v) => { let i = 0; return () => (i < v.length ? v[i++] : 0.99); };
+      const sid = await town('qst'); const h = await house(sid, 8);
+      const a = await cit(sid, 'Ash Bold', { role: 'soldier', house_id: h }), b = await cit(sid, 'Bea Bold', { house_id: h }), c = await cit(sid, 'Cy Bold', { house_id: h, visible: ['loyal'] });
+      const uid = (await res(sid, 'user_id')).user_id;
+      const Q = require('../routes/quests');
+      const pq = Q.PARTY_QUEST_POOL[0];
+      const run = async status => (await q(`INSERT INTO settlement_quests (settlement_id, user_id, quest_id, quest_type, party_ids, status, completes_at, success_roll, success_chance)
+        VALUES ($1,$2,$3,'party',$4,$5,NOW(),0.1,0.9) RETURNING id`, [sid, uid, pq.id, JSON.stringify([a, b, c]), status])).rows[0].id;
+      const data = async id => (await q('SELECT data FROM moments WHERE id = $1', [id])).rows[0].data;
+      // M16 first: a successful party quest, the rival roll comes first.
+      const r1 = await run('completed');
+      const m16 = await MQ.onQuest({ settlementId: sid, questRunId: r1, success: true }, seq(0));
+      check(m16 && m16.kind === 'rival_party' && m16.fallback === 'share', 'M16: a rival party; sharing is the default');
+      check(!(await MQ.onQuest({ settlementId: sid, questRunId: r1, success: true }, seq(0))), 'the same kind is never offered twice running');
+      // Collecting before answering takes the default: half the reward.
+      const jwt = require('jsonwebtoken');
+      const tok = jwt.sign({ userId: uid, username: 'qst', species: 'Mice' }, process.env.JWT_SECRET || 'dev-secret-change-in-production');
+      const BASE = process.env.QUEST_TEST_BASE || 'http://localhost:3000';
+      const w0 = Number((await res(sid, 'wealth')).wealth);
+      const col = await fetch(`${BASE}/api/quests/collect/${r1}`, { method: 'POST', headers: { Authorization: 'Bearer ' + tok } }).then(r => r.json());
+      check(col.ok && Number((await res(sid, 'wealth')).wealth) - w0 === Math.round(pq.rewards.wealth * 0.5) && !col.bonus, 'M16: collected before answering: the default (share) is taken, half the reward');
+      check((await q('SELECT auto, choice FROM moments WHERE id = $1', [m16.id])).rows[0].choice === 'share', '(and the moment is settled)');
+      // A lost race: nothing.
+      const r2 = await run('completed');
+      await q("UPDATE moments SET created_at = NOW() - interval '5 days' WHERE settlement_id = $1", [sid]);
+      const m16b = await M.start(sid, 'rival_party', { args: { party: [a, b, c], quest_run_id: r2, title: pq.title } });
+      await q(`UPDATE moments SET data = jsonb_set(data, '{win}', 'false') WHERE id = $1`, [m16b.id]);
+      await M.choose(sid, m16b.id, 'race');
+      check(await MQ.rewardMult({ query: (t, p) => q(t, p) }, sid, r2) === 0, 'M16: a lost race brings nothing home');
+      // M14 a find: no rival (0.5), then the find (0).
+      await q("UPDATE moments SET created_at = NOW() - interval '5 days' WHERE settlement_id = $1", [sid]);
+      const m14 = await MQ.onQuest({ settlementId: sid, questRunId: r2, success: true }, seq(0.5, 0));
+      check(m14 && m14.kind === 'road_find' && m14.options.map(o => o.key).join() === 'home,finder,sell', 'M14: a find on the road: bring it home, let the finder keep it, or sell it');
+      const d14 = await data(m14.id);
+      await M.choose(sid, m14.id, 'finder');
+      check((await q('SELECT 1 FROM inventory_items WHERE equipped_to = $1 AND item_key = $2', [d14.finder.id, d14.item.item_key])).rows.length === 1, 'M14: the finder wears it');
+      // M15 a wounded stranger, on a failed party quest.
+      await q("UPDATE moments SET created_at = NOW() - interval '5 days' WHERE settlement_id = $1", [sid]);
+      const r3 = await run('failed');
+      const m15 = await MQ.onQuest({ settlementId: sid, questRunId: r3, success: false }, seq(0));
+      check(m15 && m15.kind === 'wounded_stranger' && m15.fallback === 'carry', 'M15: a wounded stranger; carrying them home is the default');
+      const d15 = await data(m15.id);
+      check(d15.kindest.id === c, 'M15: the kindest of the party (Loyal) is the one troubled by leaving them');
+      await q(`UPDATE moments SET data = jsonb_set(data, '{stays}', 'true') WHERE id = $1`, [m15.id]);
+      await M.choose(sid, m15.id, 'carry');
+      check((await q('SELECT 1 FROM citizens WHERE settlement_id = $1 AND name = $2', [sid, d15.stranger.name])).rows.length === 1, 'M15: carried home, they stay and start a family');
+      // M17 the one who froze.
+      await q("UPDATE moments SET created_at = NOW() - interval '5 days' WHERE settlement_id = $1", [sid]);
+      const m17 = await MQ.onBattle({ settlementId: sid, citizenIds: [a, b] }, seq(0));
+      check(m17 && m17.kind === 'froze' && m17.fallback === 'nothing', 'M17: someone froze in the fight; saying nothing is the default');
+      const d17 = await data(m17.id);
+      await q(`UPDATE moments SET data = jsonb_set(data, '{overcome}', 'true') WHERE id = $1`, [m17.id]);
+      await M.choose(sid, m17.id, 'again');
+      const who = (await q('SELECT visible_traits, stats FROM citizens WHERE id = $1', [d17.who.id])).rows[0];
+      check(who.visible_traits.includes('brave') && Number(who.stats.strength) === 7, 'M17: sent out again, they found their courage: Brave, +2 strength');
+      check(!(await MQ.onBattle({ settlementId: sid, citizenIds: [a, b] }, seq(0.5))), 'M17: most battles pass without it');
+      check(require('../citizens').EARNED_TRAITS.some(t => t.id === 'brave') && !require('../citizens').VISIBLE_TRAITS.some(t => t.id === 'brave'), 'Brave is earned, never rolled at birth');
     }
   }
 

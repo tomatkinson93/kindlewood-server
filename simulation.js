@@ -99,9 +99,10 @@ async function runSimulation(settlement, hoursElapsed, lastSimAt) {
   const hDefs = await require('./lib/happenings').loadLive();
   const sim = await _loadSimState(settlementId, citizens, adults);
   sim.away = await _awaySet(settlementId);
+  const effects = await require('./lib/town_effects').recent(null, settlementId, firstMs);   // timed effects (moments)
   for (let h = 0; h < simHours; h++) {
     const at = firstMs + h * HOUR + HOUR / 2;          // mid-hour: the modifiers for this hour
-    const ctx = { at, season: seasonAt(at), hMods: HFX.modifiersAt(hDefs, at) };
+    const ctx = { at, season: seasonAt(at), hMods: HFX.modifiersAt(hDefs, at), tMods: require('./lib/town_effects').modsAt(effects, at) };
     _hourRelationships(sim, ctx);
     _hourPartnerships(sim, ctx);
     _hourBreeding(sim, ctx);
@@ -295,6 +296,7 @@ function _hourBreeding(sim, ctx) {
     let chance = CFG.BREED_BASE_CHANCE;
     chance += ctx.season.birthChanceBonus || 0;               // season bonus
     chance += ctx.hMods.birth_chance || 0;                    // Happening birth-chance modifier
+    chance += (ctx.tMods && ctx.tMods.birth_chance) || 0;     // a timed town effect (the autumn feast)
     chance += Math.floor(((happA + happB) / 2 - CFG.BREED_MIN_HAPPINESS) / 10) * CFG.BREED_HAPPY_BONUS;
     // Fertile trait bonus (hidden trait)
     if ((a.hidden_traits || []).includes('fertile') || (b.hidden_traits || []).includes('fertile')) chance += CFG.BREED_FERTILE_BONUS;
