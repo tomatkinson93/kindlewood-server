@@ -1,6 +1,6 @@
 # Layout rework — navigation and the window component (build spec)
 
-Status: **ready to build**, written 2026-11-12. It turns the rework list in `docs/ROADMAP_1_0.md` §10 into a concrete design.
+Status: **§3 and §4 built (2026-11-13)**; the rest ready to build. Written 2026-11-12. It turns the rework list in `docs/ROADMAP_1_0.md` §10 into a concrete design.
 The window component (§3) is needed from **Phase 1**, for the new Families screens. The navigation change (§2) is **Phase 4**.
 
 ## 1. Principles
@@ -103,7 +103,19 @@ w.refresh(); w.setTab('tree'); w.close();
 
 ### 3.3 Shared pieces inside windows
 
-Small, named, and used everywhere: `kw-btn` (primary, quiet, danger; sizes regular and small), `kw-tabs`, `kw-card`, `kw-chip` (with a `short` state for costs you can't afford), `kw-bar` (progress), `kw-row` (a list row with an icon, text and an action), `kw-empty`, `kw-note` (good, warn, bad).
+Small, named, and used everywhere: `kw-btn` (primary, quiet, danger; sizes regular and small), `kw-tabs` (buttons `kw-tabs-item`), `kw-box`, `kw-chip` (with a `short` state for costs you can't afford), `kw-bar` (progress), `kw-list-row` (a list row with an icon, text and an action), `kw-empty`, `kw-note` (good, warn, bad).
+
+**Built with three names changed:** `kw-card`, `kw-tab`, `kw-row` and `kw-item` already belong to the battle cards, the phone tab bar and the sidebar, so the pieces are `kw-box`, `kw-tabs-item` and `kw-list-row`.
+
+### 3.3a What was built (2026-11-13)
+
+- `css/tokens.css` (loaded first) holds the palette, moved from `hud-storybook.css`, plus the new roles, the type and space scales and the seven layers. Windows sit at 100200, above every old overlay (old screens go up to 100030). Confirms are at 100400; they were at 100000, below Help.
+- `js/window.js` and `css/window.css` implement §3.1–3.3.
+- `KWDialog` keeps its own code: it already met §3.2 and has its proofs. It now sits in the confirm layer and gives way to windows correctly. Absorbing it fully can wait until its look moves to tokens.
+- Old overlays are untouched. `a11y.js` stands aside while a window is open, and `mobile-shell.js` treats any open window as an overlay.
+- Tests:
+  - `verify/window_proofs.js` covers markup, stacking and memory, the CSS sizes and phone sheet, and the style check;
+  - `scripts/window_browser_check.js` is the browser pass at the three viewports (45 checks).
 
 ### 3.4 The dialogue box
 
