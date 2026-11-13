@@ -1,6 +1,6 @@
 # Layout rework — navigation and the window component (build spec)
 
-Status: **§3 and §4 built (2026-11-13); §2 step 1, the five places, built (2026-11-13)**; the rest of §2 ready to build (see §2.8). Written 2026-11-12. It turns the rework list in `docs/ROADMAP_1_0.md` §10 into a concrete design.
+Status: **§3 and §4 built (2026-11-13); §2 steps 1–2, the five places and the context panel, built (2026-11-13)**; the rest of §2 ready to build (see §2.8). Written 2026-11-12. It turns the rework list in `docs/ROADMAP_1_0.md` §10 into a concrete design.
 The window component (§3) is needed from **Phase 1**, for the new Families screens. The navigation change (§2) is **Phase 4**.
 
 ## 1. Principles
@@ -77,7 +77,7 @@ One vertical stack at the lower right (centre on town, paths, zoom if added), ne
 Phase 4 is built a step at a time, each one shippable:
 
 1. **The five places** (built 2026-11-13; below).
-2. **The context panel** (§2.4): the sidebar shows only what is selected; the tier card becomes a header strip; the sidebar tabs and the 11-button action grid go (each action already has a place).
+2. **The context panel** (§2.4; built 2026-11-13, below): the sidebar shows only what is selected; the tier card becomes a header strip; the sidebar tabs and the 11-button action grid go (each action already has a place); Home's town card.
 3. **One place for news** (§2.5): the bell opens moments and the chronicle with filters; the Events button and panel go; Happenings move to the season badge's pop-up.
 4. **The top bar and phone map controls** (§2.6, §2.7): the version string into Settings, a stores chip, a sideways-scrolling resource row on phones with wealth pinned; one stack of floating map buttons; the joystick an option in Settings, off by default.
 5. **Dev Tools on its own page** (§6), loaded only for admins.
@@ -107,6 +107,31 @@ The tier pacing pass in the roadmap needs the funnel numbers from real play, so 
 - Tests:
   - `verify/nav_proofs.js` (36 checks); the style check now covers `css/places.css`;
   - a browser pass at 1400×900, 390×844 and 844×390 against a local API (55 checks; scratch script): opening on Home, every place by click and key, back and forward, Escape, a hub entry, the Stores and Tavern tools on top, the chips placed under the bars, the profile menu, the bell's list on top and the places back after it closes, the old bar hidden, no page errors.
+
+**Step 2, the context panel and the town card (`js/context.js` `KWContext`, `css/context.css`):**
+- **Desktop: the sidebar is a panel floating at the right of the view**, as in the mockup.
+  - It shows only what the player chose: a tile or fog on the map, the outposts list (The Land's Outposts chip), the build list (Home's new Build chip), the tier.
+  - It closes with ✕ or Escape, and when switching place. With nothing chosen the map has the whole width.
+  - The game's own calls never open it (boot, refreshes, going to The Land re-selecting the home tile). It opens only within 1.5 seconds of the player's own click, tap or key. Other scripts also wrap `selectWorldTile` and `switchTab`, so the panel wraps them last, when the game starts and on each place switch.
+  - It moved out of the game body. That body is its own layer (5, over the decorative guards), which kept the panel under the Home scene. Phone and desktop rules both key off `#screen-game`, so nothing else moved.
+- **Phones keep their bottom sheet**, now above the Home scene when open.
+- **Gone:**
+  - the sidebar's tabs (Settlement, Citizens, Outposts, Build: each has a place or a chip);
+  - the 11-button grid on your own town;
+  - the old map action bar (Scout, Build, Citizens, Centre: chips).
+- **The tier card shrinks to a header strip**: the tier's emoji, the town's name and tier, and Upgrade on your own town.
+- **Home's town card**, top right of the scene with no panel open (a Town chip opens it as a window on phones):
+  - the name, tier, species and beds;
+  - children, youths, adults and elders;
+  - happiness and food;
+  - **first steps** (moved here from the panel);
+  - **under way**: a raid coming, outpost buildings going up, citizens on quests;
+  - **today**: the latest three chronicle lines;
+  - a link to the families and the whole chronicle.
+- **Change from the mockup:** its "Going up" lists town buildings under construction, but town buildings finish instantly; there are no construction timers. "Under way" shows the things that do take time instead.
+- Tests:
+  - `verify/context_proofs.js` (20 checks); the style check covers `css/context.css`;
+  - the browser pass adds 18 checks (73 in all, at the three sizes): the card on Home, Build in the panel with the card stepping aside, ✕ and Escape, no panel on going to The Land, the map's full width, a real map click opening the panel, your town as a strip without the grid, Outposts in the panel, the phone Town window and Build sheet.
 
 ## 3. The window component
 
