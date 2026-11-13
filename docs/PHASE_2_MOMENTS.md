@@ -1,6 +1,6 @@
 # Phase 2 — Moments (build spec)
 
-Status: **steps 1–3 built (2026-11-13)**; steps 4–6 ready to build. Written 2026-11-12. Part of `docs/ROADMAP_1_0.md`.
+Status: **steps 1–4 built (2026-11-13)**; steps 5–6 ready to build. Written 2026-11-12. Part of `docs/ROADMAP_1_0.md`.
 
 ## 1. What a moment is
 
@@ -232,6 +232,38 @@ One change: M24 (lost traveller) merges into M7 when Phase 1's settlers exist.
   - when a default can't be carried out, the other choices are tried in turn, so a moment never stays stuck;
   - a kind can write its own chronicle line (M7 does), returning `chronicle: false` so there aren't two.
 - Tests: `scripts/moments_test.js` (82 checks: every family kind's eligibility, choices and outcomes, the settler flow and M5 at a death); `scripts/life_test.js` (181; settlers are now welcomed through M7).
+
+**Step 4, the year and quests (`lib/moments_year.js`, `lib/moments_quest.js`):**
+- **Timed town effects** (`town_effects` table, `lib/town_effects.js`): what a moment leaves behind for a while, with a start and an end.
+  - `lib/town_mods` counts them in production (only for the hours each overlapped), happiness and food upkeep, and lists each as a source. The resource breakdown's "Town bonuses" row now names what is behind it.
+  - `simulation.js` adds their birth chance hour by hour.
+- **The year, M9–M13.**
+  - Each is asked only in its own season (7 hours) and at most once a game year. They compete with the other kinds for the daily budget rather than being triggered at each season turn: four triggered season moments would nearly fill a 3-a-day budget on their own. This replaces "season turns call the engine" (§5).
+  - **M9 Spring: what to plant.** The usual fields (default); flax and herbs (food −15% to autumn, then wealth +30% all autumn); leave a field fallow (food −10% for a year, +30% next spring).
+  - **M10 Summer: the long days.** Rest (default; happiness +5 for the summer); work late (production +10% for the summer; the injury, rolled when asked, is a hurt back and −10 happiness); send the young ones exploring (only with youths; six unseen tiles 3–5 away are revealed; the one who may get lost is rolled when asked).
+  - **M11 Autumn: the harvest feast.** A modest supper (default); a feast (8 food and 4 wealth a head; happiness +8 for the autumn, every bond +4, birth chance +5% next spring).
+  - **M12 Winter: short stores.** Only when the food in store won't last the rest of winter at the town's upkeep.
+    - Choices: ration evenly (default; food upkeep −25% and happiness −6 to spring); feed the children and workers first (only with elders; the same saving, elders −15 happiness); buy the shortfall (1 wealth a food, from the most trusted village, whose trust rises).
+    - Buying is ranked as a risk too (it costs wealth), so the default is never the single worst.
+  - **M13 Winter: stories by the fire.** Only with children. The old tales (default; each child 30 XP in a random trade); tales of the founders (the largest family +6); ghost stories (the children's bonds +8; one, rolled when asked, −10).
+  - M9, M10, M11 and M13 are gentle, so a brand-new town's first moment can now always be found.
+- **Quests and the road, M14–M17.**
+  - These follow events (`quest_completed`, `battle_won`), so they go through `moments.offer()`: the daily budget, the cap, cooldowns and "never the same kind twice running", but not the 6-hour spacing.
+  - At most one per event. The odds are in `lib/moments_quest.js` CONFIG.
+  - **M14 A find on the road** (20% of successful quests). An item from the templates (equipment worth 10–150). Choices: bring it home (default); let the finder keep it (worn if that slot is free; the party's bonds +5); sell it (its value in wealth; a known village's trust +3).
+  - **M15 A wounded stranger** (8% of party quests home).
+    - Carry them home (default): the party comes home tired (−3), and the stranger stays as a settler if they choose to (60%, rolled when asked) and there is a bed. Otherwise they go home and send 20 wealth.
+    - Leave supplies: 30 food, and the kindest of the party (Loyal or Charming) −6.
+  - **M16 A rival party** (10% of successful party quests). Share (default; half the resources, no items; a village's trust +4); race (the whole reward or nothing, rolled when asked); let them have it (nothing; trust +8).
+    - The share is applied when the quest is collected. Collecting before answering takes the default first.
+  - **M17 The one who froze** (12% of battles won with two or more).
+    - Say nothing (default; −5); send them out again (55%, rolled when asked: Brave, +2 strength, or Shaken, −1 strength); work at home (fighters become foragers; +4).
+    - Brave and Shaken are new earned traits (`citizens.js` `EARNED_TRAITS`), never rolled at birth.
+  - **Changes from §3:** M15 and M16 are mid-quest in the spec. Quests here resolve in one go, so both are asked as the party comes home: carrying the stranger tires the party instead of delaying the quest. "Shaken" doesn't yet stop a citizen being sent to fight; it lowers their strength.
+- **Engine and settlers:**
+  - `start()` takes an optional `now` (tests ask in any season);
+  - `settlers.admitOne` can run on a moment's transaction (`opts.q`). M7 and M15 do, so admitting a settler never waits on locks the moment holds; a test caught M15 deadlocking that way.
+- Tests: `scripts/moments_test.js` (118 checks, adding timed effects, the five year moments, the four quest moments, and M16 through the collect route).
 
 ## 7. Tests
 

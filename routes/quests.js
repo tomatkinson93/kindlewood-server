@@ -810,6 +810,11 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
   const fail = (status, error) => Object.assign(new Error(error), { status });
   try {
     const rMods = await questMods(req.user.userId);   // Happening quest_rewards (read-only)
+    // A rival party still waiting for an answer (moment M16) takes its
+    // default before the reward is counted; then its share applies.
+    const MQ = require('../lib/moments_quest');
+    const own = (await require('../db').query('SELECT settlement_id FROM settlement_quests WHERE id = $1 AND user_id = $2', [req.params.id, req.user.userId])).rows[0];
+    if (own) await MQ.settleRivalFor(own.settlement_id, req.params.id).catch(e => console.error('[collect] rival', e.message));
     const out = await withTransaction(async client => {
       const db = (t, p) => client.query(t, p);
       const run = (await client.query(
@@ -856,20 +861,21 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
 
       let goldAwarded = 0;
       let bonusReward = null;
-      if (run.status === 'completed' && quest) {
+      const share = run.status === 'completed' ? await MQ.rewardMult(client, run.settlement_id, run.id) : 1;
+      if (run.status === 'completed' && quest && share > 0) {
         const isPartyRun = run.quest_type === 'party' || quest.quest_type === 'party';
         if (isPartyRun) {
           // Party rewards live in `rewards` JSONB. Apply each resource delta.
           const rewards = {};
           for (const [k, v] of Object.entries(quest.rewards || {})) {
-            if (require('../lib/resource_defs').isResource(k)) rewards[k] = moddedReward(v, rMods);
+            if (require('../lib/resource_defs').isResource(k)) rewards[k] = Math.round(moddedReward(v, rMods) * share);
           }
           const sets = Object.entries(rewards).map(([k, v]) => `${k} = ${k} + ${Number(v) || 0}`).join(', ');
           if (sets) await client.query(`UPDATE settlements SET ${sets} WHERE id=$1`, [run.settlement_id]);
           goldAwarded = rewards.wealth || 0;
 
           // Award high_bonus item if roll was high
-          if (quest.high_bonus && (run.success_roll || 0) > (run.success_chance || 0.8)) {
+          if (share === 1 && quest.high_bonus && (run.success_roll || 0) > (run.success_chance || 0.8)) {
             const hb = quest.high_bonus;
             await grantDrop({ item_key: hb.item?.toLowerCase().replace(/\s+/g, '_') || 'quest_item', name: hb.item || 'Quest Item',
               description: hb.desc || '', icon: '✨', category: 'quest_item', rarity: 'rare', quantity: 1 });
@@ -884,7 +890,7 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
         }
 
         // Item drops (DB-defined). Each drop has an item_key, optional roll_chance (0-1, default 1).
-        if (Array.isArray(quest.drops) && quest.drops.length) {
+        if (share === 1 && Array.isArray(quest.drops) && quest.drops.length) {
           for (const drop of quest.drops) {
             const chance = drop.roll_chance ?? 1;
             if (Math.random() > chance) continue;

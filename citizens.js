@@ -50,6 +50,12 @@ const VISIBLE_TRAITS = [
   { id: 'wanderer',     label: 'Wanderer',     desc: 'Restless. Best suited to the open road.',     effect: { agility: 1 } },
 ];
 
+// Earned, never rolled at birth (moment M17, lib/moments_quest).
+const EARNED_TRAITS = [
+  { id: 'brave',  label: 'Brave',  desc: 'Faced their fear and stood their ground.', effect: { strength: 2 } },
+  { id: 'shaken', label: 'Shaken', desc: 'Lost heart after a fight.',                effect: { strength: -1 } },
+];
+
 const HIDDEN_TRAITS = [
   { id: 'latent_strength',  label: 'Latent Strength',  desc: 'A strength not yet revealed.' },
   { id: 'natural_leader',   label: 'Natural Leader',   desc: 'Others follow without knowing why.' },
@@ -165,4 +171,4 @@ function generateStartingCitizens(count = 10) {
   return Array.from({ length: count }, () => generateCitizen(1));
 }
 
-module.exports = { generateStartingCitizens, generateCitizen, VISIBLE_TRAITS, HIDDEN_TRAITS, SKILLS, MALE_NAMES, FEMALE_NAMES, LAST_NAMES };
+module.exports = { generateStartingCitizens, generateCitizen, VISIBLE_TRAITS, EARNED_TRAITS, HIDDEN_TRAITS, SKILLS, MALE_NAMES, FEMALE_NAMES, LAST_NAMES };

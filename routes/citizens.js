@@ -1,7 +1,7 @@
 const express = require('express');
 const { query, withTransaction } = require('../db');
 const requireAuth = require('../middleware/auth');
-const { VISIBLE_TRAITS, HIDDEN_TRAITS } = require('../citizens');
+const { VISIBLE_TRAITS, EARNED_TRAITS, HIDDEN_TRAITS } = require('../citizens');
 const { calculateHappinessFactors } = require('../happiness');
 const { getCurrentSeason } = require('../seasons');
 
@@ -448,7 +448,7 @@ router.patch('/:id/role', requireAuth, async (req, res) => {
 
 // Export trait data for frontend reference
 router.get('/meta/traits', async (req, res) => {
-  res.json({ ok: true, visible: VISIBLE_TRAITS, hidden: HIDDEN_TRAITS.map(t => ({ id: t.id, label: '???' })) });
+  res.json({ ok: true, visible: VISIBLE_TRAITS.concat(EARNED_TRAITS), hidden: HIDDEN_TRAITS.map(t => ({ id: t.id, label: '???' })) });
 });
 
 
