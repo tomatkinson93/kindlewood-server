@@ -126,6 +126,7 @@ initDB().then(() => {
   // Careers: completed quests, battles, porter runs… pay class XP.
   require('./lib/career_subscriber').register();
   require('./lib/moments_quest').register();
+  require('./lib/moments_raid').register();
   // Built-in clan quests into quest_definitions (quest_source = 'clan') the
   // first time; after that they're edited in the Dev Tools quest admin.
   require('./lib/clan_quests').seedDefinitions({ onlyIfEmpty: true })

@@ -54,6 +54,7 @@ const VISIBLE_TRAITS = [
 const EARNED_TRAITS = [
   { id: 'brave',  label: 'Brave',  desc: 'Faced their fear and stood their ground.', effect: { strength: 2 } },
   { id: 'shaken', label: 'Shaken', desc: 'Lost heart after a fight.',                effect: { strength: -1 } },
+  { id: 'shield', label: "Town's Shield", desc: 'Named the shield of the town after holding the gate.', effect: {} },   // M29
 ];
 
 const HIDDEN_TRAITS = [

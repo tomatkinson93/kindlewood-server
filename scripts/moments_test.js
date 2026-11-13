@@ -31,15 +31,23 @@ async function main() {
       item: { name: 'Bronze Knife', icon: '🔪', item_key: 'bronze_knife' }, kindest: P(7, 'Ann Ash'), stranger: { name: 'Nell Moss', surname: 'Moss', age: 20 },
       title: 'The Fallen Watchtree', who: { ...P(5, 'Bo Fern'), fighter: true } };
     const yqBare = { ...yq, speaker: null, youths: 0, village: null, elders: [], family: null, who: { ...yq.who, fighter: false } };
-    const samples = k => (['year', 'quest'].includes(M.DEFS[k].source) ? [{ ...sample, ...yq }, { ...sample, ...yqBare }] : [{ ...sample, ...fam }, { ...sample, ...bare }]);
+    // Villages and raids (M18–M20, M28–M30).
+    const vr = { speaker: 'An envoy from Oakmere', village: P(1, 'Oakmere'), food: 80, workers: [P(1, 'Ann Vale'), P(2, 'Bo Vale')], ours: P(3, 'Cy Vale'),
+      spouse: { name: 'Nell Moss', surname: 'Moss', age: 25 }, gift: 'Loyal', res: 'timber', amount: 60, need: 'to mend their bridge',
+      raid_id: 1, target: 'the Farmstead', from: 'Blightmoor', hours: 3, outpost: true, crew: [P(4, 'Wil Worker')], tribute: 200,
+      hero: P(5, 'Gus Guard'), already: false, child: { name: 'Ash Ember', surname: 'Ember', age: 5 }, objector: { ...P(6, 'Ada Hale'), family: 'Hale' } };
+    const vrBare = { ...vr, workers: [], village: null, outpost: false, crew: [], already: true, objector: null };
+    const samples = k => (['year', 'quest'].includes(M.DEFS[k].source) ? [{ ...sample, ...yq }, { ...sample, ...yqBare }]
+      : ['village', 'raid'].includes(M.DEFS[k].source) ? [{ ...sample, ...vr }, { ...sample, ...vrBare, village: ['village_help', 'envoy_offer', 'debt_called'].includes(k) ? vr.village : null }]
+      : [{ ...sample, ...fam }, { ...sample, ...bare }]);
     const bad = [];
     for (const k of Object.keys(M.DEFS)) for (const data of samples(k)) for (const p of M.check(k, data)) bad.push(`${k}: ${p}`);
     const texts = [];
-    for (const k of Object.keys(M.DEFS)) if (['family', 'year', 'quest'].includes(M.DEFS[k].source)) for (const data of samples(k)) {
+    for (const k of Object.keys(M.DEFS)) if (['family', 'year', 'quest', 'village', 'raid'].includes(M.DEFS[k].source)) for (const data of samples(k)) {
       const all = M.DEFS[k].text(data) + ' ' + M.DEFS[k].options(data).map(o => o.label + ' ' + o.hint).join(' ');
       if (/undefined|null|NaN|\[object/.test(all)) texts.push(`${k}: ${all}`);
     }
-    check(texts.length === 0, 'family, year and quest moments read cleanly with and without their optional parts' + (texts.length ? ' — ' + texts.join(' | ') : ''));
+    check(texts.length === 0, 'family, year, quest, village and raid moments read cleanly with and without their optional parts' + (texts.length ? ' — ' + texts.join(' | ') : ''));
     check(['name_baby', 'child_wish', 'proposal', 'last_request', 'who_inherits', 'quarrel', 'settler_gate', 'gifted_child'].every(k => M.DEFS[k] && M.DEFS[k].source === 'family'), 'the eight family moments are registered');
     check(M.DEFS.who_inherits.triggerOnly && M.DEFS.settler_gate.triggerOnly, 'who inherits and the settler at the gate are only ever triggered');
     check(bad.length === 0, 'every option has a hint; every default is an option and never the single worst' + (bad.length ? ' — ' + bad.join('; ') : ''));
@@ -484,6 +492,113 @@ async function main() {
       check(who.visible_traits.includes('brave') && Number(who.stats.strength) === 7, 'M17: sent out again, they found their courage: Brave, +2 strength');
       check(!(await MQ.onBattle({ settlementId: sid, citizenIds: [a, b] }, seq(0.5))), 'M17: most battles pass without it');
       check(require('../citizens').EARNED_TRAITS.some(t => t.id === 'brave') && !require('../citizens').VISIBLE_TRAITS.some(t => t.id === 'brave'), 'Brave is earned, never rolled at birth');
+    }
+  }
+
+  // ── Villages (M18–M20) and raids (M28–M30) ─────────────────────────────
+  {
+    const LIFE = require('../lib/life');
+    const house = async (sid, cap = 4) => (await q("INSERT INTO houses (settlement_id, name, building_type, capacity) VALUES ($1,'Hut','starter_house',$2) RETURNING id", [sid, cap])).rows[0].id;
+    const cit = async (sid, name, o = {}) => (await q(
+      `INSERT INTO citizens (settlement_id, name, gender, role, house_id, partner_id, life_stage, born_at, last_birthday_year, visible_traits, life)
+       VALUES ($1,$2,$3,$4,$5,$6,'adult',$7,$8,'[]','{"happiness":70}') RETURNING id`,
+      [sid, name, o.gender || 'female', o.role || 'forager', o.house_id || null, o.partner_id || null, LIFE.bornAtFor(o.age || 30).toISOString(), o.age || 30])).rows[0].id;
+    const village = async (sid, trust) => {
+      const n = (await q(`INSERT INTO npc_settlements (name, tile_q, tile_r, disposition) VALUES ($1,$2,$3,'friendly') RETURNING id`,
+        [`Oakmere ${RUN}${Math.floor(Math.random() * 1e6)}`, 300000 + Math.floor(Math.random() * 1e6), 300000 + Math.floor(Math.random() * 1e6)])).rows[0].id;
+      await q(`INSERT INTO diplomacy_relations (settlement_id, npc_id, status, trust) VALUES ($1,$2,'familiar',$3)`, [sid, n, trust]);
+      return n;
+    };
+    const trustOf = async (sid, n) => Number((await q('SELECT trust FROM diplomacy_relations WHERE settlement_id = $1 AND npc_id = $2', [sid, n])).rows[0].trust);
+    const st = async (sid, kind, args) => { const m = await M.start(sid, kind, args ? { args } : {}); if (m) m.data = (await q('SELECT data FROM moments WHERE id = $1', [m.id])).rows[0].data; return m; };
+    const happyOf = async id => Number((await q('SELECT life FROM citizens WHERE id = $1', [id])).rows[0].life.happiness);
+
+    console.log('Villages');
+    {
+      const sid = await town('vil1'); const h = await house(sid, 8);
+      const folk = [];
+      for (const n of ['Ann', 'Bo', 'Cy', 'Di', 'Ed']) folk.push(await cit(sid, n + ' Vale', { house_id: h }));
+      check(!(await st(sid, 'village_help')), 'M18: no village at enough trust, nothing asked');
+      const v = await village(sid, 30);
+      const m18 = await st(sid, 'village_help');
+      check(m18 && m18.options.map(o => o.key).join() === 'food,workers,decline' && m18.fallback === 'food', 'M18: a village asks for help: food (default), two workers, or decline');
+      await M.choose(sid, m18.id, 'workers');
+      const away = await require('../lib/careers').awayMap(null, sid);
+      check(m18.data.workers.every(w => away.get(w.id) === 'helping') && await trustOf(sid, v) === 40, 'M18: two go to help: away for a while, and trust rises');
+      // M19 an envoy's offer (trust 41+, a single adult, a free bed).
+      await q('UPDATE diplomacy_relations SET trust = 50 WHERE settlement_id = $1', [sid]);
+      const m19 = await st(sid, 'envoy_offer');
+      check(m19 && m19.fallback === 'accept' && m19.data.spouse.gender !== (folk.length && 'female') , 'M19: a marriage offered; accepting is the default');
+      await M.choose(sid, m19.id, 'accept');
+      const sp = (await q('SELECT id, partner_id, visible_traits FROM citizens WHERE settlement_id = $1 AND name = $2', [sid, m19.data.spouse.name])).rows[0];
+      check(sp && sp.partner_id === m19.data.ours.id && (await q('SELECT partner_id FROM citizens WHERE id = $1', [m19.data.ours.id])).rows[0].partner_id === sp.id,
+        'M19: the spouse comes from the village and the two are partners');
+      check(await trustOf(sid, v) === 62, 'M19: lasting trust with the village');
+      // M20 a debt called in.
+      const m20 = await st(sid, 'debt_called');
+      check(m20 && m20.fallback === 'honour' && m20.data.amount > 0, 'M20: a favour asked; honouring it is the default');
+      await q('UPDATE settlements SET food = 0, timber = 0, stone = 0 WHERE id = $1', [sid]);
+      const auto = await M.choose(sid, m20.id, 'honour', true);
+      check(auto.ok && auto.choice === 'putoff' && await trustOf(sid, v) === 54, 'M20: with nothing to give, the town puts them off and trust falls');
+    }
+
+    console.log('Raids and the Withered');
+    {
+      const MR = require('../lib/moments_raid');
+      const sid = await town('raid1'); const h = await house(sid, 8);
+      const g = await cit(sid, 'Gus Guard', { role: 'soldier', house_id: h });
+      const w = await cit(sid, 'Wil Worker', { house_id: h });
+      const tq = (await q('SELECT tile_q FROM settlements WHERE id = $1', [sid])).rows[0].tile_q;
+      const oid = (await q(`INSERT INTO outposts (settlement_id, tile_q, tile_r, terrain, level, store, store_tick) VALUES ($1,$2,0,'plains',1,'{"food":100}',NOW()) RETURNING id`, [sid, tq + 2])).rows[0].id;
+      await q(`INSERT INTO outpost_crew (citizen_id, outpost_id, post) VALUES ($1,$2,'worker')`, [w, oid]);
+      const raid = async (o = null) => (await q(`INSERT INTO settlement_raids (settlement_id, outpost_id, target_name, strength, arrives_at) VALUES ($1,$2,$3,30,NOW() + interval '3 hours') RETURNING id`,
+        [sid, o, o ? 'the Farmstead' : 'your town'])).rows[0].id;
+      // M28, from the raid_started event.
+      const r1 = await raid(oid);
+      const m28 = await MR.onRaidStarted({ settlementId: sid, raidId: r1 });
+      check(m28 && m28.kind === 'raid_warning' && m28.fallback === 'safe' && /Bring the outpost crew home/.test(m28.options[0].label), 'M28: scouts report a raid on an outpost: bring the crew home (default), reinforce, or send an offer');
+      await M.choose(sid, m28.id, 'safe');
+      check(!(await q('SELECT 1 FROM outpost_crew WHERE outpost_id = $1', [oid])).rows.length, 'M28: the crew comes home');
+      await q("UPDATE settlement_raids SET resolved_at = NOW(), outcome = 'lost' WHERE id = $1", [r1]);
+      const r2 = await raid();
+      const m28b = await st(sid, 'raid_warning', { raid_id: r2 });
+      check(/Bar the gates/.test(m28b.options[0].label), 'M28: a raid on the town itself: bar the gates');
+      await M.choose(sid, m28b.id, 'reinforce');
+      const s0 = (await q('SELECT * FROM settlements WHERE id = $1', [sid])).rows[0];
+      check((await require('../lib/town_mods').load(null, s0)).effects.raid_defence === 20, 'M28: reinforcing adds defence until the raid arrives');
+      await q("UPDATE settlement_raids SET resolved_at = NOW(), outcome = 'repelled', loot = $2 WHERE id = $1", [r2, JSON.stringify({ defence: { posted: [{ id: g, name: 'Gus Guard', role: 'soldier' }] } })]);
+      const r3 = await raid();
+      await q('UPDATE settlements SET wealth = 5000 WHERE id = $1', [sid]);
+      const m28c = await st(sid, 'raid_warning', { raid_id: r3 });
+      await M.choose(sid, m28c.id, 'offer');
+      const r3row = (await q('SELECT outcome FROM settlement_raids WHERE id = $1', [r3])).rows[0];
+      check(r3row.outcome === 'turned_back' && Number((await q('SELECT wealth FROM settlements WHERE id = $1', [sid])).rows[0].wealth) === 5000 - m28c.data.tribute, 'M28: an offer pays tribute and the raid turns back');
+      // M29 after a raid turned back.
+      check(!(await MR.onRaidRepelled({ settlementId: sid, raidId: r2 }, () => 0)), 'M29: offered within the daily budget (three moments today already)');
+      await q("UPDATE moments SET created_at = NOW() - interval '5 days' WHERE settlement_id = $1", [sid]);
+      const m29 = await MR.onRaidRepelled({ settlementId: sid, raidId: r2 }, () => 0);
+      check(m29 && m29.kind === 'raid_hero' && m29.options.map(o => o.key).join() === 'thanks,shield', 'M29: someone held the gate: a quiet thanks (default) or name them the shield');
+      const wh = await happyOf(w);
+      await M.choose(sid, m29.id, 'shield');
+      const gv = (await q('SELECT visible_traits FROM citizens WHERE id = $1', [g])).rows[0].visible_traits;
+      check(gv.includes('shield') && await happyOf(w) === wh - 2, "M29: named the town's shield; the others envy it a little");
+      // M30 a Withered child, after a camp is burned.
+      const sid2 = await town('raid2'); const h2 = await house(sid2, 4);
+      const a = await cit(sid2, 'Ada Hale', { house_id: h2 }); await cit(sid2, 'Bo Hale', { house_id: h2, gender: 'male' });
+      await LIFE.assignFamilies(sid2); await LIFE.updateHeads(sid2);
+      const m30 = await MR.onCampCleared({ settlementId: sid2, campId: 1 }, () => 0);
+      check(m30 && m30.kind === 'withered_child' && m30.fallback === 'take', 'M30: a child found near a burned camp; taking them in is the default');
+      const d30 = (await q('SELECT data FROM moments WHERE id = $1', [m30.id])).rows[0].data;
+      await M.choose(sid2, m30.id, 'take');
+      const kid = (await q('SELECT life_stage, hidden_traits, life, house_id FROM citizens WHERE settlement_id = $1 AND name = $2', [sid2, d30.child.name])).rows[0];
+      check(kid && kid.life_stage === 'child' && kid.hidden_traits.includes(d30.child.knack) && kid.life.withered_born && kid.house_id === h2, 'M30: taken in: a child with an unusual hidden gift, housed');
+      check(d30.objector && await happyOf(d30.objector.id) === 62, 'M30: the head of the largest family objects');
+      // With no bed, the default can't be done: they go to the village instead.
+      await q('UPDATE houses SET capacity = 3 WHERE id = $1', [h2]);
+      const m30b = await st(sid2, 'withered_child');
+      const auto = await M.choose(sid2, m30b.id, 'take', true);
+      check(auto.ok && auto.choice === 'leave', 'M30: with no bed for them, the child is taken to a village');
+      check(a > 0, '(the town has a family)');
     }
   }
 
