@@ -88,3 +88,7 @@ UPDATE families f SET head_citizen_id = (
   SELECT c.id FROM citizens c WHERE c.family_id = f.id AND c.life_stage = 'adult' ORDER BY c.born_at ASC, c.id ASC LIMIT 1)
  WHERE f.head_citizen_id IS DISTINCT FROM (
   SELECT c.id FROM citizens c WHERE c.family_id = f.id AND c.life_stage = 'adult' ORDER BY c.born_at ASC, c.id ASC LIMIT 1);
+
+-- Settlers (step 5, §4.7): when the last one arrived. NULL until the town's
+-- first check, which only starts the clock.
+ALTER TABLE settlements ADD COLUMN IF NOT EXISTS last_settler_at TIMESTAMPTZ;

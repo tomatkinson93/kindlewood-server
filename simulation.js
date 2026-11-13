@@ -86,6 +86,7 @@ async function runSimulation(settlement, hoursElapsed, lastSimAt) {
   // Children of 12+ come of age first, so they can bond and partner this run.
   await LIFE.comeOfAge(settlementId).catch(e => console.error('[life] comeOfAge:', e.message));
   await require('./lib/inheritance').settleDue(settlementId).catch(e => console.error('[inheritance] settleDue:', e.message));
+  await require('./lib/settlers').arrive(settlementId).catch(e => console.error('[settlers] arrive:', e.message));
 
   const citizenRes = await query(
     `SELECT * FROM citizens WHERE settlement_id = $1 AND COALESCE(life_stage, 'adult') != 'deceased'`,

@@ -6,7 +6,7 @@
 //  the gap between children, families, the migration for existing towns.
 //  Step 3: apprenticeships and mentors, youth XP and output, elders at 60%,
 //  coming of age. Step 4: death of old age, widows, heirs, heirlooms,
-//  knowledge, headship, memorials.
+//  knowledge, headship, memorials. Step 5: settlers.
 //   DATABASE_URL=postgres://… QUEST_TEST_BASE=http://localhost:3999 node scripts/life_test.js
 // ══════════════════════════════════════════════════════════════════════════
 'use strict';
@@ -223,6 +223,24 @@ async function main() {
     check(IH.heirloomBonus(item(1), { family_id: 8 }) === 0 && IH.heirloomBonus({ metadata: {} }, { family_id: 7 }) === 0, 'nothing outside the family, nothing for ordinary gear');
     const line = IH.memorialLine({ name: 'Hazel Oakbrook', role: 'farmer' }, { age: 78, wasHead: true, top: { level: 12, hours_worked: 0 }, cause: 'old_age', heirName: 'Rowan Oakbrook', items: 1 });
     check(/Hazel Oakbrook passed away peacefully at 78/.test(line) && /farmer of level 12/.test(line) && /head of the Oakbrook family/.test(line) && /pass to Rowan Oakbrook/.test(line), 'a memorial says who they were');
+  }
+
+  console.log('Settlers (step 5, pure)');
+  {
+    const ST = require('../lib/settlers'), D = 864e5, now = Date.UTC(2026, 8, 1);
+    check(ST.plan({ last: now - 6.9 * D, now, freeBeds: 5, working: 10 }).length === 0 && ST.plan({ last: now - 7 * D, now, freeBeds: 5, working: 10 }).length === 1,
+      'while a bed is free, one settler every 7 days');
+    const two = ST.plan({ last: now - 15 * D, now, freeBeds: 5, working: 10 });
+    check(two.length === 2 && two[0] === now - 8 * D && two[1] === now - D, 'away for 15 days: two, each dated to when they would have come');
+    check(ST.plan({ last: now - 2.5 * D, now, freeBeds: 5, working: 4 }).length === 2, 'fewer than 6 working adults: one arrives the next day (and the next)');
+    const rescue = ST.plan({ last: now - 30 * D, now, freeBeds: 9, working: 5 });
+    check(rescue.length === 3 && rescue[1] - rescue[0] === 7 * D, 'once the rescue brings them to 6, back to every 7 days; never more than 3 at once');
+    check(ST.plan({ last: now - 30 * D, now, freeBeds: 0, working: 2 }).length === 0 && ST.plan({ last: now - 30 * D, now, freeBeds: 1, working: 2 }).length === 1, 'never more settlers than free beds');
+    const { LAST_NAMES } = require('../citizens');
+    const taken = new Set(LAST_NAMES.slice(1));
+    check(ST.newSurname(taken) === LAST_NAMES[0], 'a settler takes a surname no family in the town uses');
+    const coined = ST.newSurname(new Set(LAST_NAMES));
+    check(!LAST_NAMES.includes(coined) && /^[A-Z][a-z]+$/.test(coined), `when every listed surname is taken, a new one is coined (${coined})`);
   }
 
   // ── Against the database and the running API ─────────────────────────────
@@ -446,6 +464,35 @@ async function main() {
     } finally { Math.random = orig; }
     const eb = (await q('SELECT life_stage, death_cause, last_birthday_year FROM citizens WHERE id = $1', [elder])).rows[0];
     check(eb.life_stage === 'deceased' && eb.death_cause === 'old_age' && eb.last_birthday_year === 80, 'the hourly simulation rolls on the birthday and an 80-year-old may die');
+  }
+
+  console.log('Settlers arrive (step 5)');
+  {
+    const ST = require('../lib/settlers');
+    // A small town of its own: two adults and a hut with room for two more.
+    const un = `settle_${RUN}`;
+    const u2 = (await q("INSERT INTO users (username, email, password_hash, species) VALUES ($1,$2,'x','Mice') RETURNING id", [un, `${un}@t.l`])).rows[0];
+    const t2 = (await q(`INSERT INTO settlements (user_id, name, world_version, tier, tile_q, tile_r, last_tick) VALUES ($1,'Thornvale',2,'camp',$2,0,NOW()) RETURNING id`, [u2.id, tq - 40])).rows[0].id;
+    await q("INSERT INTO houses (settlement_id, name, building_type, capacity) VALUES ($1, 'Hut', 'starter_house', 4)", [t2]);
+    for (const nm of ['Ada Fernbrook', 'Bo Fernbrook']) {
+      await q("INSERT INTO citizens (settlement_id, name, gender, role, born_at, last_birthday_year) VALUES ($1, $2, 'female', 'forager', $3, 30)", [t2, nm, LIFE.bornAtFor(30).toISOString()]);
+    }
+    await LIFE.assignFamilies(t2);
+    check((await ST.arrive(t2)).length === 0 && (await q('SELECT last_settler_at FROM settlements WHERE id = $1', [t2])).rows[0].last_settler_at, "a town's first check only starts the clock");
+    await q("UPDATE settlements SET last_settler_at = NOW() - interval '2.5 days' WHERE id = $1", [t2]);
+    const came = await ST.arrive(t2);
+    check(came.length === 2, 'two working adults: a settler on each of the two days since (rescue), up to the free beds');
+    check((await ST.arrive(t2)).length === 0, 'they arrive once (the window is claimed)');
+    const rows = (await q('SELECT c.name, c.born_at, c.house_id, c.family_id, f.name AS fam FROM citizens c LEFT JOIN families f ON f.id = c.family_id WHERE c.id = ANY($1)', [came.map(x => x.id)])).rows;
+    check(rows.every(r => { const a = LIFE.ageOf(r); return a >= 12 && a < 26; }), 'settlers are 12–24');
+    check(rows.every(r => r.fam && r.fam !== 'Fernbrook' && r.name.endsWith(' ' + r.fam)) && new Set(rows.map(r => r.fam)).size === 2, 'each founds a new family with a new surname');
+    check(rows.every(r => r.house_id), 'and is housed');
+    check((await q('SELECT population FROM settlements WHERE id = $1', [t2])).rows[0].population === 4, 'the population counts them');
+    const chr = (await q("SELECT COUNT(*)::int AS n FROM chronicle WHERE settlement_id = $1 AND kind = 'settler'", [t2])).rows[0].n;
+    const ev = (await q("SELECT COUNT(*)::int AS n FROM settlement_events WHERE settlement_id = $1 AND type = 'settler'", [t2])).rows[0].n;
+    check(chr === 2 && ev === 2, 'a chronicle line and a toast each');
+    await q("UPDATE settlements SET last_settler_at = NOW() - interval '30 days' WHERE id = $1", [t2]);
+    check((await ST.arrive(t2)).length === 0, 'the town is full (4 of 4 beds): nobody comes');
   }
 
   console.log('Migration for existing towns');

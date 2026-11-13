@@ -1,6 +1,6 @@
 # Phase 1 — the life cycle (build spec)
 
-Status: **steps 1–4 built (2026-11-13)**; steps 5–7 ready to build. **Steps 2–6 ship together:** do not merge the branch until step 6 is done. Decisions in §11 are made. Written 2026-11-11, updated 2026-11-13. Part of `docs/ROADMAP_1_0.md`.
+Status: **steps 1–5 built (2026-11-13)**; steps 6–7 ready to build. **Steps 2–6 ship together:** do not merge the branch until step 6 is done. Decisions in §11 are made. Written 2026-11-11, updated 2026-11-13. Part of `docs/ROADMAP_1_0.md`.
 Read §1 first: it lists two bugs in the live game that block progress today.
 
 ## 1. Findings from the assessment
@@ -287,6 +287,15 @@ Each step ends with tests passing. **Steps 2–6 ship together**: death without 
      - Heirlooms show in the profile.
    - Tests: `life_test` step 4 sections (124 checks in all), `verify/life_proofs.js` §4.
 5. **Settlers.**
+
+   **Built (2026-11-13, not merged):**
+   - `lib/settlers.js` `arrive()` runs on settlement load and at the start of the simulation. `plan()` is pure.
+   - The rules are the model's (scenario K): while a bed is free, one settler every 7 days; one the next day while working adults (12–59) number fewer than 6.
+   - After an absence it catches up, at most 3 at once and never more than the free beds, each dated to when they would have come.
+   - The window is claimed atomically on `settlements.last_settler_at`. A town's first check only starts the clock.
+   - Settlers are 12–24 with the usual random hidden trade talents, and a role their town has a building for. Each has a surname no family in the town uses (coined from parts once the list of 72 runs out), so each founds a new family.
+   - Each arrives with a chronicle line and a `settler` event (a toast), and is housed and counted.
+   - Tests: `life_test` step 5 sections (140 checks in all).
 6. **The chronicle and the Families screen.**
 7. **Dev Tools and a tuning pass** using `scripts/population_model.js` and the funnel.
 
