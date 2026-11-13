@@ -1,6 +1,6 @@
 # Phase 2 — Moments (build spec)
 
-Status: **steps 1–4 built (2026-11-13)**; steps 5–6 ready to build. Written 2026-11-12. Part of `docs/ROADMAP_1_0.md`.
+Status: **steps 1–5 built (2026-11-13)**; step 6 (tuning) to come. Written 2026-11-12. Part of `docs/ROADMAP_1_0.md`.
 
 ## 1. What a moment is
 
@@ -264,6 +264,24 @@ One change: M24 (lost traveller) merges into M7 when Phase 1's settlers exist.
   - `start()` takes an optional `now` (tests ask in any season);
   - `settlers.admitOne` can run on a moment's transaction (`opts.q`). M7 and M15 do, so admitting a settler never waits on locks the moment holds; a test caught M15 deadlocking that way.
 - Tests: `scripts/moments_test.js` (118 checks, adding timed effects, the five year moments, the four quest moments, and M16 through the collect route).
+
+**Step 5, villages and raids (`lib/moments_village.js`, `lib/moments_raid.js`):**
+- **Villages, M18–M20.** Rolled like the others. Each needs a known, peaceful village at enough trust: 21+ (familiar) for M18, 41+ (friendly) for M19 and M20.
+  - **M18 A village asks for help.** Send food (default; 80 a tier; trust +6); send two workers (only if at least two others stay; trust +10; away 2 days); decline (trust −3).
+    - Away is a new `citizens.away_until` (migration `moments_away`), which `lib/careers` awayMap reads as `helping`: they can't be reassigned or re-equipped until they are back.
+  - **M19 An envoy's offer.** A single adult (16–44) and a free bed. Accept (default): a spouse from the village comes to live here with them and brings a good visible trait; trust +12. Decline politely: nothing.
+  - **M20 A debt called in.** Honour it (default; 60 timber, stone or food a tier; trust +4); put them off (trust −8). When the goods aren't there, the default falls back to putting them off.
+  - **Change from §3:** M19 in the spec has one of yours leave. There is no "left town" state for a citizen, so the marriage brings a spouse here instead.
+- **Raids, M28–M30.** These follow events, offered within the daily budget. `raid_repelled` now carries the raid's id, and burning a Withered camp emits `camp_cleared`.
+  - **M28 Scouts report movement** (every raid warning).
+    - Bring the outpost crew home (default for an outpost; "bar the gates and wait" for the town itself);
+    - reinforce (a timed `raid_defence` +20 until the raid arrives; `town_mods` puts it in `effects`, which `lib/raids` already reads);
+    - send an offer (tribute at today's price, as in `lib/raids`, on the moment's transaction; the raid turns back).
+  - **M29 After the raid** (60% of raids turned back, when someone was posted). The defender (a Guard or Archer first) gets a quiet thanks (default, +8) or is named the town's shield (the earned trait `shield`, +12; every other adult −2).
+  - **M30 A Withered child** (half of camps burned; 15% of raids turned back otherwise).
+    - Take them in (default): a child of 4–7 with a hidden career knack and `life.withered_born`, a new family line; the head of the largest family −8.
+    - Take them to the most trusted village: trust +6. With no bed, the default falls back to this.
+- Tests: `scripts/moments_test.js` (139 checks).
 
 ## 7. Tests
 

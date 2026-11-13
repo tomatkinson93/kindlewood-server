@@ -418,7 +418,7 @@ router.patch('/:id/role', requireAuth, async (req, res) => {
     const away = (await careers.awayMap(null, settlement.id)).get(cit.id);
     const AWAY_MSG = {
       expedition: 'is out scouting', quest: 'is on a quest', clan_quest: 'is on a clan quest',
-      porter: 'is out carrying goods', trade: 'is on a trade run', envoy: 'is away as an envoy',
+      porter: 'is out carrying goods', trade: 'is on a trade run', envoy: 'is away as an envoy', helping: 'is away helping a village',
     };
     if (away) return res.status(400).json({ error: `${cit.name} ${AWAY_MSG[away] || 'is away'} and can't be reassigned until they return.` });
     if ((await require('../lib/crafting').busyCitizenIds([cit.id])).length)
