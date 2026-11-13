@@ -1,6 +1,6 @@
 # Phase 1 — the life cycle (build spec)
 
-Status: **steps 1–5 built (2026-11-13)**; steps 6–7 ready to build. **Steps 2–6 ship together:** do not merge the branch until step 6 is done. Decisions in §11 are made. Written 2026-11-11, updated 2026-11-13. Part of `docs/ROADMAP_1_0.md`.
+Status: **steps 1–6 built (2026-11-13)**: the release (steps 2–6) is ready to merge. Step 7 (Dev Tools and tuning) is left. Decisions in §11 are made. Written 2026-11-11, updated 2026-11-13. Part of `docs/ROADMAP_1_0.md`.
 Read §1 first: it lists two bugs in the live game that block progress today.
 
 ## 1. Findings from the assessment
@@ -297,7 +297,29 @@ Each step ends with tests passing. **Steps 2–6 ship together**: death without 
    - Each arrives with a chronicle line and a `settler` event (a toast), and is housed and counted.
    - Tests: `life_test` step 5 sections (140 checks in all).
 6. **The chronicle and the Families screen.**
+
+   **Built (2026-11-13):**
+   - Chronicle lines (`lib/chronicle.js write`) for births and partnerships (`simulation.js`), party quests won or lost (`routes/quests.js`), raids (`lib/raids.js`, after each one), named discoveries (`lib/resources.js`) and crafts of Fine quality or better (`lib/crafting.js`). Comings of age, deaths, inheritances and settlers were already in from steps 3–5.
+   - `routes/families.js`:
+     - `GET /api/families`: lines with head, living members by stage, the remembered, heirlooms and generations;
+     - `GET /api/families/:id`: members living and dead, with parents, and married-in partners;
+     - `GET /api/families/:id/chronicle`: newest first, paged with `?before=`; `all` is the town. A line belongs to a family when written for it or when it names a member.
+   - Client: `js/families.js` `KWFamilies.open()`, a size-L `KWWindow` with three tabs:
+     - Family lines: cards opening the tree, a row per generation with partners together and the dead greyed (they open their memorial), and the family's record beside it;
+     - Chronicle: the town's record, with older entries on demand;
+     - Remembered.
+   - It opens from 👪 in the citizens panel. A "Families and the turning years" Help topic explains the life cycle.
+   - The away report has a Families tab for births, partnerships, comings of age, peaceful deaths, memorials, inheritances and settlers. Combat and starvation deaths stay under Hardship.
+   - **Not done, by choice:** moving the whole citizen profile onto `KWWindow` (`LAYOUT_SPEC.md` §5 lists it for Phase 1). The release doesn't need it, the new profile blocks are in, and it touches many proofs. It moves in Phase 4 with the other old screens.
+   - Tests: `life_test` step 6 sections (155 checks), `verify/life_proofs.js` §5, and a browser pass of the Families window at desktop and phone sizes against a local API (18 checks; scratch script).
 7. **Dev Tools and a tuning pass** using `scripts/population_model.js` and the funnel.
+
+## 9a. Before and after merging the release
+
+- The migration runs once on deploy. Living adults start ageing from the age the game showed, capped at 45, and each town is split into families by surname.
+- Children already 12 or older come of age on the first update.
+- Settlers start their 7-day clock on each town's first update after deploy.
+- Watch the first week: how many settlers arrive, the first deaths (nobody in an existing town is over 45 at deploy, so old age is weeks away), and the funnel's new steps (`first_coming_of_age`, `first_inheritance`).
 
 ## 10. Tests
 

@@ -154,7 +154,7 @@ Navigation and actions use the line-icon sprite. It needs about 12 more icons (t
 
 | When | What moves to `KWWindow` |
 |---|---|
-| Phase 1 | Families (new), the citizen profile, confirms and alerts |
+| Phase 1 | Families (new, built), the memorial notice (new, built), confirms and alerts (moved to the confirm layer). **The citizen profile moves in Phase 4 instead** (decided 2026-11-13: large, many proofs, not needed for the release). |
 | Phase 2 | Moments and the dialogue box (new), the away report, the bell list |
 | Phase 4 | The place bar and context panel; Stores, Crafting, Research, Festival and Wonders into Home; Quests, Battles, Decks, Market and Villages into The Road; the clan panel and chat into The Clan; the outpost window |
 | After | Mail, Rankings, Help, Feedback, Settings, tavern games |

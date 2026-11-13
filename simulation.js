@@ -342,7 +342,10 @@ async function _persistSimState(settlementId, sim) {
     await query('UPDATE citizens SET partner_id = $1 WHERE id = $2', [b.id, a.id]);
     await query('UPDATE citizens SET partner_id = $1 WHERE id = $2', [a.id, b.id]);
   }
-  for (const e of sim.events) await _addEvent(settlementId, e.type, e.message, e.ids, e.at);
+  for (const e of sim.events) {
+    await _addEvent(settlementId, e.type, e.message, e.ids, e.at);
+    if (e.type === 'partnership') await require('./lib/chronicle').write(settlementId, { kind: 'partnership', text: e.message.replace(/\s*💕\s*$/, ''), citizenIds: e.ids, at: e.at });
+  }
   for (const birth of sim.births) await _createChild(settlementId, birth.pair, birth.at, birth.house);
   for (const c of Object.values(sim.byId || {})) {
     if (c._bday && !c._dead) await query('UPDATE citizens SET last_birthday_year = $1 WHERE id = $2', [c.last_birthday_year, c.id]).catch(() => {});
@@ -474,6 +477,8 @@ async function _createChild(settlementId, pair, atMs = null, house = null) {
   if (!atMs) await LIFE.recount(settlementId);   // the simulation recounts once after its births
 
   const babyGender = isFemale ? 'daughter' : 'son';
+  await require('./lib/chronicle').write(settlementId, { kind: 'birth', text: `${childName} was born to ${pair.name_a} and ${pair.name_b} in ${houseName}.`,
+    citizenIds: [childId, pair.id_a, pair.id_b], familyId: fam ? fam.id : null, at: atMs });
   await _addEvent(settlementId, 'child_born',
     `New beginnings — ${pair.name_a} and ${pair.name_b} welcome a ${babyGender} into the world. 🍼 May ${childName} grow strong in ${houseName}.`,
     [pair.id_a, pair.id_b, childId], atMs

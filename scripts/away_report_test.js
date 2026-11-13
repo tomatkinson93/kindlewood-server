@@ -161,7 +161,7 @@ const T0 = Date.parse('2026-11-05T03:00:00Z');   // post-cutover: 7h seasons
   });
   await test('4c event mapping: settlement feed, solo quest, death', () => {
     const e1 = A.eventFromSettlementEvent({ type: 'child_born', message: 'A baby!', citizen_ids: '[1,2,3]', created_at: new Date(T0) });
-    assert.deepStrictEqual([e1.category, e1.icon, e1.citizenIds], ['citizens', '🍼', [1, 2, 3]]);
+    assert.deepStrictEqual([e1.category, e1.icon, e1.citizenIds], ['families', '🍼', [1, 2, 3]]);   // births are family news (Phase 1)
     const e2 = A.eventFromSoloQuest({ status: 'completed', citizen_id: 4, resolved_at: new Date(T0) }, 'Gather Herbs', 'Wren');
     assert.ok(/Wren returned from "Gather Herbs"/.test(e2.text) && e2.category === 'quests');
     const e3 = A.eventFromCitizenEvent({ citizen_id: 5, event_type: 'death', narrative: 'fell in battle.', occurred_at: new Date(T0) }, 'Pip');

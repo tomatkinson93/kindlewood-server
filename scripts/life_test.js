@@ -6,7 +6,8 @@
 //  the gap between children, families, the migration for existing towns.
 //  Step 3: apprenticeships and mentors, youth XP and output, elders at 60%,
 //  coming of age. Step 4: death of old age, widows, heirs, heirlooms,
-//  knowledge, headship, memorials. Step 5: settlers.
+//  knowledge, headship, memorials. Step 5: settlers. Step 6: the chronicle
+//  everywhere and the families API.
 //   DATABASE_URL=postgres://… QUEST_TEST_BASE=http://localhost:3999 node scripts/life_test.js
 // ══════════════════════════════════════════════════════════════════════════
 'use strict';
@@ -493,6 +494,58 @@ async function main() {
     check(chr === 2 && ev === 2, 'a chronicle line and a toast each');
     await q("UPDATE settlements SET last_settler_at = NOW() - interval '30 days' WHERE id = $1", [t2]);
     check((await ST.arrive(t2)).length === 0, 'the town is full (4 of 4 beds): nobody comes');
+  }
+
+  console.log('The chronicle and the families API (step 6)');
+  {
+    const lines = async (kind, extra = '') => (await q(`SELECT text, citizen_ids FROM chronicle WHERE settlement_id = $1 AND kind = $2 ${extra} ORDER BY id`, [s.id, kind])).rows;
+    check((await lines('birth')).length >= 1 && /was born to Mum and Dad/.test((await lines('birth'))[0].text), 'births are written to the chronicle');
+    // A partnership in the simulation.
+    const p1 = await cit('Ivy Hollins', { gender: 'female' }), p2 = await cit('Oak Pemberly', { gender: 'male' });
+    const [lo, hi] = [Math.min(p1, p2), Math.max(p1, p2)];
+    await q(`INSERT INTO citizen_relationships (settlement_id, citizen_a_id, citizen_b_id, score, state) VALUES ($1,$2,$3,95,'bonded')
+             ON CONFLICT (citizen_a_id, citizen_b_id) DO UPDATE SET score = 95, state = 'bonded'`, [s.id, lo, hi]);
+    await q("UPDATE citizens SET life = jsonb_set(COALESCE(life, '{}'::jsonb), '{happiness}', '95') WHERE id = ANY($1)", [[p1, p2]]);
+    const orig = Math.random; Math.random = () => 0;
+    try {
+      await q("UPDATE settlements SET last_sim_tick = NOW() - interval '1.2 hours' WHERE id = $1", [s.id]);
+      await SIM.runSimulation({ id: s.id }, 1.2, (await q('SELECT last_sim_tick FROM settlements WHERE id = $1', [s.id])).rows[0].last_sim_tick);
+    } finally { Math.random = orig; }
+    check((await lines('partnership', `AND citizen_ids @> '${JSON.stringify([p1])}'::jsonb`)).length === 1, 'partnerships are written too');
+    // A discovery and a raid line.
+    await require('../lib/resources').discover(null, s.id, 'copper', 'mine');
+    check((await lines('discovery')).some(r => /copper for the first time/.test(r.text)), 'named discoveries are written');
+    const before = (await lines('raid')).length;
+    await require('../lib/chronicle').write(s.id, { kind: 'raid', text: 'Raiders from the Withered were driven off.' });
+    check((await lines('raid')).length === before + 1, 'the chronicle takes raid lines (lib/raids writes one after each raid)');
+    check(/require\('\.\/chronicle'\)\.write\(out\.settlementId, \{ kind: 'raid'/.test(require('fs').readFileSync(require.resolve('../lib/raids'), 'utf8'))
+      && /kind: 'quest'/.test(require('fs').readFileSync(require.resolve('../routes/quests'), 'utf8'))
+      && /kind: 'craft'/.test(require('fs').readFileSync(require.resolve('../lib/crafting'), 'utf8')), 'raids, party quests and fine crafts call the chronicle');
+
+    // The Ashby children were made in SQL; births in the game set generation 2.
+    await q("UPDATE citizens SET generation = 2 WHERE name IN ('Rowan Ashby', 'Sorrel Ashby') AND settlement_id = $1", [s.id]);
+    const fl = await api('GET', '/api/families');
+    check(fl.status === 200 && Array.isArray(fl.body.families) && fl.body.families.length >= 3, 'GET /api/families lists the lines');
+    const ash = fl.body.families.find(f => f.name === 'Ashby');
+    check(ash && ash.head && ash.head.name === 'Tobias Ashby' && ash.remembered >= 2 && ash.living.some(m => m.name === 'Rowan Ashby'), 'a line shows its head (Tobias, the oldest living adult), its living and how many are remembered');
+    check(ash && ash.heirlooms.some(h => h.name === "Hazel's Iron Pick" && h.carrier === 'Rowan Ashby' && h.from === 'Hazel Ashby'), "and its heirlooms, who carries them and whose they were");
+    check(ash && typeof ash.stages.adult === 'number' && ash.generations >= 2, 'with counts by stage and its generations');
+    const one = await api('GET', `/api/families/${ash.id}`);
+    check(one.status === 200 && one.body.members.some(m => m.name === 'Hazel Ashby' && m.stage === 'deceased' && m.died_at) && one.body.members.some(m => m.parent_ids.length === 2),
+      'GET /api/families/:id gives the tree: the living and the dead, with parents');
+    const ch = await api('GET', `/api/families/${ash.id}/chronicle`);
+    check(ch.status === 200 && ch.body.entries.some(e => e.kind === 'death' && /Hazel Ashby/.test(e.text)) && ch.body.entries.some(e => e.kind === 'inheritance'),
+      "the family's record: the deaths and the inheritance");
+    const dates = ch.body.entries.map(e => new Date(e.at).getTime());
+    check(dates.every((d, i) => i === 0 || d <= dates[i - 1]), 'newest first');
+    const page = await api('GET', `/api/families/all/chronicle?limit=2`);
+    const page2 = await api('GET', `/api/families/all/chronicle?limit=2&before=${page.body.more}`);
+    check(page.body.entries.length === 2 && page.body.more && page2.body.entries.length >= 1 && !page2.body.entries.some(e => page.body.entries.some(x => x.id === e.id)),
+      'the town chronicle pages (older entries, no repeats)');
+    check((await api('GET', '/api/families/999999')).status === 404 && (await api('GET', '/api/families/999999/chronicle')).status === 404, "another town's family is not found");
+    const A = require('../lib/away_report');
+    check(['child_born', 'came_of_age', 'death_old_age', 'memorial', 'settler', 'inheritance', 'partnership'].every(t => A.eventFromSettlementEvent({ type: t, message: 'x', created_at: new Date() }).category === 'families'),
+      'the away report groups births, comings of age, deaths, settlers and inheritances under Families');
   }
 
   console.log('Migration for existing towns');

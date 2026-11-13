@@ -1247,6 +1247,10 @@ async function resolveCompletedQuests(settlementId) {
           'INSERT INTO settlement_events (settlement_id, type, message, citizen_ids) VALUES ($1,$2,$3,$4)',
           [settlementId, outcome === 'completed' ? 'quest_success' : 'quest_fail', evtMsg, JSON.stringify(partyIdArr)]
         );
+        // The family record (lib/chronicle; on this transaction's client).
+        await require('../lib/chronicle').write(settlementId, { kind: 'quest',
+          text: outcome === 'completed' ? `${names} came home triumphant from "${quest.title}".` : `${names} came home from "${quest.title}" without success.`,
+          citizenIds: partyIdArr }, (t, p) => client.query(t, p));
 
       } else {
         const prof = run.citizen_id ? (await profiles()).get(Number(run.citizen_id)) : null;
