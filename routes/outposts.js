@@ -783,14 +783,14 @@ router.post('/admin/:action', requireAuth, requireAdmin, async (req, res) => {
       const list = await outpostState.load(null, settlement);
       const o = list.find(x => x.id === Number(b.outpost_id)) || list[0];
       if (!o) return res.status(400).json({ error: 'No outposts.' });
-      await query('UPDATE outpost_events SET resolved_at = NOW(), outcome = $2 WHERE outpost_id = $1 AND resolved_at IS NULL', [o.id, 'Cleared by Dev Tools']);
+      await query(`UPDATE moments SET resolved_at = NOW(), outcome = $2 WHERE settlement_id = $3 AND (subject->>'outpost_id')::int = $1 AND resolved_at IS NULL`, [o.id, 'Cleared by Dev Tools', sid]);
       const KINDS = require('../lib/outpost_events').KINDS;
       const kind = b.kind && KINDS[b.kind] ? b.kind : null;
       const e = await require('../lib/outpost_events').start(o, settlement, kind);
       if (!e) return res.status(400).json({ error: 'That event can\'t happen there right now (a trader needs something in the store).' });
       msg = `${e.icon} ${e.title} at the ${o.name || 'outpost'}.`;
     } else if (act === 'events-clear') {
-      const a = await query(`UPDATE outpost_events SET resolved_at = NOW(), outcome = 'Cleared by Dev Tools' WHERE settlement_id = $1 AND resolved_at IS NULL`, [sid]);
+      const a = await query(`UPDATE moments SET resolved_at = NOW(), outcome = 'Cleared by Dev Tools' WHERE settlement_id = $1 AND resolved_at IS NULL AND subject ? 'outpost_id'`, [sid]);
       msg = `${a.rowCount} event(s) cleared.`;
     } else return res.status(404).json({ error: 'Unknown action.' });
     await OS.sync(settlement);

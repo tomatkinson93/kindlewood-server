@@ -25,7 +25,8 @@ function part1() {
   check(n.level === 1 && n.cost.timber === 180 && n.cost.stone === 60 && n.hours === 1.5, 'a track costs by the tiles it crosses');
   check(OS.capOf({ level: 1, on_clan_land: true }) === 375, 'on clan land the store is a quarter bigger');
   const E = require('../lib/outpost_events');
-  check(Object.keys(E.KINDS).length >= 7 && E.KINDS.wolves.fallback === 'let' && E.EXPIRE_H === 12, 'seven kinds of event; each has a fallback after 12 hours');
+  // Wolves default to "drive them off" since Phase 2: the default is never the worst option.
+  check(Object.keys(E.KINDS).length >= 7 && E.KINDS.wolves.fallback === 'fight' && E.EXPIRE_H === 12, 'seven kinds of event; each has a fallback after 12 hours');
 }
 
 async function part2() {
@@ -129,11 +130,13 @@ async function part2() {
   r = await api(c, 'POST', `/api/game/outposts/${oc}/events/${ev.id}`, { choice: 'shelter' });
   check(r.status === 200 && r.body.joined && (await q('SELECT COUNT(*)::int AS n FROM citizens WHERE settlement_id=$1', [c.sid])).rows[0].n === before + 1, 'shelter a traveller: they join the town');
   ev = await E.start(ocRow, cs, 'storm');
-  await q("UPDATE outpost_events SET expires_at = NOW() - interval '1 second' WHERE id=$1", [ev.id]);
+  // Outpost events are moments now (lib/moments.js).
+  await q("UPDATE moments SET expires_at = NOW() - interval '1 second' WHERE id=$1", [ev.id]);
   const out = await E.choose(c.sid, ev.id, 'ride', true);
-  const row = (await q('SELECT * FROM outpost_events WHERE id=$1', [ev.id])).rows[0];
+  const row = (await q('SELECT * FROM moments WHERE id=$1', [ev.id])).rows[0];
   check(out.ok && row.resolved_at && row.choice === 'ride', 'no answer in time: the fallback happens');
-  check(!(await E.start({ ...ocRow, store: {} }, cs, 'trader')), 'a trader only comes when there is something to buy');
+  await q("UPDATE outposts SET store = '{}'::jsonb WHERE id = $1", [oc]);
+  check(!(await E.start(ocRow, cs, 'trader')), 'a trader only comes when there is something to buy');
 
   console.log('Clans');
   const m1 = await user('r6clanA'), m2 = await user('r6clanB'), out1 = await user('r6loner');

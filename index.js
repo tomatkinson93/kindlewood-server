@@ -103,6 +103,7 @@ app.use('/api/crafting', require('./routes/crafting'));
 app.use('/api/funnel', require('./routes/funnel'));
 app.use('/api/families', require('./routes/families'));
 app.use('/api/life/admin', require('./routes/life_admin'));
+app.use('/api/moments', require('./routes/moments'));
 app.use((err, req, res, next) => {
   console.error(err.message);
   res.status(500).json({ error: 'Internal server error.' });
