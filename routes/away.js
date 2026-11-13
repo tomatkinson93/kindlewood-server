@@ -125,7 +125,13 @@ async function buildReport(s, since, now) {
   }
 
   // ── Events ──
-  const events = evRes.rows.map(A.eventFromSettlementEvent);
+  const events = evRes.rows.filter(r => r.type !== 'moment_auto').map(A.eventFromSettlementEvent);
+  // Moments resolved while away, and those still waiting (lib/moments).
+  const MOM = require('../lib/moments');
+  const resolvedMoments = (await query(`SELECT * FROM moments WHERE settlement_id = $1 AND resolved_at > $2 ORDER BY resolved_at DESC LIMIT 50`, [s.id, sinceIso])
+    .catch(() => ({ rows: [] }))).rows.map(MOM.present).filter(Boolean);
+  for (const m of resolvedMoments) events.push(A.eventFromMoment(m));
+  const openMoments = await MOM.open(s.id).catch(() => []);
   if (soloRes.rows.length) {
     const titles = await questTitles(soloRes.rows.map(q => q.quest_id));
     for (const q of soloRes.rows) events.push(A.eventFromSoloQuest(q, titles[q.quest_id] || 'a quest', names[q.citizen_id]));
@@ -138,6 +144,7 @@ async function buildReport(s, since, now) {
 
   const wait = waitRes.rows[0] || {};
   const waiting = [];
+  if (openMoments.length) waiting.push({ icon: '🔔', text: `${openMoments.length} thing${openMoments.length === 1 ? ' is' : 's are'} waiting for you to decide`, action: 'moments' });
   if (wait.to_collect > 0) waiting.push({ icon: '🎁', text: `${wait.to_collect} quest reward${wait.to_collect === 1 ? '' : 's'} ready to collect`, action: 'quests' });
   if (wait.battles > 0) waiting.push({ icon: '⚔️', text: `${wait.battles} battle${wait.battles === 1 ? '' : 's'} waiting for you`, action: 'battles' });
 

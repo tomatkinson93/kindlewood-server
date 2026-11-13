@@ -1,6 +1,6 @@
 # Phase 2 — Moments (build spec)
 
-Status: **ready to build after Phase 1**, written 2026-11-12. Part of `docs/ROADMAP_1_0.md`.
+Status: **steps 1–2 built (2026-11-13)**; steps 3–6 ready to build. Written 2026-11-12. Part of `docs/ROADMAP_1_0.md`.
 
 ## 1. What a moment is
 
@@ -156,6 +156,42 @@ One change: M24 (lost traveller) merges into M7 when Phase 1's settlers exist.
 4. The year (M9–M13), then quests (M14–M17).
 5. Villages and raids (M18–M20, M28–M30).
 6. A tuning pass on the daily budget, using how many moments are answered against how many time out.
+
+### 6a. What was built (2026-11-13)
+
+**Step 1, the engine:**
+- `lib/moments.js`: kinds registered in the §2.2 shape. Each option also has a `risk` rank (0–3), so the content check can confirm the default is never the single worst option.
+- The budget:
+  - about 3 a day, at least 6 hours apart, never more than 4 open;
+  - per-kind cooldowns, and never the same kind twice running;
+  - a town's first check starts a clock (`settlements.moments_seen_at`), and its first moment, a gentle kind, follows 5–10 minutes later.
+- `trigger()` skips the budget but not the cap; at the cap the default happens at once and the chronicle says so.
+- Defaults are taken on expiry (`moment_resolved` live event), and every outcome writes a chronicle line (kind `moment`).
+- Also: the `first_moment` milestone, `stats()` (shown, answered, timed out, choices; one-sided over 85% with 10+ answers), and `check()`, the content check.
+- The seven outpost events are moment kinds (`lib/moments_outpost.js`); outposts no longer roll their own. The `moments` table took the open outpost events once.
+  - The outpost window's routes and Dev Tools go through the engine.
+  - Options gained hints.
+  - Wolves default to driving them off: the old default, letting them eat, was the worst option.
+  - The lost traveller is no longer rolled, merged into M7 as §3 says.
+- API: `routes/moments.js` covers §2.5, plus admin `kinds`, `roll`, `expire` and `stats`.
+- **Changes from §2.3:**
+  - a new town's first moment can't be M1 (a new town has no babies), so it is any kind marked `gentle`;
+  - "within ten minutes" is a clock started at the first check, because settlements have no `created_at`. It also keeps short-lived test towns free of moments.
+
+**Step 2, presentation:**
+- `js/say.js` `KWSay`, the dialogue box (`LAYOUT_SPEC.md` §3.4):
+  - a portrait, the speaker, the title, the text, up to three options with hints and the default marked, and what happens if you don't decide;
+  - the outcome replaces the options for a few seconds, then it folds away;
+  - it sits above the map and below windows, and is a bottom sheet on phones.
+- `js/moments.js` `KWMoments`:
+  - a stack of up to four cards (top left; above the tab bar on phones), each with the time left; the stack steps aside for windows and the dialogue box;
+  - moments listed on top of the bell's list;
+  - live `moment` and `moment_resolved` events.
+- The away report puts "N things are waiting for you to decide" first. Moments resolved while away are listed in their source's group, marked "(decided for you)".
+- The server adds `speaker` to each moment.
+- Tests:
+  - `scripts/moments_test.js` (43 checks), `verify/moments_proofs.js` (22);
+  - a browser pass of the stack and dialogue box at desktop and phone sizes against a local API (16 checks; scratch script).
 
 ## 7. Tests
 
