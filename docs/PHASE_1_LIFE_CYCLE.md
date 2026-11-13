@@ -1,6 +1,6 @@
 # Phase 1 — the life cycle (build spec)
 
-Status: **steps 1–3 built (2026-11-13)**; steps 4–7 ready to build. **Steps 2–6 ship together:** do not merge the branch until step 6 is done. Decisions in §11 are made. Written 2026-11-11, updated 2026-11-13. Part of `docs/ROADMAP_1_0.md`.
+Status: **steps 1–4 built (2026-11-13)**; steps 5–7 ready to build. **Steps 2–6 ship together:** do not merge the branch until step 6 is done. Decisions in §11 are made. Written 2026-11-11, updated 2026-11-13. Part of `docs/ROADMAP_1_0.md`.
 Read §1 first: it lists two bugs in the live game that block progress today.
 
 ## 1. Findings from the assessment
@@ -255,6 +255,37 @@ Each step ends with tests passing. **Steps 2–6 ship together**: death without 
    - Client: the Apprenticeship block in the profile (trade and mentor pickers, progress, rate, hint) and an elder note.
    - Tests: `life_test` step 3 sections, `verify/life_proofs.js` §3.
 4. **Death, families and inheritance:** death rolls, heirs, heirlooms, headship.
+
+   **Built (2026-11-13, not merged):**
+   - Death of old age (`simulation.js` `_hourDeaths`):
+     - one roll per game year from 70, on the birthday, guarded by `last_birthday_year`;
+     - skipped catch-up hours roll nothing;
+     - someone away (quests, road, envoys, outpost crew) rolls when home;
+     - the dead leave the pairs and free their bed at once.
+   - Towns with fewer than two adults now run the simulation too, so a lone elder still ages.
+   - `deaths.js` `writeDeathEvent`:
+     - records `died_at` and `death_cause`;
+     - no longer strips gear;
+     - marks a citizen only once (a second death does nothing);
+     - calls `lib/inheritance.js` `onDeath` for every cause.
+   - `onDeath`:
+     - widows the partner (`partner_id` cleared, so they can partner again);
+     - tags equipped gear as heirlooms ("Hazel's Iron Pick", `metadata.heirloom` = `{ from_id, from_name, family_id, since, generations, base_name }`) and puts it in the stores;
+     - opens an `inheritances` row with the default heir (eldest adult child, then the partner, then the family head);
+     - updates heads (oldest living adult);
+     - writes the memorial (family head, or class level 10+: a `memorial` event and a chronicle line) or one gentle line. Old age writes a `death_old_age` toast; combat and starvation keep their own.
+   - Heir choice:
+     - the player has 24 hours (`POST /api/citizens/:id/heir { heir_id }`, from the living family, partner or children);
+     - after that, `settleDue` (on settlement load and in the simulation) gives it to the heir by itself;
+     - settling grants a quarter of the deceased's XP if the heir works the same trade, and equips the heirlooms where that slot is free.
+   - Heirloom bonus in `profiles.js`: +5%, +1% per generation, at most +10%, only in the family. It applies to the tool's output, or quality for crafters.
+   - `first_inheritance` milestone.
+   - API: the dead get `died_at`, `death_cause`, `memorial` and `inheritance` (with candidates); everyone gets `heirlooms`.
+   - Client:
+     - `js/life.js` `KWLife.openMemorial` is a `KWWindow` (size S) with the memorial, heirlooms and heir picker. Memorial events open it by themselves.
+     - The dead are no longer in `citizensData`: they were listed as if alive (a bug since combat deaths existed). They are in `citizensRemembered`, under a 🕯 Remembered filter.
+     - Heirlooms show in the profile.
+   - Tests: `life_test` step 4 sections (124 checks in all), `verify/life_proofs.js` §4.
 5. **Settlers.**
 6. **The chronicle and the Families screen.**
 7. **Dev Tools and a tuning pass** using `scripts/population_model.js` and the funnel.
