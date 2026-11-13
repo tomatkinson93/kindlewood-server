@@ -42,7 +42,7 @@ The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-fronte
    This fixes the two live bugs below.
 3. ~~**The window component**~~ (built 2026-11-13: `KWWindow`, `css/tokens.css`; `LAYOUT_SPEC.md` §3.3a).
 4. ~~**Phase 1 steps 2–7**~~ (built 2026-11-13; steps 1–6 live).
-5. **Phase 2: Moments** (`docs/PHASE_2_MOMENTS.md`). Settlers and heir choices become moments with defaults, as their notes in Phase 1 say. Ask for a Fable review of Phase 1 first ("does this still serve the pitch, and what should be cut?").
+5. **Phase 2: Moments** (`docs/PHASE_2_MOMENTS.md`). Steps 1–2 are built (the engine, outpost events moved in, the dialogue box and the card stack; see §6a there). Next: step 3, the family moments M1–M8. Settlers (M7) and heir choices (M5) become moments with defaults, as their Phase 1 notes say. A Fable review of Phase 1 is still to come.
 
 All the owner's decisions for Phase 1 are made (`PHASE_1_LIFE_CYCLE.md` §11): the slower life pace, heirlooms with a small bonus, step 1 first.
 

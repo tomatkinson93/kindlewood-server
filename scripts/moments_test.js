@@ -147,6 +147,20 @@ async function main() {
   const ev = await api('GET', `/api/game/outposts/${oid}`);
   check(ev.status === 200 || ev.status === 404, '(the outpost window still loads)');
   check((await api('POST', '/api/moments/admin/start', { kind: 'storm' })).status === 403, 'players cannot use the moments Dev Tools');
+  // The dialogue box's speaker; the away report (step 2).
+  const m4 = await M.start(sid, 'storm', { args: { outpost_id: oid } });
+  check(m4 && /^Your crew at the /.test(m4.speaker), 'an outpost moment is spoken by its crew');
+  await q("UPDATE settlements SET away_since = NOW() - interval '3 hours' WHERE id = $1", [sid]);
+  await q("UPDATE moments SET expires_at = NOW() - interval '1 minute' WHERE id = $1", [m4.id]);
+  await M.tick(true);
+  // One open per outpost: the next can start once the storm is settled.
+  const m5 = await M.start(sid, 'harvest', { args: { outpost_id: oid } });
+  const rep = await api('GET', '/api/game/away-report');
+  check(rep.status === 200 && rep.body.show && (rep.body.waiting || []).some(x => x.action === 'moments' && /waiting for you to decide/.test(x.text)),
+    'the away report: "N things are waiting for you to decide" first');
+  check((rep.body.events || []).some(e => /A storm is coming: .*\(decided for you\)/.test(e.text)), 'and the moments resolved while away, marked when decided for you');
+  check(!(rep.body.events || []).some(e => /Nobody sent word/.test(e.text)), '(each only once)');
+  if (m5) await M.choose(sid, m5.id, M.DEFS[m5.kind].fallback);
   const ADMIN = Number(process.env.CRAFTING_TEST_ADMIN_ID || 0);
   if (ADMIN) {
     const an = `madm_${RUN}`;
