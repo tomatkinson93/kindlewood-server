@@ -40,7 +40,7 @@ The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-fronte
    - death clears `house_id`.
 
    This fixes the two live bugs below.
-3. **The window component** (`LAYOUT_SPEC.md` §3), then **Phase 1 steps 2–7** as one release, with the Families screens built on it.
+3. ~~**The window component**~~ (built 2026-11-13: `KWWindow`, `css/tokens.css`; `LAYOUT_SPEC.md` §3.3a), then **Phase 1 steps 2–7** as one release, with the Families screens built on it.
 4. Then Phase 2, and so on down the roadmap.
 
 All the owner's decisions for Phase 1 are made (`PHASE_1_LIFE_CYCLE.md` §11): the slower life pace, heirlooms with a small bonus, step 1 first.
