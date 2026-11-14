@@ -1,0 +1,489 @@
+<!-- ══════════════════════════════════════════════════════════════════════════
+     Dev Tools (admins only). Served by GET /api/dev-tools (routes/dev_tools.js)
+     to a signed-in admin, never as a static file: the frontend's
+     js/dev-tools.js adds it to the game with the admin-only scripts and styles
+     (docs/LAYOUT_SPEC.md §6). Every Dev Tools route also checks requireAdmin.
+     ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="cheat-backdrop" id="cheat-modal">
+    <div class="cheat-card cheat-card--wide" role="dialog" aria-modal="true" aria-label="Dev Tools">
+      <div class="cheat-header">
+        <div class="cheat-title">⚗ Dev Tools</div>
+        <div class="cheat-sub">Developer testing only</div>
+        <button class="cheat-close" onclick="closeCheatMenu()" aria-label="Close">✕</button>
+      </div>
+      <!-- Tab bar -->
+      <div class="cheat-tabs">
+        <button class="cheat-tab active" onclick="cheatSwitchTab('ct-resources',this)">💰 Resources</button>
+        <button class="cheat-tab" onclick="cheatSwitchTab('ct-citizens',this)">👤 Citizens</button>
+        <button class="cheat-tab" onclick="cheatSwitchTab('ct-family',this)">🍼 Family</button>
+        <button class="cheat-tab" onclick="cheatSwitchTab('ct-life',this);KWLifeDev.open()">👪 Life</button>
+        <button class="cheat-tab" onclick="cheatSwitchTab('ct-world',this);loadDiplomacyDebugNpcs()">🌍 World</button>
+        <button class="cheat-tab" onclick="cheatSwitchTab('ct-quests',this);loadQuestAdmin()">📜 Quests</button>
+        <button class="cheat-tab" onclick="cheatSwitchTab('ct-items',this);loadItemAdmin()">🗡 Items</button>
+        <button class="cheat-tab" onclick="cheatSwitchTab('ct-recipes',this);loadRecipeAdmin()">🛠 Recipes</button>
+        <button class="cheat-tab" onclick="cheatSwitchTab('ct-balance',this);loadCareerBalance()">📊 Careers</button>
+        <button class="cheat-tab" onclick="cheatSwitchTab('ct-cards',this);loadCardAdmin()">🃏 Cards</button>
+        <button class="cheat-tab" onclick="cheatSwitchTab('ct-creatures',this);loadEnemyAdmin()">🐺 Creatures</button>
+        <button class="cheat-tab" onclick="cheatSwitchTab('ct-combat',this)">⚔ Combat</button>
+        <button class="cheat-tab" onclick="cheatSwitchTab('ct-time',this);KWDevTime.open()">🕯 Time</button>
+        <button class="cheat-tab" onclick="cheatSwitchTab('ct-happenings',this);loadHappeningsAdmin()">🏮 Happenings</button>
+      </div>
+
+      <!-- ── TAB: Resources ── -->
+      <div class="cheat-tab-panel" id="ct-resources">
+        <div class="cheat-section-label">Add Resources</div>
+        <div class="cheat-resource-grid">
+          <button class="cheat-res-btn" onclick="applyCheat('food',500)">🌿 +500 Food</button>
+          <button class="cheat-res-btn" onclick="applyCheat('timber',500)">🌲 +500 Timber</button>
+          <button class="cheat-res-btn" onclick="applyCheat('stone',500)">⬜ +500 Stone</button>
+          <button class="cheat-res-btn" onclick="applyCheat('metal',500)">⛓️ +500 Iron</button>
+          <button class="cheat-res-btn" onclick="applyCheat('wealth',500)">🟠 +500 Wealth</button>
+        </div>
+        <div class="cheat-section-label" style="margin-top:10px">Ores, rare materials &amp; alloys</div>
+        <div class="cheat-resource-grid" id="cheat-extras-grid"></div>
+        <button class="cheat-all-btn" onclick="applyCheatExtras(100)">⛏ +100 every ore, rare &amp; alloy</button>
+        <button class="cheat-all-btn" onclick="applyCheatAll(1000)">✦ +1000 All</button>
+        <button class="cheat-all-btn" onclick="applyCheatAll(10000)">✦ +10000 All</button>
+        <button class="cheat-all-btn" onclick="applyCheatAll(50000)">▲ +50k All (tier test)</button>
+
+        <div class="cheat-section-label" style="margin-top:14px">Clan Prestige <span style="opacity:.6;font-weight:400">(your clan)</span></div>
+        <div class="cheat-resource-grid">
+          <button class="cheat-res-btn" onclick="cheatClanPrestige(100)">🛡️ +100</button>
+          <button class="cheat-res-btn" onclick="cheatClanPrestige(500)">🛡️ +500</button>
+          <button class="cheat-res-btn" onclick="cheatClanPrestige(5000)">🛡️ +5,000</button>
+          <button class="cheat-res-btn" onclick="cheatClanPrestige(-100)">🛡️ −100</button>
+          <button class="cheat-res-btn" onclick="cheatClanPrestige(-1000)">🛡️ −1,000</button>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <input type="number" id="cheat-clan-prestige" placeholder="e.g. 3500 or -250" class="cheat-citizen-sel" style="flex:1">
+          <button class="cheat-res-btn" onclick="cheatClanPrestige(parseInt(document.getElementById('cheat-clan-prestige').value, 10))">Apply</button>
+        </div>
+        <div class="cheat-rel-feedback" id="cheat-clan-prestige-feedback">Adding raises lifetime prestige too (can level the clan up); removing only lowers the spendable balance.</div>
+        <div style="display:flex;gap:6px;margin-top:8px">
+          <button class="cheat-res-btn" style="flex:1" onclick="cheatFinishClanQuests()">Finish my clan quests now</button>
+        </div>
+        <div class="cheat-rel-feedback" id="cheat-clan-quests-feedback">Brings every clan quest you're part of to its end and resolves it.</div>
+
+        <div class="cheat-section-label" style="margin-top:14px">🍽 Famine banner</div>
+        <div class="cheat-resource-grid">
+          <button class="cheat-res-btn" onclick="KWFamineDev.preview('low')">🌾 Preview: Dwindling</button>
+          <button class="cheat-res-btn" onclick="KWFamineDev.preview('critical')">🍽 Preview: Critical</button>
+          <button class="cheat-res-btn" onclick="KWFamineDev.preview('famine')">☠️ Preview: Famine</button>
+          <button class="cheat-res-btn" onclick="KWFamineDev.preview('ok')">✓ Preview: All fed</button>
+          <button class="cheat-res-btn" onclick="KWFamineDev.live()">↺ Back to live</button>
+          <button class="cheat-res-btn" onclick="cheatEmptyFood()">🗑 Empty the food stores</button>
+        </div>
+        <div class="cheat-rel-feedback" id="cheat-famine-status">Previews only change this browser. Emptying the stores is real; the town only goes critical if its citizens eat more food than it grows.</div>
+
+        <div class="cheat-section-label" style="margin-top:14px">🏛 Town</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <select class="cheat-citizen-sel" id="cheat-wonder" style="flex:1;min-width:160px">
+            <option value="great_forge">⚒️ Great Forge</option><option value="sky_observatory">🔭 Sky Observatory</option>
+            <option value="grand_bazaar">⚖️ Grand Bazaar</option><option value="granary_of_ages">🌾 Granary of Ages</option>
+            <option value="starfall_spire">✨ Starfall Spire</option>
+          </select>
+          <button class="cheat-res-btn" onclick="KWTown.devFinish(document.getElementById('cheat-wonder').value)">Finish wonder stage now</button>
+          <button class="cheat-res-btn" onclick="KWTown.devFestival()">🎉 Start a festival (free)</button>
+        </div>
+
+        <div class="cheat-section-label" style="margin-top:14px">🃏 Cards</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="cheat-res-btn" onclick="KWCards.devUnlockAll()">🃏 Unlock all cards</button>
+        </div>
+
+        <div class="cheat-section-label" style="margin-top:14px">🔥 Raids</div>
+        <div class="dev-raid">
+          <div class="dev-raid-row">
+            <label>Target <select id="dev-raid-target" onfocus="KWRaids.devStatus()"><option value="">Nearest (normal)</option><option value="town">Your town</option></select></label>
+            <label>Arrives in <input id="dev-raid-min" type="number" min="0" step="1" placeholder="360" inputmode="numeric"> min</label>
+            <label>Strength <input id="dev-raid-str" type="number" min="1" step="1" placeholder="auto" inputmode="numeric"></label>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="cheat-res-btn" onclick="KWRaids.devStart()">🔥 Start raid</button>
+            <button class="cheat-res-btn" onclick="KWRaids.devSend(2)">🔥 Start (2 minutes)</button>
+            <button class="cheat-res-btn" onclick="KWRaids.devCancel()">✖ Cancel raid</button>
+            <button class="cheat-res-btn" onclick="KWRaids.devResolve()">⚔️ Strike now</button>
+            <button class="cheat-res-btn" onclick="KWRaids.devClearCooldown()">⏱ Clear cooldown &amp; peace</button>
+            <button class="cheat-res-btn" onclick="KWRaids.devPeaceClear()">🕊 Clear tribute peace</button>
+            <button class="cheat-res-btn" onclick="KWRaids.devCheck(100)">🎲 Roll the normal check (×100)</button>
+            <button class="cheat-res-btn" onclick="KWRaids.devCheck(1)">🎲 Roll it (normal odds)</button>
+            <button class="cheat-res-btn" onclick="KWRaids.devSpawnCamps()">🏕️ Spawn Withered camps</button>
+            <button class="cheat-res-btn" onclick="KWRaids.devClearCamps()">🧹 Clear all camps</button>
+            <button class="cheat-res-btn" onclick="KWRaids.devStatus()">↻ Status</button>
+          </div>
+          <div id="dev-raid-status" class="dev-raid-status" role="status">Press ↻ Status to see the raid state.</div>
+        </div>
+
+        <div class="cheat-section-label" style="margin-top:14px">📈 New players</div>
+        <div class="dev-raid">
+          <div class="dev-raid-row">
+            <label>Registered in the last <select id="dev-funnel-days"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="3650">ever</option></select></label>
+            <button class="cheat-res-btn" onclick="KWFunnel.load()">📈 Show where players stop</button>
+          </div>
+          <div id="dev-funnel"></div>
+        </div>
+
+        <div class="cheat-section-label" style="margin-top:14px">⛺ Outposts</div>
+        <div class="dev-raid">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="cheat-res-btn" onclick="KWOutposts.devAction('finish')">🏗️ Finish buildings &amp; roads</button>
+            <button class="cheat-res-btn" onclick="KWOutposts.devAction('arrive')">🚶 Crew arrive now</button>
+            <button class="cheat-res-btn" onclick="KWOutposts.devAction('porters')">🧺 Porters home now</button>
+            <button class="cheat-res-btn" onclick="KWOutposts.devAction('fill')">📦 Fill every store</button>
+          </div>
+          <div class="dev-raid-row">
+            <label>Event <select id="dev-op-event"><option value="">Any that fits</option><option value="rich_vein">⛏️ Rich vein</option><option value="trader">🧳 Trader</option><option value="wolves">🐺 Wolves</option><option value="traveller">🧳 Traveller</option><option value="cache">🏺 Cache</option><option value="storm">⛈️ Storm</option><option value="harvest">🌻 Harvest</option></select></label>
+            <button class="cheat-res-btn" onclick="KWOutposts.devEvent()">❗ Start an event (first outpost)</button>
+            <button class="cheat-res-btn" onclick="KWOutposts.devAction('events-clear')">🧹 Clear events</button>
+          </div>
+        </div>
+
+        <div class="cheat-section-label" style="margin-top:14px">💰 Clan</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="cheat-res-btn" onclick="ClanTreasury.devAddTreasury(1000)">💰 Add 1,000 to my clan's treasury</button>
+        </div>
+      </div>
+
+      <!-- ── TAB: Citizens ── -->
+      <div class="cheat-tab-panel" id="ct-citizens" style="display:none">
+        <div class="cheat-section-label">Select Citizen to Edit</div>
+        <select class="cheat-citizen-sel" id="ce-citizen-select" onchange="cheatLoadCitizen(this.value)" style="width:100%;margin-bottom:10px">
+          <option value="">— Choose a citizen —</option>
+        </select>
+        <div id="ce-editor" style="display:none">
+          <div class="ce-grid">
+            <div class="ce-field"><label>Name</label><input id="ce-name" class="ce-input"></div>
+            <div class="ce-field"><label>Gender</label>
+              <select id="ce-gender" class="ce-input">
+                <option value="male">Male</option><option value="female">Female</option>
+              </select>
+            </div>
+            <div class="ce-field"><label>Life Stage</label>
+              <select id="ce-lifestage" class="ce-input">
+                <option value="child">Child</option><option value="adult">Adult</option>
+              </select>
+            </div>
+            <div class="ce-field"><label>Generation</label><input id="ce-generation" type="number" class="ce-input" min="1"></div>
+          </div>
+          <div class="cheat-section-label" style="margin-top:10px">Life</div>
+          <div class="ce-grid ce-grid--4">
+            <div class="ce-field"><label>Age</label><input id="ce-age" type="number" class="ce-input" min="0" max="100"></div>
+            <div class="ce-field"><label>Health</label><input id="ce-health" type="number" class="ce-input" min="0" max="100"></div>
+            <div class="ce-field"><label>Happiness</label><input id="ce-happiness" type="number" class="ce-input" min="0" max="100"></div>
+            <div class="ce-field"><label>Hunger</label><input id="ce-hunger" type="number" class="ce-input" min="0" max="100"></div>
+            <div class="ce-field"><label>Energy</label><input id="ce-energy" type="number" class="ce-input" min="0" max="100"></div>
+          </div>
+          <div class="cheat-section-label" style="margin-top:10px">Stats</div>
+          <div class="ce-grid ce-grid--5">
+            <div class="ce-field"><label>Strength</label><input id="ce-strength" type="number" class="ce-input" min="1" max="20"></div>
+            <div class="ce-field"><label>Agility</label><input id="ce-agility" type="number" class="ce-input" min="1" max="20"></div>
+            <div class="ce-field"><label>Endurance</label><input id="ce-endurance" type="number" class="ce-input" min="1" max="20"></div>
+            <div class="ce-field"><label>Intelligence</label><input id="ce-intelligence" type="number" class="ce-input" min="1" max="20"></div>
+            <div class="ce-field"><label>Charisma</label><input id="ce-charisma" type="number" class="ce-input" min="1" max="20"></div>
+          </div>
+          <div class="cheat-section-label" style="margin-top:10px">Skills</div>
+          <div class="ce-grid ce-grid--4">
+            <div class="ce-field"><label>Farming</label><input id="ce-farming" type="number" class="ce-input" min="0" max="20"></div>
+            <div class="ce-field"><label>Woodcutting</label><input id="ce-woodcutting" type="number" class="ce-input" min="0" max="20"></div>
+            <div class="ce-field"><label>Fishing</label><input id="ce-fishing" type="number" class="ce-input" min="0" max="20"></div>
+            <div class="ce-field"><label>Mining</label><input id="ce-mining" type="number" class="ce-input" min="0" max="20"></div>
+            <div class="ce-field"><label>Crafting</label><input id="ce-crafting" type="number" class="ce-input" min="0" max="20"></div>
+            <div class="ce-field"><label>Scouting</label><input id="ce-scouting" type="number" class="ce-input" min="0" max="20"></div>
+            <div class="ce-field"><label>Combat</label><input id="ce-combat" type="number" class="ce-input" min="0" max="20"></div>
+          </div>
+          <button class="cheat-all-btn" style="margin-top:12px" onclick="cheatSaveCitizen()">💾 Save Changes</button>
+          <div class="cheat-rel-feedback" id="ce-feedback"></div>
+
+          <hr class="cheat-divider">
+          <div class="cheat-section-label">Injuries (Admin)</div>
+          <div class="ce-grid">
+            <div class="ce-field">
+              <label>Severity</label>
+              <select id="ce-injury-sev" class="ce-input">
+                <option value="">— Roll randomly —</option>
+                <option value="scratch">Scratch (heals fast)</option>
+                <option value="wound">Wound (heals slower)</option>
+                <option value="scar">Scar (permanent, no debuff)</option>
+                <option value="crippling">Crippling (permanent debuff)</option>
+                <option value="fatal">Fatal (citizen dies)</option>
+              </select>
+            </div>
+            <div class="ce-field">
+              <label>Body Part</label>
+              <select id="ce-injury-part" class="ce-input">
+                <option value="">— Roll randomly —</option>
+                <option value="head">Head</option>
+                <option value="eye">Eye</option>
+                <option value="ear">Ear</option>
+                <option value="face">Face</option>
+                <option value="torso">Torso</option>
+                <option value="arm">Arm</option>
+                <option value="hand">Hand</option>
+                <option value="leg">Leg</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="cheat-res-btn" style="flex:1" onclick="cheatInflictInjury()">⚔ Inflict Injury</button>
+            <button class="cheat-res-btn" style="flex:1" onclick="cheatHealAllInjuries()">🩹 Heal All Active</button>
+          </div>
+        </div>
+        <hr class="cheat-divider">
+        <div class="cheat-section-label">Add Citizen</div>
+        <button class="cheat-res-btn" onclick="cheatAddCitizen()">👤 +1 Random Citizen</button>
+      </div>
+
+      <!-- ── TAB: Family ── -->
+      <div class="cheat-tab-panel" id="ct-family" style="display:none">
+        <div class="cheat-section-label">Manage Partnership</div>
+        <div class="cheat-rel-row">
+          <select class="cheat-citizen-sel" id="cheat-partner-a"><option value="">— Citizen A —</option></select>
+          <select class="cheat-citizen-sel" id="cheat-partner-b"><option value="">— Citizen B —</option></select>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="cheat-all-btn" style="flex:1" onclick="cheatSetPartnership('set')">💕 Form Partnership</button>
+          <button class="cheat-all-btn" style="flex:1;background:rgba(220,80,60,.15);border-color:rgba(220,80,60,.3)" onclick="cheatSetPartnership('remove')">💔 Remove Partnership</button>
+        </div>
+        <div class="cheat-rel-feedback" id="cheat-partner-feedback"></div>
+        <hr class="cheat-divider">
+        <div class="cheat-section-label">Trigger Birth</div>
+        <div class="cheat-rel-row">
+          <select class="cheat-citizen-sel" id="cheat-birth-a"><option value="">— Parent A —</option></select>
+          <select class="cheat-citizen-sel" id="cheat-birth-b"><option value="">— Parent B —</option></select>
+        </div>
+        <button class="cheat-all-btn" style="margin-top:8px" onclick="cheatTriggerBirth()">🍼 Trigger Birth Now</button>
+        <div class="cheat-rel-feedback" id="cheat-birth-feedback"></div>
+        <hr class="cheat-divider">
+        <div class="cheat-section-label">Relationship Score</div>
+        <div class="cheat-rel-row">
+          <select class="cheat-citizen-sel" id="cheat-rel-a"><option value="">— Citizen A —</option></select>
+          <select class="cheat-citizen-sel" id="cheat-rel-b"><option value="">— Citizen B —</option></select>
+        </div>
+        <div class="cheat-rel-slider-row">
+          <label class="cheat-slider-label">Score: <span id="cheat-rel-score-val">50</span></label>
+          <input type="range" min="0" max="100" value="50" class="cheat-rel-slider" id="cheat-rel-score"
+                 oninput="document.getElementById('cheat-rel-score-val').textContent=this.value">
+        </div>
+        <button class="cheat-all-btn" onclick="cheatSetRelationship()">⚡ Set Relationship Score</button>
+        <div class="cheat-rel-feedback" id="cheat-rel-feedback"></div>
+        <hr class="cheat-divider">
+        <div class="cheat-section-label">Simulate Events</div>
+        <div class="cheat-resource-grid">
+          <button class="cheat-res-btn" onclick="cheatSimulateEvent('close_bond')">💛 Close Bond</button>
+          <button class="cheat-res-btn" onclick="cheatSimulateEvent('bond_formed')">🤝 Bond Formed</button>
+          <button class="cheat-res-btn" onclick="cheatSimulateEvent('partnership')">💕 Partnership</button>
+          <button class="cheat-res-btn" onclick="cheatSimulateEvent('child_born')">🍼 Child Born</button>
+        </div>
+      </div>
+
+      <!-- ── TAB: Life (js/life-admin.js) ── -->
+      <div class="cheat-tab-panel" id="ct-life" style="display:none">
+        <div id="ct-life-body"></div>
+      </div>
+
+      <!-- ── TAB: World ── -->
+      <div class="cheat-tab-panel" id="ct-world" style="display:none">
+        <div class="cheat-section-label">Add Inventory Item</div>
+        <div class="ce-grid" style="margin-bottom:6px">
+          <div class="ce-field">
+            <label>Item</label>
+            <select class="ce-input" id="debug-inv-item">
+              <optgroup label="🐟 Fish">
+                <option value="fish_minnow|Minnow|🐟|food|common|2|3">Minnow (Common)</option>
+                <option value="fish_dace|Dace|🐠|food|common|4|5">Dace (Common)</option>
+                <option value="fish_perch|Perch|🐠|food|common|5|6">Perch (Common)</option>
+                <option value="fish_roach|Roach|🐟|food|common|4|5">Roach (Common)</option>
+                <option value="fish_gudgeon|Gudgeon|🐟|food|common|2|3">Gudgeon (Common)</option>
+                <option value="fish_trout|Trout|🐡|food|uncommon|10|8">Trout (Uncommon)</option>
+                <option value="fish_chub|Chub|🐡|food|uncommon|8|7">Chub (Uncommon)</option>
+                <option value="fish_catfish|Catfish|🐊|food|uncommon|14|9">Catfish (Uncommon)</option>
+                <option value="fish_bream|Bream|🐡|food|uncommon|11|8">Bream (Uncommon)</option>
+                <option value="fish_pike|Pike|🦷|food|uncommon|18|10">Pike (Uncommon)</option>
+                <option value="fish_salmon|Salmon|🍣|food|rare|28|18">Salmon (Rare)</option>
+                <option value="fish_eel|River Eel|〰️|food|rare|25|15">River Eel (Rare)</option>
+                <option value="fish_golden_carp|Golden Carp|✨|food|rare|35|20">Golden Carp (Rare)</option>
+                <option value="fish_shadowfin|Shadowfin|🌑|food|legendary|60|40">Shadowfin (Legendary)</option>
+                <option value="fish_moontrout|Moontrout|🌕|food|legendary|100|55">Moontrout (Legendary)</option>
+              </optgroup>
+              <optgroup label="✨ Quest Items">
+                <option value="ancient_heartwood|Ancient Heartwood|🪵|material|rare|0|45">Ancient Heartwood</option>
+                <option value="luminous_scale|Luminous Scale|✨|quest_item|rare|0|40">Luminous Scale</option>
+                <option value="ancient_blueprint|Ancient Blueprint|📜|quest_item|epic|0|80">Ancient Blueprint</option>
+                <option value="blightbane_herb|Blightbane Herb|🌿|material|rare|0|35">Blightbane Herb</option>
+                <option value="hunters_cloak|Hunter's Cloak|🧥|equipment|rare|0|60">Hunter's Cloak</option>
+              </optgroup>
+              <optgroup label="⚔️ Equipment">
+                <option value="iron_sword|Iron Sword|⚔️|equipment|common|0|20">Iron Sword</option>
+                <option value="leather_armour|Leather Armour|🛡️|equipment|common|0|18">Leather Armour</option>
+                <option value="scout_cloak|Scout's Cloak|🧥|equipment|uncommon|0|35">Scout's Cloak</option>
+                <option value="fishers_rod|Fisher's Rod|🎣|equipment|uncommon|0|25">Fisher's Rod</option>
+                <option value="steel_sword|Steel Sword|🗡️|equipment|rare|0|55">Steel Sword</option>
+                <option value="dragonscale_armour|Dragonscale Armour|🐉|equipment|epic|0|120">Dragonscale Armour</option>
+              </optgroup>
+              <optgroup label="🪵 Materials">
+                <option value="timber_bundle|Timber Bundle|🪵|material|common|0|5">Timber Bundle</option>
+                <option value="iron_ore|Iron Ore|⚫|material|common|0|8">Iron Ore</option>
+                <option value="rare_sap|Rare Sap|🫙|material|uncommon|0|20">Rare Sap</option>
+                <option value="gemstone|Gemstone|💎|material|rare|0|50">Gemstone</option>
+              </optgroup>
+              <optgroup label="🏆 Trophies">
+                <option value="beast_horn|Beast Horn|📯|trophy|uncommon|0|30">Beast Horn</option>
+                <option value="ancient_coin|Ancient Coin|🪙|trophy|rare|0|40">Ancient Coin</option>
+                <option value="dragon_tooth|Dragon Tooth|🦷|trophy|epic|0|100">Dragon Tooth</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="ce-field"><label>Qty</label><input class="ce-input" id="debug-inv-qty" type="number" value="1" min="1" max="99"></div>
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:10px">
+          <button class="cheat-all-btn" style="flex:1" onclick="debugAddInventoryItem()">➕ Add Item</button>
+          <button class="cheat-all-btn" style="flex:1;font-size:10px" onclick="debugAddAllItems()">✦ Add All Items</button>
+        </div>
+        <div class="cheat-rel-feedback" id="debug-inv-feedback"></div>
+        <hr class="cheat-divider">
+        <div class="cheat-section-label">Test Toasts</div>
+        <div class="cheat-resource-grid">
+          <button class="cheat-res-btn" onclick="showToastNotification('Kestrel Wheatfur returned triumphant from &quot;Ruins in the Thicket&quot;. 🎉','quest_success')">⚔️ Quest Success</button>
+          <button class="cheat-res-btn" onclick="showToastNotification('New beginnings — Falk &amp; Birch welcome a daughter. 🍼','child_born')">🍼 Child Born</button>
+          <button class="cheat-res-btn" onclick="showToastNotification('Wren and Soren have become partners. 💕','partnership')">💕 Partnership</button>
+          <button class="cheat-res-btn" onclick="showToastNotification('The party failed their quest: &quot;The Fallen Watchtree&quot;. 😔','quest_fail')">💀 Quest Fail</button>
+        </div>
+        <hr class="cheat-divider">
+        <div class="cheat-section-label">World Setup</div>
+        <button class="cheat-res-btn" onclick="debugSeedNpcs()">🌍 Seed NPC Settlements</button>
+        <button class="cheat-res-btn" onclick="debugRunMigrations()">🔧 Run DB Migrations</button>
+        <button class="cheat-res-btn" onclick="openMapPreview()">🗺 Preview Map Generation</button>
+        <hr class="cheat-divider">
+        <div class="cheat-section-label">Diplomacy</div>
+        <div class="ce-grid" style="margin-bottom:6px">
+          <div class="ce-field">
+            <label>NPC Settlement</label>
+            <select class="ce-input" id="debug-diplo-npc">
+              <option value="">— loading —</option>
+            </select>
+          </div>
+          <div class="ce-field">
+            <label>Set Trust (0–100)</label>
+            <input class="ce-input" type="number" id="debug-diplo-trust" min="0" max="100" value="50">
+          </div>
+        </div>
+        <button class="cheat-res-btn" onclick="debugSetDiplomacyTrust()">🤝 Set Trust Level</button>
+        <button class="cheat-res-btn" onclick="debugResetDiplomacy()">🔄 Reset All Relations</button>
+        <div class="cheat-rel-feedback" id="debug-diplo-feedback"></div>
+        <hr class="cheat-divider">
+        <div class="cheat-section-label">Fog of War</div>
+        <button class="cheat-res-btn" onclick="cheatRevealAll()">🌍 Reveal entire map</button>
+        <button class="cheat-res-btn" onclick="cheatResetFog()">🌫 Reset fog of war</button>
+        <hr class="cheat-divider">
+        <div class="cheat-section-label">Settlement</div>
+        <button class="cheat-res-btn" onclick="fetch(API+'/api/game/reset-placement',{method:'POST',credentials:'include',headers:{'Authorization':'Bearer '+localStorage.getItem('kw_token')}}).then(()=>location.reload())">
+          🗺 Reset placement (re-do arrival)
+        </button>
+      </div>
+
+      <!-- ── TAB: Items ── -->
+      <div class="cheat-tab-panel" id="ct-items" style="display:none">
+        <div style="display:flex;gap:6px;margin-bottom:10px">
+          <button class="cheat-all-btn" style="flex:1" onclick="ia_showForm(null)">＋ New Item</button>
+          <button class="cheat-all-btn" style="flex:1;font-size:10px" onclick="ia_seedDefaults()">🌱 Seed All Items</button>
+        </div>
+        <div class="cheat-rel-feedback" id="ia-feedback"></div>
+        <div id="ia-form-wrap" style="display:none"></div>
+        <div id="ia-list" class="qa-list"><div style="color:rgba(192,221,151,.3);font-size:11px;padding:8px">Loading…</div></div>
+      </div>
+
+      <!-- ── TAB: Recipes (js/crafting.js) ── -->
+      <div class="cheat-tab-panel" id="ct-balance" style="display:none">
+        <div id="cb-body"><div class="ra-muted">Loading…</div></div>
+      </div>
+      <div class="cheat-tab-panel" id="ct-recipes" style="display:none">
+        <div style="display:flex;gap:6px;margin-bottom:10px">
+          <button class="cheat-all-btn" style="flex:1" onclick="KWCrafting.editRecipe(null)">＋ New Recipe</button>
+        </div>
+        <div class="cheat-rel-feedback" id="ra-feedback"></div>
+        <div id="ra-form-wrap" style="display:none"></div>
+        <div id="ra-list" class="qa-list"><div class="ra-muted">Loading…</div></div>
+      </div>
+
+      <!-- ── TAB: Cards ── -->
+      <div class="cheat-tab-panel" id="ct-cards" style="display:none">
+        <div class="ca-toolbar">
+          <button class="ca-new-btn" onclick="ca_new()">＋ New Card</button>
+        </div>
+        <div id="ca-filters" class="ca-filters"></div>
+        <div id="ca-list" class="ca-list"><div class="ca-muted">Loading…</div></div>
+      </div>
+
+      <!-- ── TAB: Quests ── -->
+      <div class="cheat-tab-panel" id="ct-quests" style="display:none">
+        <div style="display:flex;gap:6px;margin-bottom:10px">
+          <button class="cheat-all-btn" style="flex:1" onclick="qa_showForm(null)">＋ New Quest</button>
+          <button class="cheat-all-btn" style="flex:1;font-size:10px" onclick="loadQuestAdmin(true)">🌱 Seed Built-ins</button>
+        </div>
+        <div id="qa-feedback" class="cheat-rel-feedback"></div>
+        <div id="qa-form-wrap" style="display:none"></div>
+        <div id="qa-list" class="qa-list"><div style="color:rgba(192,221,151,.3);font-size:11px;padding:8px">Loading…</div></div>
+      </div>
+
+      <!-- ── TAB: Creatures (enemy admin) ── -->
+      <div class="cheat-tab-panel" id="ct-creatures" style="display:none">
+        <div style="display:flex;gap:6px;margin-bottom:10px">
+          <button class="cheat-all-btn" style="flex:1" onclick="ea_showForm(null)">＋ New Creature</button>
+          <button class="cheat-all-btn" style="flex:1;font-size:10px" onclick="loadEnemyAdmin(true)">🌱 Seed Built-ins</button>
+        </div>
+        <div class="cheat-rel-feedback" id="ea-form-feedback"></div>
+        <div id="ea-form-wrap" style="display:none"></div>
+        <div id="ea-list" class="qa-list"><div style="color:rgba(192,221,151,.3);font-size:11px;padding:8px">Loading…</div></div>
+      </div>
+
+      <!-- ── TAB: Combat Simulator ── -->
+      <div class="cheat-tab-panel" id="ct-combat" style="display:none">
+        <div class="cheat-section-label">Combat Simulator</div>
+        <div style="font-size:11px;color:rgba(192,221,151,.55);margin-bottom:10px;line-height:1.5">
+          Start a test battle with a randomly-rolled party of 3 from your idle citizens
+          versus a random enemy encounter. Test battles aren't tied to a quest —
+          they don't trigger injuries or quest failure, but rewards and skill bumps
+          still apply.
+        </div>
+        <button class="cheat-all-btn" onclick="startTestBattle()">🗡 Start Test Battle</button>
+      </div>
+
+      <!-- ── TAB: Happenings (spec 021 §6.6 — js/happenings-admin.js) ── -->
+      <div class="cheat-tab-panel" id="ct-happenings" style="display:none">
+        <div class="cheat-section-label">Happenings</div>
+        <div style="font-size:11px;color:rgba(192,221,151,.55);margin-bottom:8px;line-height:1.5">
+          Scheduled timed events, all in UTC. Players see the next 48h in the clock panel and get a toast when a banner
+          Happening starts. Windows are computed from the rule — nothing to start or stop by hand.
+        </div>
+        <button class="cheat-all-btn" style="margin-bottom:10px" onclick="ha_showForm()">＋ New Happening</button>
+        <div id="ha-form-wrap" style="display:none"></div>
+        <div id="ha-list" class="qa-list"><div class="ha-empty">Loading…</div></div>
+      </div>
+
+      <!-- ── TAB: Time (spec 021 §3.4 — js/dev-time.js) ── -->
+      <div class="cheat-tab-panel" id="ct-time" style="display:none">
+        <div class="cheat-section-label">Clock</div>
+        <div id="kw-time-readout" style="font-size:12px;color:var(--leaf);line-height:1.45;margin-bottom:12px"></div>
+        <div class="cheat-section-label">Jump to</div>
+        <div class="cheat-resource-grid" style="grid-template-columns:repeat(3,1fr)">
+          <button class="cheat-res-btn" onclick="KWDevTime.set('live')">⏺ Live</button>
+          <button class="cheat-res-btn" onclick="KWDevTime.set('phase:dawn')">🌅 Dawn</button>
+          <button class="cheat-res-btn" onclick="KWDevTime.set('phase:day')">☀️ Day</button>
+          <button class="cheat-res-btn" onclick="KWDevTime.set('phase:dusk')">🌇 Dusk</button>
+          <button class="cheat-res-btn" onclick="KWDevTime.set('phase:night')">🌙 Night</button>
+          <button class="cheat-res-btn" onclick="KWDevTime.set('fast')">⏩ Fast cycle</button>
+        </div>
+        <div class="cheat-section-label">Hour <span id="kw-time-hour-val" style="text-transform:none;letter-spacing:0"></span></div>
+        <input type="range" id="kw-time-hour" min="0" max="23.75" step="0.25" value="12" style="width:100%;margin-bottom:12px"
+               oninput="document.getElementById('kw-time-hour-val').textContent=(Math.floor(this.value)+':'+String(Math.round(this.value%1*60)).padStart(2,'0'))+' UTC'"
+               onchange="KWDevTime.hour(this.value)">
+        <div class="cheat-section-label">Moon</div>
+        <div id="kw-time-moons" class="cheat-resource-grid" style="grid-template-columns:repeat(8,1fr);gap:4px"></div>
+        <div style="font-size:11px;color:rgba(192,221,151,.55);margin-top:6px;line-height:1.5">
+          Visual override is local to this browser. Admin overrides also shift <em>your</em> gameplay time
+          (creatures, Happenings) for 2h. Other players are never affected.
+        </div>
+      </div>
+
+    </div>
+  </div>

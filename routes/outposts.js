@@ -9,12 +9,10 @@
 //    POST   /build     — { q, r } claim + build in ONE transaction (the button)
 //    POST   /claim     — { q, r } territory only (10 wealth; API completeness)
 //    POST   /:id/upgrade — next level (max 3): more yield and ores, more upkeep
-//    POST   /:id/assign   — { citizen_id, post: worker|garrison|hauler } (workers +25%/+50%; garrison defends;
-//                            a hauler carries the store home, run after run)
+//    POST   /:id/assign   — { citizen_id, post: worker|garrison } (workers +25%/+50%; garrison defends)
 //    POST   /:id/haul     — { citizen_id } one porter run: out, load up, home (lib/outpost_store)
 //    POST   /:id/buildings — { key } raise a building inside it (lib/outpost_buildings)
 //    DELETE /:id/buildings/:key — pull one down (frees the slot, nothing back)
-//    PATCH  /:id/settings  — { haul_filter, haul_threshold } what porters carry, when haulers go
 //    POST   /:id/road      — the next road level to town (lib/outpost_roads)
 //    POST   /:id/events/:eid — { choice } answer an outpost event (lib/outpost_events)
 //    POST   /:id/help      — { citizen_id } a clanmate's porter fetches for the owner
@@ -127,17 +125,17 @@ async function present(settlement, o, discMult) {
   } : null;
   // Its store, the porters on the road to or from it, and a trip estimate.
   const hauls = await OS.activeHauls(settlement.id, o.id);
+  const boon = await OS.carterBoon(null, settlement);   // the clan's Outpost Network
   let trip = null;
   try { const t = await OS.tripFor(null, settlement, o, { id: 0 }); trip = { leg_seconds: t.leg, carry: t.carry, tiles: t.tiles }; } catch (e) { /* estimate only */ }
   return {
     ...decorate(o), next: nextLevel(o, settlement.tier, discMult),
-    workers: o.workers || [], garrison: o.garrison || [], haulers: o.haulers || [],
-    worker_slots: workerSlots(o), hauler_slots: OS.HAULER_SLOTS,
+    workers: o.workers || [], garrison: o.garrison || [],
+    worker_slots: workerSlots(o),
     store: OS.present(o), rates: OS.ratesFor(o, done), hauls, trip,
     // The carter: what comes home by itself (a share of the rate; more with a road).
-    trickle: { share: OS.trickleShare(o), per_hour: OS.trickleRates(o, done), shares: OS.TRICKLE },
+    trickle: { share: OS.trickleShare(o, Date.now(), boon), per_hour: OS.trickleRates(o, done, Date.now(), boon), shares: OS.TRICKLE, boon },
     buildings: OB.present(o, discMult),
-    settings: { haul_filter: OS.filterOf(o), haul_threshold: Number(o.haul_threshold) || 0 },
     road: require('../lib/outpost_roads').present(o, trip ? trip.tiles : 1, discMult),
     events: await require('../lib/outpost_events').openFor(settlement.id, o.id),
     on_clan_land: !!o.on_clan_land,
@@ -490,8 +488,8 @@ router.post('/:id/upgrade', requireAuth, async (req, res) => {
   }
 });
 
-// Crew leaving a post walk home (haulers live in town between runs). Anyone
-// still on the way out turns round where they are.
+// Crew leaving a post walk home. Anyone still on the way out turns round
+// where they are.
 async function walkHome(settlement, outpostId, rows, db = null) {
   const run = db ? (t, p) => db.query(t, p) : query;
   const o = (await run('SELECT * FROM outposts WHERE id=$1', [outpostId])).rows[0];
@@ -504,15 +502,16 @@ async function walkHome(settlement, outpostId, rows, db = null) {
   }
 }
 
-// ── POST /:id/assign — post a citizen: { citizen_id, post: worker|garrison|hauler }
+// ── POST /:id/assign — post a citizen: { citizen_id, post: worker|garrison }
 // Workers: up to the outpost's level. Garrison: Guards and Archers, up to the
-// fort's slots (lib/defences FORT). Hauler: OS.HAULER_SLOTS, any adult; they
-// set straight off for the store. One post per citizen (outpost_crew PK).
+// fort's slots (lib/defences FORT). One post per citizen (outpost_crew PK).
+// (Haulers went with the outpost trim: the carter brings goods home.)
 router.post('/:id/assign', requireAuth, async (req, res) => {
   try {
     const D = require('../lib/defences');
     const id = parseInt(req.params.id, 10), cid = parseInt(req.body && req.body.citizen_id, 10);
-    const post = ['garrison', 'hauler'].includes(req.body && req.body.post) ? req.body.post : 'worker';
+    if (req.body && req.body.post === 'hauler') return res.status(400).json({ error: 'Haulers are no more: a carter brings the goods home by itself. Send a porter to fetch the rest now.' });
+    const post = req.body && req.body.post === 'garrison' ? 'garrison' : 'worker';
     if (!Number.isFinite(id) || !Number.isFinite(cid)) return res.status(400).json({ error: 'outpost id and citizen_id required.' });
     const settlement = await loadUserSettlement(req.user.userId);
     if (!settlement) return res.status(404).json({ error: 'No settlement.' });
@@ -526,18 +525,16 @@ router.post('/:id/assign', requireAuth, async (req, res) => {
     if (post === 'garrison' && !D.GARRISON_ROLES.includes(c.role)) return res.status(400).json({ error: 'Only Guards and Archers can garrison an outpost.' });
     const n = (await query('SELECT COUNT(*)::int AS n FROM outpost_crew WHERE outpost_id=$1 AND post=$2', [id, post])).rows[0].n;
     o.bfx = await OB.fxFor(o.id);
-    const cap = post === 'garrison' ? ((D.FORT[Number(o.fort_level) || 0] || {}).slots || 0) : post === 'hauler' ? OS.HAULER_SLOTS : workerSlots(o);
+    const cap = post === 'garrison' ? ((D.FORT[Number(o.fort_level) || 0] || {}).slots || 0) : workerSlots(o);
     if (n >= cap) return res.status(400).json({ error: post === 'garrison'
       ? (cap ? `The ${D.FORT[o.fort_level].name} holds ${cap} — raise the fort for more.` : 'Build a palisade first — there is nowhere for a garrison to stand.')
-      : post === 'hauler' ? 'This outpost already has its hauler.'
       : `This outpost has room for ${cap} worker${cap === 1 ? '' : 's'}${o.bfx.worker_slots ? '' : ' — a Bunkhouse makes room for one more'}.` });
-    // Workers and garrison walk out first (a hauler's first run is their walk).
-    const leg = post === 'hauler' ? 0 : (await OS.tripFor(null, settlement, o, c)).leg * 1000;
+    // Workers and garrison walk out first.
+    const leg = (await OS.tripFor(null, settlement, o, c)).leg * 1000;
     const r = await query(`INSERT INTO outpost_crew (citizen_id, outpost_id, post, arrives_at) VALUES ($1,$2,$3, ${leg ? 'NOW() + make_interval(secs => $4)' : 'NULL'})
                            ON CONFLICT DO NOTHING RETURNING citizen_id`, leg ? [cid, id, post, leg / 1000] : [cid, id, post]);
     if (!r.rows.length) return res.status(409).json({ error: `${c.name} already has a post at an outpost.` });
     if (leg) await OS.startWalk(null, settlement, o, c, 'post', leg);
-    if (post === 'hauler') await OS.sync(settlement);   // off to the store right away
     const { resources, rates } = await freshResourcesAndRates(settlement.id, req.user.userId);
     res.json({ ok: true, outpost: await presentById(settlement, id), resources, rates });
   } catch (err) {
@@ -583,7 +580,6 @@ router.post('/:id/haul', requireAuth, async (req, res) => {
     const why = await outpostState.busyReason(c, settlement.id);
     if (why) return res.status(400).json({ error: why });
     if (!Object.values(OS.storeOf(o)).some(v => v >= 1)) return res.status(400).json({ error: 'Its store is empty — nothing to carry yet.' });
-    if (!Object.values(OS.wanted(o)).some(v => v >= 1)) return res.status(400).json({ error: 'Nothing in the store that porters are set to carry (see its haul settings).' });
     let haul;
     try { haul = await OS.startHaul(null, settlement, o, c, false); }
     catch (e) { if (e.code === '23505') return res.status(409).json({ error: `${c.name} is already on the road.` }); throw e; }
@@ -649,33 +645,9 @@ router.delete('/:id/buildings/:key', requireAuth, async (req, res) => {
   }
 });
 
-// ── PATCH /:id/settings — { haul_filter: [res]|null, haul_threshold: % } ───
-// What porters bring home from here, and how full the store gets before a
-// standing hauler sets out (0 = whenever there's anything).
-router.patch('/:id/settings', requireAuth, async (req, res) => {
-  try {
-    const id = parseInt(req.params.id, 10);
-    const settlement = await loadUserSettlement(req.user.userId);
-    if (!settlement) return res.status(404).json({ error: 'No settlement.' });
-    const own = (await query('SELECT id FROM outposts WHERE id=$1 AND settlement_id=$2', [id, settlement.id])).rows[0];
-    if (!own) return res.status(404).json({ error: 'Outpost not found.' });
-    const b = req.body || {};
-    if ('haul_filter' in b) {
-      const f = Array.isArray(b.haul_filter) ? [...new Set(b.haul_filter.map(String).filter(k => RD.isResource(k)))] : null;
-      await query('UPDATE outposts SET haul_filter = $2 WHERE id = $1', [id, f && f.length ? JSON.stringify(f) : null]);
-    }
-    if ('haul_threshold' in b) {
-      const t = Math.round(Number(b.haul_threshold));
-      if (![0, 25, 50, 75, 90].includes(t)) return res.status(400).json({ error: 'Threshold must be 0, 25, 50, 75 or 90.' });
-      await query('UPDATE outposts SET haul_threshold = $2 WHERE id = $1', [id, t]);
-    }
-    await OS.sync(settlement);
-    res.json({ ok: true, outpost: await presentById(settlement, id) });
-  } catch (err) {
-    console.error('[outposts] settings', err);
-    res.status(500).json({ error: 'Failed to save.' });
-  }
-});
+// ── PATCH /:id/settings — gone with the outpost trim (docs/OUTPOST_TRIM.md):
+// haul settings only steered standing haulers; a porter takes a fair share.
+router.patch('/:id/settings', requireAuth, (req, res) => res.status(410).json({ error: 'Haul settings are no more: a porter brings a fair share of everything.' }));
 
 // ── POST /:id/road — lay the next stretch of road (Track, then Paved) ──────
 router.post('/:id/road', requireAuth, async (req, res) => {
@@ -742,7 +714,7 @@ router.post('/:id/help', requireAuth, async (req, res) => {
     const c = (await query('SELECT id, name, settlement_id, life_stage, role FROM citizens WHERE id=$1', [cid])).rows[0];
     const why = await outpostState.busyReason(c, me.id);
     if (why) return res.status(400).json({ error: why });
-    if (!Object.values(OS.wanted(o)).some(v => v >= 1)) return res.status(400).json({ error: 'Its store has nothing to carry.' });
+    if (!Object.values(OS.storeOf(o)).some(v => v >= 1)) return res.status(400).json({ error: 'Its store has nothing to carry.' });
     let haul;
     try { haul = await OS.startHaul(null, me, o, c, false, Date.now(), o.settlement_id); }
     catch (e) { if (e.code === '23505') return res.status(409).json({ error: `${c.name} is already on the road.` }); throw e; }

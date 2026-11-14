@@ -1,6 +1,6 @@
 # Outposts — what to cut now that goods trickle home
 
-Status: **proposal**, written 2026-11-11. Nothing here is removed yet.
+Status: **built 2026-11-14** (Phase 4 step 6), as proposed. Written 2026-11-11. What was built is at the end (§ Built).
 Belongs to Phase 4 (consolidation) of `docs/ROADMAP_1_0.md`.
 
 ## Why
@@ -76,3 +76,29 @@ Rough size: about 350 lines of code and 60 checks removed.
 ## A bigger option, not recommended yet
 
 Remove the store and porters entirely and have every outpost send 100% home. That would cut a further 400 lines or so, but raids on outposts would have nothing to loot, roads would lose their main purpose, and "fetch it now" would go. I'd play with the trickle for a few weeks first and decide from that.
+
+## Built (2026-11-14)
+
+As above, with these notes:
+- **Data** (`migrations/0NN_outpost_trim.sql`, once, `migration_marks`):
+  - haulers' posts deleted;
+  - runs on the road finish as one-off trips;
+  - every Storehouse, Waystation and Mule Pen refunded in full to its town (their costs as they were), then deleted, and each town told (`settlement_events` type `outpost_refund`).
+  - The `haul_filter` and `haul_threshold` columns stay, unused: an old filter is ignored, and a porter takes a fair share of everything.
+- **Server:**
+  - `lib/outpost_store.js` loses `HAULER_SLOTS`, `filterOf`, `wanted`, `readyToHaul`, `sendIdleHaulers` and the run-again chain;
+  - `lib/outpost_state.js` loses `haulers`;
+  - `routes/outposts.js` refuses `post: 'hauler'` (400, pointing at the carter and porters), and `PATCH /:id/settings` answers 410;
+  - the outpost view drops `haulers`, `hauler_slots` and `settings`;
+  - `lib/outpost_buildings.js` loses the three buildings and their `cap`, `trip` and `carry` effects.
+- **The Outpost Network boon** is "carters bring 10% more home" (`carter_share: 0.10`, up to all of it), counted wherever the carter's share is (`trickleShare`, the town's shown rates, the outpost view's `trickle.boon`). Porters' carry no longer changes with it.
+- **The clan "carry goods home" goal** also counts what carters bring: `accrue` tallies the whole goods it credits in a new `outpost_carted` table, a day at a time, and `lib/clan_goals` adds that to porter loads since the goal began. (By day, so on a goal's first day it counts that whole day's carting.)
+- **Screens:**
+  - the outpost window's Porters section loses "Make hauler", the hauler row and Haul settings, and says what the carter does;
+  - Journeys no longer lists haulers;
+  - the outpost help text says the same.
+- Tests:
+  - `scripts/outpost_store_test.js`: haulers refused, settings gone, no hauler fields; the Bunkhouse instead of the Storehouse in the building checks; the data migration (refund, removal, haulers home, runs one-off, the town told, idempotent);
+  - `scripts/outpost_r6c_test.js`: a porter brings a fair share whatever an old filter said; the goal counts carting; the boon raises the carter's share;
+  - `verify/outpost_store_proofs.js` 2c, 2e, 2f, 5e and 8d.
+

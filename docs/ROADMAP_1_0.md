@@ -124,7 +124,7 @@ Each phase is one or two rounds of work in the style used so far, with tests. Th
 ### Phase 3 — Onboarding and the guide (§6)
 
 ### Phase 4 — Consolidation and the layout rework
-**The build spec is `docs/LAYOUT_SPEC.md`.** Its window component is needed from Phase 1.
+**Built 2026-11-13 and 14** (steps 1–6, `docs/LAYOUT_SPEC.md` §2.8), except the tier pacing pass, which waits for funnel numbers from real play. **The build spec is `docs/LAYOUT_SPEC.md`.** Its window component is needed from Phase 1.
 
 - The layout rework list in §10.
 - The five-place navigation (§3.3) on desktop and phone.
