@@ -1,6 +1,6 @@
 # Layout rework — navigation and the window component (build spec)
 
-Status: **§3 and §4 built (2026-11-13); §2 steps 1–2, the five places and the context panel, built (2026-11-13)**; the rest of §2 ready to build (see §2.8). Written 2026-11-12. It turns the rework list in `docs/ROADMAP_1_0.md` §10 into a concrete design.
+Status: **§3 and §4 built (2026-11-13); §2 steps 1–5 built (2026-11-13 and 14): the five places, the context panel, one place for news, the top bar and map controls, Dev Tools for admins only**; the rest of §2 ready to build (see §2.8). Written 2026-11-12. It turns the rework list in `docs/ROADMAP_1_0.md` §10 into a concrete design.
 The window component (§3) is needed from **Phase 1**, for the new Families screens. The navigation change (§2) is **Phase 4**.
 
 ## 1. Principles
@@ -78,9 +78,9 @@ Phase 4 is built a step at a time, each one shippable:
 
 1. **The five places** (built 2026-11-13; below).
 2. **The context panel** (§2.4; built 2026-11-13, below): the sidebar shows only what is selected; the tier card becomes a header strip; the sidebar tabs and the 11-button action grid go (each action already has a place); Home's town card.
-3. **One place for news** (§2.5): the bell opens moments and the chronicle with filters; the Events button and panel go; Happenings move to the season badge's pop-up.
-4. **The top bar and phone map controls** (§2.6, §2.7): the version string into Settings, a stores chip, a sideways-scrolling resource row on phones with wealth pinned; one stack of floating map buttons; the joystick an option in Settings, off by default.
-5. **Dev Tools on its own page** (§6), loaded only for admins.
+3. **One place for news** (§2.5; built 2026-11-14, below): the bell opens moments and the news with filters; the Events button and panel go; Happenings live in the clock's pop-up.
+4. **The top bar and phone map controls** (§2.6, §2.7; built 2026-11-14, below): the version string into Settings, a stores chip, a sideways-scrolling resource row on phones with wealth pinned; one stack of floating map buttons; the joystick an option in Settings, off by default.
+5. **Dev Tools on its own page** (§6), loaded only for admins (built 2026-11-14, below).
 6. **Merging the small duplicates and the outpost trim** (`docs/OUTPOST_TRIM.md`): Journeys into The Land, the old Stores into Home, then the trim itself.
 7. Windows move onto `KWWindow` as each step touches them (§5).
 
@@ -132,6 +132,57 @@ The tier pacing pass in the roadmap needs the funnel numbers from real play, so 
 - Tests:
   - `verify/context_proofs.js` (20 checks); the style check covers `css/context.css`;
   - the browser pass adds 18 checks (73 in all, at the three sizes): the card on Home, Build in the panel with the card stepping aside, ✕ and Escape, no panel on going to The Land, the map's full width, a real map click opening the panel, your town as a strip without the grid, Outposts in the panel, the phone Town window and Build sheet.
+
+**Step 3, one place for news (`js/news.js` `KWNews`, `css/news.css`):**
+- **The bell opens the News window** (`KWWindow`, size M; a full-screen sheet on phones, as every window).
+  - First, what is waiting for you to decide (moments).
+  - Then the town's news, newest first, with tabs: All · Raids · Family · Trade. Raids are raid and camp events; Family covers births, partnerships, memorials, deaths, coming of age, settlers and inheritance; Trade covers villages, trust, the market and hauls; the rest show under All.
+  - A message's own emoji is its row's icon. Each row can be dismissed, and "Clear all" asks first.
+  - Links: "While you were away", and "The whole chronicle" (Families, on its Chronicle tab).
+  - A moment's row closes the window and opens its dialogue box, which sits below windows.
+- **The bell's count is what you haven't seen**: moments waiting, plus news that arrived since you last opened it (`kw-news-seen`). It used to be the number of items in the feed.
+- **Gone:** the drop-down events panel (its markup, and its styles in `main.css`, `mobile-shell.css` and `journeys.css`), the Events button, and "World events" in the profile menu.
+  - World events were already a section of the clock's pop-up (Phase 6), with "See the calendar" or "See all events" opening the Events panel.
+  - The phone fix from step 1 for the bell's drop-down is no longer needed; the profile menu keeps it.
+- `js/events.js`: the toasts and the count used to run only while the old panel's markup existed. They now always run, and the list is drawn by the News window. It fetches 40 items, enough for the tabs.
+- **Change from §2.5:** the list is the town's news (settlement events), not the chronicle table. The two overlap (both record births, deaths, raids), and only the news has raid warnings, discoveries and village requests, which are what a returning player wants first. The chronicle, the family record, is one link away in Families.
+- Tests:
+  - `verify/news_proofs.js` (25 checks); the style check covers `css/news.css`; five proofs that described the old bell, the Events button and the World events item were updated;
+  - the browser pass adds 13 checks (96 in all at the three sizes): the count, the window on top, the tabs and waiting moments first, the count clearing, the phone sheet, the Raids tab, a moment opening its dialogue, the chronicle link, Escape and the places returning, no Events button or drop-down, world events in the clock's pop-up.
+
+**Step 4, the top bar and the map's controls (`js/hud.js` `KWHud`, `css/hud.css`):**
+- **The top bar:**
+  - the version string leaves the bar for Settings › General, under "About";
+  - the stores chip reads "+N in Stores", as a pill (it read "Stores · N");
+  - the five resources keep their rates on desktop;
+  - phones: the row scrolls sideways with wealth pinned at its end.
+- **The map's controls are one stack**: Centre on town, "Paths: on" / "Paths: off" (following the toggle), and zoom where the view has it.
+  - It sits at the lower left on desktop, as in the mockup (this spec said lower right), and at the lower right on phones, above the places and away from the stick.
+  - It steps aside on Home and under full-screen overlays. The Land's Centre chip went into it. The pan arrows stay for now.
+- **The pan stick is a setting in Settings › General, off by default** (dragging the map pans). Its old switch was in the More sheet, which has been unreachable since step 1.
+  - Its cover check measured from the place chips, which moved to the top of the view in step 1, so on short screens it wrongly hid itself. It measures from the place bar now.
+  - With the stick on, the moment cards on phones move up above it.
+- **The place bar's filigree** (the owner asked for some decoration, 2026-11-14): a thin gold line either side of the places, fading out to the edges, ending in a dot, a curl and a diamond by the buttons, the right side mirrored. Desktop only.
+- **Change from the mockup:** its Land chips include "Defences", and there is no defences screen to open yet, so it isn't listed. The counts on its chips ("Outposts 2/2", "Journeys 1") are left for when those screens are reworked.
+- Tests:
+  - `verify/hud_proofs.js` (16 checks); the style check covers `css/hud.css`;
+  - the browser pass adds 11 checks (125 in all at the three sizes): the stack's place and contents, the Paths label, no Centre chip, the stack stepping aside on Home, the version moved, the stick off by default and turned on by its setting, wealth pinned on phones, the filigree even on both sides.
+
+**Step 5, Dev Tools for admins only (`dev.html`, `js/dev-tools.js` `KWDevTools`):**
+- **What moved out of `index.html`:**
+  - the Dev Tools markup (483 lines; the page went from 2,005 lines to about 1,520) now lives in `dev.html`;
+  - its six admin-only scripts (`life-admin`, `funnel-admin`, `item_admin`, `happenings-admin`, `enemy_admin`, `card-admin`) and `card-admin.css`.
+- **How it loads:** once the server says the player is an admin (`KWClock.me().isAdmin`, the same check that shows the ⚗ button), `KWDevTools.load()` adds the fragment, the stylesheet, then the scripts in their old order.
+  - Players never fetch any of it.
+  - Opening ⚗ before the load finishes waits for it, and says so if it fails; a failed load can be tried again.
+  - Every Dev Tools route still checks `requireAdmin` on the server.
+- **The build ships it:** `scripts/build.js` copies `dev.html` and the admin files into `dist/` at their own paths, minified, outside the bundles. `dev-tools.js` lists them, and the build reads that list (`manifest.dev_tools`). Without this the uploaded site would have had no Dev Tools.
+  - `dev.html` is never cached (`.htaccess`).
+  - The admin scripts are cached for a year like other scripts, so change the `?v=` in `dev-tools.js` when editing one, as it was in `index.html`.
+- **Change from §6:** Dev Tools stays its own overlay (layer 5000, below windows) instead of a `KWWindow`. What it triggers while testing (a moment's dialogue box, a window, a toast, the card editor's help at 10000) has to show above it; as a window (100200) it would cover them.
+- Tests:
+  - `verify/devtools_proofs.js` (13 checks, including a build into a temporary folder); 12 proof files that read Dev Tools' buttons from the page now read `dev.html` with it;
+  - a browser pass, against the plain files and against the built `dist/` (9 checks each): an admin's Dev Tools loading by itself, ⚗ opening it, all 14 tabs without a page error, a window showing above it; a player's game loading with no Dev Tools markup, button, scripts or requests for them.
 
 ## 3. The window component
 
