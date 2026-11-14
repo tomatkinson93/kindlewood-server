@@ -168,21 +168,32 @@ The tier pacing pass in the roadmap needs the funnel numbers from real play, so 
   - `verify/hud_proofs.js` (16 checks); the style check covers `css/hud.css`;
   - the browser pass adds 11 checks (125 in all at the three sizes): the stack's place and contents, the Paths label, no Centre chip, the stack stepping aside on Home, the version moved, the stick off by default and turned on by its setting, wealth pinned on phones, the filigree even on both sides.
 
-**Step 5, Dev Tools for admins only (`dev.html`, `js/dev-tools.js` `KWDevTools`):**
+**Step 5, Dev Tools for admins only (`js/dev-tools.js` `KWDevTools`; the markup in kindlewood-server `admin/dev-tools.html`, served by `GET /api/dev-tools`):**
 - **What moved out of `index.html`:**
-  - the Dev Tools markup (483 lines; the page went from 2,005 lines to about 1,520) now lives in `dev.html`;
+  - the Dev Tools markup (483 lines; the page went from 2,005 lines to about 1,520);
   - its six admin-only scripts (`life-admin`, `funnel-admin`, `item_admin`, `happenings-admin`, `enemy_admin`, `card-admin`) and `card-admin.css`.
-- **How it loads:** once the server says the player is an admin (`KWClock.me().isAdmin`, the same check that shows the ⚗ button), `KWDevTools.load()` adds the fragment, the stylesheet, then the scripts in their old order.
+- **Where the markup lives:**
+  - First it was a static `dev.html` on the website, which anyone could open (the owner found it, 2026-11-14).
+  - It is now served by the API only to a signed-in admin: `GET /api/dev-tools` (`routes/dev_tools.js`) gives 401 signed out, 403 to players, never cached.
+  - `.htaccess` denies any old `dev.html` left on the host.
+- **How it loads:** once the server says the player is an admin (`KWClock.me().isAdmin`, the same check that shows the ⚗ button, which also starts the load), `KWDevTools.load()` fetches the markup, adds the stylesheet, then the scripts in their old order.
   - Players never fetch any of it.
   - Opening ⚗ before the load finishes waits for it, and says so if it fails; a failed load can be tried again.
-  - Every Dev Tools route still checks `requireAdmin` on the server.
-- **The build ships it:** `scripts/build.js` copies `dev.html` and the admin files into `dist/` at their own paths, minified, outside the bundles. `dev-tools.js` lists them, and the build reads that list (`manifest.dev_tools`). Without this the uploaded site would have had no Dev Tools.
-  - `dev.html` is never cached (`.htaccess`).
-  - The admin scripts are cached for a year like other scripts, so change the `?v=` in `dev-tools.js` when editing one, as it was in `index.html`.
-- **Change from §6:** Dev Tools stays its own overlay (layer 5000, below windows) instead of a `KWWindow`. What it triggers while testing (a moment's dialogue box, a window, a toast, the card editor's help at 10000) has to show above it; as a window (100200) it would cover them.
+- **The build:** `scripts/build.js` copies the admin scripts and stylesheet into `dist/` at their own paths (`manifest.dev_tools`). They are cached for a year like other scripts, so change the `?v=` in `dev-tools.js` when editing one.
+- **Proofs:** the frontend proofs read the markup from the server repo beside them (`verify/_devmarkup.js`; `KW_SERVER_DIR`). Run with the frontend alone (the deploy workflow), checks about Dev Tools are skipped and say so; the full suite runs them.
+- **Change from §6:** Dev Tools stays its own overlay (layer 5000, below windows) instead of a `KWWindow`. What it triggers while testing (a moment's dialogue box, a window, a toast, the card editor's help at 10000) has to show above it.
 - Tests:
-  - `verify/devtools_proofs.js` (13 checks, including a build into a temporary folder); 12 proof files that read Dev Tools' buttons from the page now read `dev.html` with it;
-  - a browser pass, against the plain files and against the built `dist/` (9 checks each): an admin's Dev Tools loading by itself, ⚗ opening it, all 14 tabs without a page error, a window showing above it; a player's game loading with no Dev Tools markup, button, scripts or requests for them.
+  - `verify/devtools_proofs.js` (14 checks, including a build); 12 proof files read the markup through `_devmarkup.js`; `scripts/devtools_test.js` (4: signed out 401, player 403 with none of the markup, admin 200 with 14 tabs, never cached);
+  - a browser pass, against the plain files and the built `dist/` (9 checks each).
+
+**Fixed after the owner's first look at steps 1–5 (2026-11-14):**
+- **Moment cards over Town / Outskirts:** on desktop Home the cards sat just under the chips, where the scene's Town / Outskirts row is. They now sit below that row. The rules placing them are desktop-only; phones keep them low.
+- **Logging out left the town on screen:** the Home scene lives on the page itself, not in the game screen, so the sign-in screen showed it.
+  - `KWPlaces.reset()` on logout closes the scene, any windows, the panel and the moment cards.
+  - It puts the places to sleep first: closing the scene reports "The Land", which set `#land` and sent the next sign-in there. It also clears the address.
+  - None of the game's floating parts show unless the game screen is active.
+  - Signing in again starts the places as soon as the game shows (the first load still waits for Start playing).
+- Tests: the browser pass adds the card's position, signing out (nothing of the game over the welcome screen) and signing back in on Home, on desktop and phone (8 checks); `verify/nav_proofs.js` adds 3.
 
 ## 3. The window component
 
