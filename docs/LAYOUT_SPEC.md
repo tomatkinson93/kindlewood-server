@@ -1,6 +1,6 @@
 # Layout rework — navigation and the window component (build spec)
 
-Status: **§3 and §4 built (2026-11-13); §2 steps 1–3, the five places, the context panel and one place for news, built (2026-11-13 and 14)**; the rest of §2 ready to build (see §2.8). Written 2026-11-12. It turns the rework list in `docs/ROADMAP_1_0.md` §10 into a concrete design.
+Status: **§3 and §4 built (2026-11-13); §2 steps 1–4 built (2026-11-13 and 14): the five places, the context panel, one place for news, the top bar and map controls**; the rest of §2 ready to build (see §2.8). Written 2026-11-12. It turns the rework list in `docs/ROADMAP_1_0.md` §10 into a concrete design.
 The window component (§3) is needed from **Phase 1**, for the new Families screens. The navigation change (§2) is **Phase 4**.
 
 ## 1. Principles
@@ -79,7 +79,7 @@ Phase 4 is built a step at a time, each one shippable:
 1. **The five places** (built 2026-11-13; below).
 2. **The context panel** (§2.4; built 2026-11-13, below): the sidebar shows only what is selected; the tier card becomes a header strip; the sidebar tabs and the 11-button action grid go (each action already has a place); Home's town card.
 3. **One place for news** (§2.5; built 2026-11-14, below): the bell opens moments and the news with filters; the Events button and panel go; Happenings live in the clock's pop-up.
-4. **The top bar and phone map controls** (§2.6, §2.7): the version string into Settings, a stores chip, a sideways-scrolling resource row on phones with wealth pinned; one stack of floating map buttons; the joystick an option in Settings, off by default.
+4. **The top bar and phone map controls** (§2.6, §2.7; built 2026-11-14, below): the version string into Settings, a stores chip, a sideways-scrolling resource row on phones with wealth pinned; one stack of floating map buttons; the joystick an option in Settings, off by default.
 5. **Dev Tools on its own page** (§6), loaded only for admins.
 6. **Merging the small duplicates and the outpost trim** (`docs/OUTPOST_TRIM.md`): Journeys into The Land, the old Stores into Home, then the trim itself.
 7. Windows move onto `KWWindow` as each step touches them (§5).
@@ -149,6 +149,24 @@ The tier pacing pass in the roadmap needs the funnel numbers from real play, so 
 - Tests:
   - `verify/news_proofs.js` (25 checks); the style check covers `css/news.css`; five proofs that described the old bell, the Events button and the World events item were updated;
   - the browser pass adds 13 checks (96 in all at the three sizes): the count, the window on top, the tabs and waiting moments first, the count clearing, the phone sheet, the Raids tab, a moment opening its dialogue, the chronicle link, Escape and the places returning, no Events button or drop-down, world events in the clock's pop-up.
+
+**Step 4, the top bar and the map's controls (`js/hud.js` `KWHud`, `css/hud.css`):**
+- **The top bar:**
+  - the version string leaves the bar for Settings › General, under "About";
+  - the stores chip reads "+N in Stores", as a pill (it read "Stores · N");
+  - the five resources keep their rates on desktop;
+  - phones: the row scrolls sideways with wealth pinned at its end.
+- **The map's controls are one stack**: Centre on town, "Paths: on" / "Paths: off" (following the toggle), and zoom where the view has it.
+  - It sits at the lower left on desktop, as in the mockup (this spec said lower right), and at the lower right on phones, above the places and away from the stick.
+  - It steps aside on Home and under full-screen overlays. The Land's Centre chip went into it. The pan arrows stay for now.
+- **The pan stick is a setting in Settings › General, off by default** (dragging the map pans). Its old switch was in the More sheet, which has been unreachable since step 1.
+  - Its cover check measured from the place chips, which moved to the top of the view in step 1, so on short screens it wrongly hid itself. It measures from the place bar now.
+  - With the stick on, the moment cards on phones move up above it.
+- **The place bar's filigree** (the owner asked for some decoration, 2026-11-14): a thin gold line either side of the places, fading out to the edges, ending in a dot, a curl and a diamond by the buttons, the right side mirrored. Desktop only.
+- **Change from the mockup:** its Land chips include "Defences", and there is no defences screen to open yet, so it isn't listed. The counts on its chips ("Outposts 2/2", "Journeys 1") are left for when those screens are reworked.
+- Tests:
+  - `verify/hud_proofs.js` (16 checks); the style check covers `css/hud.css`;
+  - the browser pass adds 11 checks (125 in all at the three sizes): the stack's place and contents, the Paths label, no Centre chip, the stack stepping aside on Home, the version moved, the stick off by default and turned on by its setting, wealth pinned on phones, the filigree even on both sides.
 
 ## 3. The window component
 
