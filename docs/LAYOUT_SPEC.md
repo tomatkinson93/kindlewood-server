@@ -175,11 +175,11 @@ The tier pacing pass in the roadmap needs the funnel numbers from real play, so 
 - **Where the markup lives:**
   - First it was a static `dev.html` on the website, which anyone could open (the owner found it, 2026-11-14).
   - It is now served by the API only to a signed-in admin: `GET /api/dev-tools` (`routes/dev_tools.js`) gives 401 signed out, 403 to players, never cached.
-  - `.htaccess` denies any old `dev.html` left on the host.
+  - The host (Porkbun static hosting, NGINX) ignores `.htaccess`, so its deny rule doesn't apply there: the file is off the site because it is no longer in the repo.
 - **How it loads:** once the server says the player is an admin (`KWClock.me().isAdmin`, the same check that shows the ⚗ button, which also starts the load), `KWDevTools.load()` fetches the markup, adds the stylesheet, then the scripts in their old order.
   - Players never fetch any of it.
   - Opening ⚗ before the load finishes waits for it, and says so if it fails; a failed load can be tried again.
-- **The build:** `scripts/build.js` copies the admin scripts and stylesheet into `dist/` at their own paths (`manifest.dev_tools`). They are cached for a year like other scripts, so change the `?v=` in `dev-tools.js` when editing one.
+- **The build:** `scripts/build.js` copies the admin scripts and stylesheet into `dist/` at their own paths (`manifest.dev_tools`). (The live site serves the plain files, not `dist/`.) Change the `?v=` in `dev-tools.js` when editing one, so browsers fetch the new copy.
 - **Proofs:** the frontend proofs read the markup from the server repo beside them (`verify/_devmarkup.js`; `KW_SERVER_DIR`). Run with the frontend alone (the deploy workflow), checks about Dev Tools are skipped and say so; the full suite runs them.
 - **Change from §6:** Dev Tools stays its own overlay (layer 5000, below windows) instead of a `KWWindow`. What it triggers while testing (a moment's dialogue box, a window, a toast, the card editor's help at 10000) has to show above it.
 - Tests:
