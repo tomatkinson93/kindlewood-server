@@ -1,6 +1,6 @@
 # Layout rework — navigation and the window component (build spec)
 
-Status: **§3 and §4 built (2026-11-13); §2 steps 1–2, the five places and the context panel, built (2026-11-13)**; the rest of §2 ready to build (see §2.8). Written 2026-11-12. It turns the rework list in `docs/ROADMAP_1_0.md` §10 into a concrete design.
+Status: **§3 and §4 built (2026-11-13); §2 steps 1–3, the five places, the context panel and one place for news, built (2026-11-13 and 14)**; the rest of §2 ready to build (see §2.8). Written 2026-11-12. It turns the rework list in `docs/ROADMAP_1_0.md` §10 into a concrete design.
 The window component (§3) is needed from **Phase 1**, for the new Families screens. The navigation change (§2) is **Phase 4**.
 
 ## 1. Principles
@@ -78,7 +78,7 @@ Phase 4 is built a step at a time, each one shippable:
 
 1. **The five places** (built 2026-11-13; below).
 2. **The context panel** (§2.4; built 2026-11-13, below): the sidebar shows only what is selected; the tier card becomes a header strip; the sidebar tabs and the 11-button action grid go (each action already has a place); Home's town card.
-3. **One place for news** (§2.5): the bell opens moments and the chronicle with filters; the Events button and panel go; Happenings move to the season badge's pop-up.
+3. **One place for news** (§2.5; built 2026-11-14, below): the bell opens moments and the news with filters; the Events button and panel go; Happenings live in the clock's pop-up.
 4. **The top bar and phone map controls** (§2.6, §2.7): the version string into Settings, a stores chip, a sideways-scrolling resource row on phones with wealth pinned; one stack of floating map buttons; the joystick an option in Settings, off by default.
 5. **Dev Tools on its own page** (§6), loaded only for admins.
 6. **Merging the small duplicates and the outpost trim** (`docs/OUTPOST_TRIM.md`): Journeys into The Land, the old Stores into Home, then the trim itself.
@@ -132,6 +132,23 @@ The tier pacing pass in the roadmap needs the funnel numbers from real play, so 
 - Tests:
   - `verify/context_proofs.js` (20 checks); the style check covers `css/context.css`;
   - the browser pass adds 18 checks (73 in all, at the three sizes): the card on Home, Build in the panel with the card stepping aside, ✕ and Escape, no panel on going to The Land, the map's full width, a real map click opening the panel, your town as a strip without the grid, Outposts in the panel, the phone Town window and Build sheet.
+
+**Step 3, one place for news (`js/news.js` `KWNews`, `css/news.css`):**
+- **The bell opens the News window** (`KWWindow`, size M; a full-screen sheet on phones, as every window).
+  - First, what is waiting for you to decide (moments).
+  - Then the town's news, newest first, with tabs: All · Raids · Family · Trade. Raids are raid and camp events; Family covers births, partnerships, memorials, deaths, coming of age, settlers and inheritance; Trade covers villages, trust, the market and hauls; the rest show under All.
+  - A message's own emoji is its row's icon. Each row can be dismissed, and "Clear all" asks first.
+  - Links: "While you were away", and "The whole chronicle" (Families, on its Chronicle tab).
+  - A moment's row closes the window and opens its dialogue box, which sits below windows.
+- **The bell's count is what you haven't seen**: moments waiting, plus news that arrived since you last opened it (`kw-news-seen`). It used to be the number of items in the feed.
+- **Gone:** the drop-down events panel (its markup, and its styles in `main.css`, `mobile-shell.css` and `journeys.css`), the Events button, and "World events" in the profile menu.
+  - World events were already a section of the clock's pop-up (Phase 6), with "See the calendar" or "See all events" opening the Events panel.
+  - The phone fix from step 1 for the bell's drop-down is no longer needed; the profile menu keeps it.
+- `js/events.js`: the toasts and the count used to run only while the old panel's markup existed. They now always run, and the list is drawn by the News window. It fetches 40 items, enough for the tabs.
+- **Change from §2.5:** the list is the town's news (settlement events), not the chronicle table. The two overlap (both record births, deaths, raids), and only the news has raid warnings, discoveries and village requests, which are what a returning player wants first. The chronicle, the family record, is one link away in Families.
+- Tests:
+  - `verify/news_proofs.js` (25 checks); the style check covers `css/news.css`; five proofs that described the old bell, the Events button and the World events item were updated;
+  - the browser pass adds 13 checks (96 in all at the three sizes): the count, the window on top, the tabs and waiting moments first, the count clearing, the phone sheet, the Raids tab, a moment opening its dialogue, the chronicle link, Escape and the places returning, no Events button or drop-down, world events in the clock's pop-up.
 
 ## 3. The window component
 
