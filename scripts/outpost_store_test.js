@@ -1,6 +1,6 @@
 // ══════════════════════════════════════════════════════════════════════════
 //  outpost_store_test — outposts keep what they produce; porters carry it
-//  home (lib/outpost_store, routes/outposts.js /haul and the hauler post).
+//  home (lib/outpost_store, routes/outposts.js /haul; haulers went with the outpost trim).
 //
 //  Part 1 is pure. Part 2 uses the database and a running server:
 //
@@ -124,28 +124,43 @@ async function part2() {
   r = await api(a, 'POST', `/api/game/outposts/${o3}/haul`, { citizen_id: porter });
   check(r.status === 400 && /empty/.test(r.body.error), 'nothing to fetch: refused');
 
-  console.log('A standing hauler');
+  console.log('Haulers are gone (the outpost trim)');
   const b = await user('ohaul');
   const ob = await outpost(b, 'forest', { store: { timber: 50, food: 10 } });
   const hauler = await cit(b, 'Carter');
   r = await api(b, 'POST', `/api/game/outposts/${ob}/assign`, { citizen_id: hauler, post: 'hauler' });
-  check(r.status === 200 && r.body.outpost.haulers.length === 1 && r.body.outpost.hauls.length === 1 && r.body.outpost.hauls[0].standing, 'post a hauler: they set off at once' + (r.status === 200 ? '' : ' — ' + JSON.stringify(r.body)));
-  const other = await cit(b, 'Second');
-  r = await api(b, 'POST', `/api/game/outposts/${ob}/assign`, { citizen_id: other, post: 'hauler' });
-  check(r.status === 400 && /hauler/.test(r.body.error), 'one hauler per outpost');
-  const sb = async () => (await q('SELECT * FROM settlements WHERE id=$1', [b.sid])).rows[0];
-  let run1 = (await q("SELECT * FROM outpost_hauls WHERE citizen_id=$1 AND status <> 'done'", [hauler])).rows[0];
-  await due(run1.id);
-  await OS.sync(await sb());
-  const runs = (await q('SELECT * FROM outpost_hauls WHERE citizen_id=$1 ORDER BY id', [hauler])).rows;
-  check(runs.length >= 2 && runs[0].status === 'done' && runs[1].standing && runs[1].status === 'outbound', 'home again with a load, and straight back out while there\'s more');
-  check(Date.parse(runs[1].departs_at) === Date.parse(runs[0].returns_at), '…leaving when they got home (catching up while nobody looked)');
-  await q("UPDATE outpost_crew SET outpost_id = outpost_id WHERE citizen_id=$1", [hauler]);
-  r = await api(b, 'POST', `/api/game/outposts/${ob}/unassign`, { citizen_id: hauler });
-  run1 = (await q("SELECT * FROM outpost_hauls WHERE citizen_id=$1 AND status <> 'done'", [hauler])).rows[0];
-  await due(run1.id);
-  await OS.sync(await sb());
-  check(!(await q("SELECT 1 FROM outpost_hauls WHERE citizen_id=$1 AND status <> 'done'", [hauler])).rows.length, 'brought home from the post: they finish the run and stay home');
+  check(r.status === 400 && /carter/.test(r.body.error) && /porter/.test(r.body.error), 'posting a hauler is refused: the carter brings goods home, a porter fetches the rest');
+  check(!(await q('SELECT 1 FROM outpost_crew WHERE citizen_id=$1', [hauler])).rows.length, '…and nobody is posted');
+  r = await api(b, 'PATCH', `/api/game/outposts/${ob}/settings`, { haul_threshold: 50 });
+  check(r.status === 410, 'haul settings are gone (410)');
+  const vb = (await api(b, 'GET', '/api/game/outposts')).body.outposts.find(x => x.id === ob);
+  check(!('haulers' in vb) && !('hauler_slots' in vb) && !('settings' in vb), 'the outpost no longer lists haulers or haul settings');
+
+  console.log('The trim\'s data migration (once)');
+  {
+    // A town as it was before the trim: a hauler posted, a standing run on the
+    // road, and a Storehouse, Waystation and Mule Pen at its outpost.
+    const t = await user('otrim');
+    const ot = await outpost(t, 'forest');
+    const hc = await cit(t, 'Old Hauler');
+    await q("INSERT INTO outpost_crew (citizen_id, outpost_id, post) VALUES ($1,$2,'hauler')", [hc, ot]);
+    const run = (await q(`INSERT INTO outpost_hauls (settlement_id, outpost_id, citizen_id, standing, status, carry, departs_at, arrives_at, returns_at)
+                          VALUES ($1,$2,$3,TRUE,'outbound',10,NOW(),NOW() + interval '1 hour',NOW() + interval '2 hours') RETURNING id`, [t.sid, ot, hc])).rows[0].id;
+    for (const k of ['storehouse', 'waystation', 'mule_pen', 'sawpit']) await q('INSERT INTO outpost_buildings (outpost_id, key, ready_at) VALUES ($1,$2,NOW())', [ot, k]);
+    const before = (await q('SELECT timber, stone, food, wealth FROM settlements WHERE id=$1', [t.sid])).rows[0];
+    await q("DELETE FROM migration_marks WHERE key = 'outpost_trim'");
+    await q(require('fs').readFileSync(require('path').join(__dirname, '..', 'migrations', '0NN_outpost_trim.sql'), 'utf8'));
+    const after = (await q('SELECT timber, stone, food, wealth FROM settlements WHERE id=$1', [t.sid])).rows[0];
+    const d = k => Number(after[k]) - Number(before[k]);
+    check(d('timber') === 300 && d('stone') === 140 && d('food') === 150 && d('wealth') === 40, `the three buildings are refunded in full (timber +${d('timber')}, stone +${d('stone')}, food +${d('food')}, wealth +${d('wealth')})`);
+    const left = (await q('SELECT key FROM outpost_buildings WHERE outpost_id=$1', [ot])).rows.map(x => x.key);
+    check(left.join() === 'sawpit', 'and removed; other buildings stay');
+    check(!(await q("SELECT 1 FROM outpost_crew WHERE citizen_id=$1", [hc])).rows.length, 'the hauler comes home');
+    check((await q('SELECT standing FROM outpost_hauls WHERE id=$1', [run])).rows[0].standing === false, 'a run on the road finishes as a one-off trip');
+    check((await q("SELECT 1 FROM settlement_events WHERE settlement_id=$1 AND type='outpost_refund'", [t.sid])).rows.length === 1, 'the town is told');
+    await q(require('fs').readFileSync(require('path').join(__dirname, '..', 'migrations', '0NN_outpost_trim.sql'), 'utf8'));
+    check(Number((await q('SELECT timber FROM settlements WHERE id=$1', [t.sid])).rows[0].timber) === Number(after.timber), 'running it again changes nothing');
+  }
 
   console.log('Raids loot the store');
   const R = require('../lib/raids');
@@ -181,41 +196,30 @@ async function part2() {
   let ve = await view();
   check(ve.buildings && ve.buildings.slots === 2 && ve.buildings.used === 0, 'a level 1 outpost has 2 building plots');
   const keys = ve.buildings.options.map(x => x.key);
-  check(keys.includes('sawpit') && keys.includes('storehouse') && !keys.includes('granary') && !keys.includes('smokehouse'), 'forest land offers a Sawpit, not a Granary');
+  check(keys.includes('sawpit') && keys.includes('bunkhouse') && !keys.includes('granary') && !keys.includes('smokehouse'), 'forest land offers a Sawpit, not a Granary');
+  check(!['storehouse', 'waystation', 'mule_pen'].some(k => keys.includes(k)), 'no Storehouse, Waystation or Mule Pen any more (the outpost trim)');
+  r = await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'storehouse' });
+  check(r.status === 400, '…and one can\'t be raised');
   r = await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'granary' });
   check(r.status === 400 && /doesn't belong/.test(r.body.error), 'a Granary in a forest: refused');
   const pre1 = await town(e.sid);
-  r = await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'storehouse' });
-  check(r.status === 200 && Number(pre1.timber) - Number((await town(e.sid)).timber) === 120 && r.body.outpost.buildings.built[0].ready === false,
-    'raise a Storehouse: paid from the town, going up' + (r.status === 200 ? '' : ' — ' + JSON.stringify(r.body)));
-  check(r.body.outpost.store.cap === 300, '…no effect until it is finished');
-  await ready('storehouse');
+  r = await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'bunkhouse' });
+  check(r.status === 200 && Number(pre1.timber) - Number((await town(e.sid)).timber) === 150 && r.body.outpost.buildings.built[0].ready === false,
+    'raise a Bunkhouse: paid from the town, going up' + (r.status === 200 ? '' : ' — ' + JSON.stringify(r.body)));
+  check(r.body.outpost.worker_slots === 1, '…no effect until it is finished');
+  await ready('bunkhouse');
   ve = await view();
-  check(ve.store.cap === 450, 'finished: half as much room again (450)');
+  check(ve.worker_slots === 2, 'finished: room for one more worker');
   r = await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'sawpit' });
   await ready('sawpit');
   ve = await view();
   check(r.status === 200 && ve.rates.timber === 7.5, `a Sawpit: +25% timber (${ve.rates.timber})`);
-  r = await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'mule_pen' });
+  r = await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'watchfire' });
   check(r.status === 400 && /2 building plots/.test(r.body.error), 'plots full: refused');
-  r = await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'storehouse' });
+  r = await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'bunkhouse' });
   check(r.status === 400, 'one of each');
-  r = await api(e, 'DELETE', `/api/game/outposts/${oe}/buildings/storehouse`);
-  check(r.status === 200 && r.body.outpost.buildings.used === 1 && r.body.outpost.store.cap === 300, 'pull one down: the plot is free, the room is gone');
-  const t0e = (await view()).trip;
-  await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'waystation' });
-  await ready('waystation');
-  const t1e = (await view()).trip;
-  check(t1e.leg_seconds === Math.round(t0e.leg_seconds * 0.7) && t1e.carry === t0e.carry, `a Waystation: trips 30% faster (${t0e.leg_seconds}s → ${t1e.leg_seconds}s)`);
-  await api(e, 'DELETE', `/api/game/outposts/${oe}/buildings/waystation`);
-  await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'mule_pen' });
-  await ready('mule_pen');
-  check((await view()).trip.carry === Math.floor(t0e.carry * 1.5), 'a Mule Pen: porters carry half as much again');
-  await api(e, 'DELETE', `/api/game/outposts/${oe}/buildings/mule_pen`);
-  await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'bunkhouse' });
-  await ready('bunkhouse');
-  check((await view()).worker_slots === 2, 'a Bunkhouse: room for one more worker');
-  await api(e, 'DELETE', `/api/game/outposts/${oe}/buildings/bunkhouse`);
+  r = await api(e, 'DELETE', `/api/game/outposts/${oe}/buildings/bunkhouse`);
+  check(r.status === 200 && r.body.outpost.buildings.used === 1 && r.body.outpost.worker_slots === 1, 'pull one down: the plot is free, the room is gone');
   await api(e, 'POST', `/api/game/outposts/${oe}/buildings`, { key: 'watchfire' });
   await ready('watchfire');
   check((await view()).defence.own === 8, 'a Watchfire: +8 defence');

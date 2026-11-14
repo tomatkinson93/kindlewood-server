@@ -1,6 +1,6 @@
 # Layout rework — navigation and the window component (build spec)
 
-Status: **§3 and §4 built (2026-11-13); §2 steps 1–5 built (2026-11-13 and 14): the five places, the context panel, one place for news, the top bar and map controls, Dev Tools for admins only**; the rest of §2 ready to build (see §2.8). Written 2026-11-12. It turns the rework list in `docs/ROADMAP_1_0.md` §10 into a concrete design.
+Status: **§3 and §4 built (2026-11-13); §2 built (2026-11-13 and 14), steps 1–6: the five places, the context panel, one place for news, the top bar and map controls, Dev Tools for admins only, the duplicates merged and the outpost trim**; the rest of §2 ready to build (see §2.8). Written 2026-11-12. It turns the rework list in `docs/ROADMAP_1_0.md` §10 into a concrete design.
 The window component (§3) is needed from **Phase 1**, for the new Families screens. The navigation change (§2) is **Phase 4**.
 
 ## 1. Principles
@@ -81,7 +81,7 @@ Phase 4 is built a step at a time, each one shippable:
 3. **One place for news** (§2.5; built 2026-11-14, below): the bell opens moments and the news with filters; the Events button and panel go; Happenings live in the clock's pop-up.
 4. **The top bar and phone map controls** (§2.6, §2.7; built 2026-11-14, below): the version string into Settings, a stores chip, a sideways-scrolling resource row on phones with wealth pinned; one stack of floating map buttons; the joystick an option in Settings, off by default.
 5. **Dev Tools on its own page** (§6), loaded only for admins (built 2026-11-14, below).
-6. **Merging the small duplicates and the outpost trim** (`docs/OUTPOST_TRIM.md`): Journeys into The Land, the old Stores into Home, then the trim itself.
+6. **Merging the small duplicates and the outpost trim** (`docs/OUTPOST_TRIM.md`; built 2026-11-14, below): Journeys into The Land, the old Stores into Home, then the trim itself.
 7. Windows move onto `KWWindow` as each step touches them (§5).
 
 The tier pacing pass in the roadmap needs the funnel numbers from real play, so it waits, like the moments budget tuning.
@@ -194,6 +194,24 @@ The tier pacing pass in the roadmap needs the funnel numbers from real play, so 
   - None of the game's floating parts show unless the game screen is active.
   - Signing in again starts the places as soon as the game shows (the first load still waits for Start playing).
 - Tests: the browser pass adds the card's position, signing out (nothing of the game over the welcome screen) and signing back in on Home, on desktop and phone (8 checks); `verify/nav_proofs.js` adds 3.
+
+**Step 6, the duplicates merged and the outpost trim:**
+- **Journeys folds into The Land** (`js/journeys.js`): with the places, The Land's Journeys chip opens it as a view in the context panel (`#panel-journeys-view`), beside the map, or in the bottom sheet on phones.
+  - From Home it goes to The Land first.
+  - "Show on map" moves the map and keeps the list open on desktop; a phone's sheet steps aside.
+  - The map view, citizens and outposts hide it when they take the panel (`KWJourneys.hideView()`), and its countdowns stop when it closes.
+  - Without the places it is still its own window.
+- **The old Stores folds into Home** (`js/inventory.js`, `js/stores.js`): there were two "Stores", the inventory (gear and items, Home's Stores chip) and a drop-down of ores, rare materials and alloys (the top bar's chip).
+  - They are one screen now, "Stores", with an Ores & alloys tab showing the drop-down's list. Home's chip opens Stores; the top bar's "+N in Stores" opens it on that tab.
+  - Opened straight onto ores, the items load on the first switch, and the list stays current while showing.
+  - Without the places the drop-down is as it was.
+- **The outpost trim** is built as `docs/OUTPOST_TRIM.md` proposed (see its § Built):
+  - standing haulers, haul settings, and the Storehouse, Waystation and Mule Pen go (refunded in full);
+  - the Outpost Network boon raises the carter's share;
+  - the clan hauling goal counts what carters bring.
+- Tests:
+  - `verify/merge_proofs.js` (11 checks); the trim's server tests and proofs (listed in `OUTPOST_TRIM.md`);
+  - a browser pass at desktop and phone (12 checks): Journeys in the panel and the sheet with the map beside it, Outposts taking the panel over, one Stores screen from both chips, the items loading on switching tabs.
 
 ## 3. The window component
 

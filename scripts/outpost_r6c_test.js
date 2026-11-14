@@ -65,29 +65,19 @@ async function part2() {
   const store = async id => (await q('SELECT store FROM outposts WHERE id=$1', [id])).rows[0].store || {};
   let r;
 
-  console.log('Haul filters and thresholds');
+  console.log('A porter takes a fair share (haul settings went with the outpost trim)');
   const a = await user('r6filt');
   const oa = await outpost(a, 'forest', 2, { store: { timber: 100, food: 100 } });
   r = await api(a, 'PATCH', `/api/game/outposts/${oa}/settings`, { haul_filter: ['food'], haul_threshold: 50 });
-  check(r.status === 200 && JSON.stringify(r.body.outpost.settings.haul_filter) === '["food"]' && r.body.outpost.settings.haul_threshold === 50, 'save: carry food only; hauler waits for half full');
-  check((await api(a, 'PATCH', `/api/game/outposts/${oa}/settings`, { haul_threshold: 33 })).status === 400, 'only 0, 25, 50, 75 or 90 %');
+  check(r.status === 410, 'haul settings are gone (410)');
+  await q(`UPDATE outposts SET haul_filter = '["food"]'::jsonb WHERE id=$1`, [oa]);   // an old setting left in the column
   const porter = await cit(a, 'Pack');
   r = await api(a, 'POST', `/api/game/outposts/${oa}/haul`, { citizen_id: porter });
   const h = (await q("SELECT * FROM outpost_hauls WHERE citizen_id=$1 AND status <> 'done'", [porter])).rows[0];
   await q("UPDATE outpost_hauls SET arrives_at = NOW() - interval '1 second' WHERE id=$1", [h.id]);
   await OS.resolveDue(await srow(a));
   const ld = (await q('SELECT load FROM outpost_hauls WHERE id=$1', [h.id])).rows[0].load;
-  check(ld && ld.food > 0 && !ld.timber, `the porter brought only food (${JSON.stringify(ld)})`);
-  const hauler = await cit(a, 'Steady');
-  r = await api(a, 'POST', `/api/game/outposts/${oa}/assign`, { citizen_id: hauler, post: 'hauler' });
-  check(r.status === 200 && !(await q("SELECT 1 FROM outpost_hauls WHERE citizen_id=$1 AND status <> 'done'", [hauler])).rows.length, 'the hauler waits: food is under half the store');
-  await q(`UPDATE outposts SET store = store || '{"food": 200}'::jsonb WHERE id=$1`, [oa]);
-  await OS.sync(await srow(a));
-  check((await q("SELECT 1 FROM outpost_hauls WHERE citizen_id=$1 AND status <> 'done'", [hauler])).rows.length === 1, 'past half full: the hauler sets out');
-  await api(a, 'PATCH', `/api/game/outposts/${oa}/settings`, { haul_filter: ['metal'] });
-  const p2 = await cit(a, 'Idle');
-  r = await api(a, 'POST', `/api/game/outposts/${oa}/haul`, { citizen_id: p2 });
-  check(r.status === 400 && /set to carry/.test(r.body.error), 'nothing it is set to carry: no porter');
+  check(ld && ld.food > 0 && ld.timber > 0, `the porter brings a fair share of everything, whatever the old setting said (${JSON.stringify(ld)})`);
 
   console.log('Roads');
   const b = await user('r6road');
@@ -166,13 +156,18 @@ async function part2() {
   const prog = Number((await q(`SELECT COALESCE(SUM(v.value::numeric),0)::int AS n FROM outpost_hauls h, jsonb_each_text(COALESCE(h.load,'{}'::jsonb)) v
                                  WHERE COALESCE(h.owner_settlement_id, h.settlement_id) = $1 AND h.kind='haul' AND h.status='done' AND h.returns_at >= $2`, [m1.sid, since])).rows[0].n);
   check(prog === got, 'the clan "carry goods" goal counts it');
-  // The Outpost Network boon: porters carry 25% more.
-  const t1 = (await view(m1, om)).trip.carry;
+  // The carters' deliveries count towards the goal too (outpost_carted).
+  const G = require('../lib/clan_goals');
+  const g0 = await G.progressOf(clan, 'haul', since);
+  await q("INSERT INTO outpost_carted (settlement_id, day, goods) VALUES ($1, CURRENT_DATE, 40) ON CONFLICT (settlement_id, day) DO UPDATE SET goods = outpost_carted.goods + 40", [m1.sid]);
+  check(await G.progressOf(clan, 'haul', since) === g0 + 40, 'the goal counts what carters bring home as well as porter loads');
+  // The Outpost Network boon: carters bring 10% more home (it was porters' carry).
+  const v1 = await view(m1, om);
   await q("INSERT INTO clan_boons (clan_id, boon_key, until) VALUES ($1, 'outpost_network', NOW() + interval '1 day')", [clan]).catch(async () => {
     await q("INSERT INTO clan_boons (clan_id, boon_key, expires_at) VALUES ($1, 'outpost_network', NOW() + interval '1 day')", [clan]);
   });
-  const t2 = (await view(m1, om)).trip.carry;
-  check(t2 === Math.floor(t1 * 1.25), `Outpost Network boon: +25% carried (${t1} → ${t2})`);
+  const v2 = await view(m1, om);
+  check(Math.abs(v2.trickle.share - Math.min(1, v1.trickle.share + 0.1)) < 1e-9 && v2.trip.carry === v1.trip.carry, `Outpost Network boon: carters bring 10% more home (${v1.trickle.share} → ${v2.trickle.share}); porters carry the same`);
   // Signal Tower: m2's fortified outpost shares twice as much, from further.
   const D = require('../lib/defences');
   const o2 = (await q("INSERT INTO outposts (settlement_id, tile_q, tile_r, terrain, level, fort_level) VALUES ($1,$2,$3,'forest',1,1) RETURNING id", [m2.sid, m1.q + 6, m1.r])).rows[0].id;

@@ -1,6 +1,6 @@
 # Outpost specialisations — design for review (not built yet)
 
-Status: **frozen until after 1.0** (see `docs/ROADMAP_1_0.md`). Nothing here is implemented. When it is picked up, cut it to three or four charters and two new resources, and note that haul filters are due to be removed (`docs/OUTPOST_TRIM.md`).
+Status: **frozen until after 1.0** (see `docs/ROADMAP_1_0.md`). Nothing here is implemented. When it is picked up, cut it to three or four charters and two new resources, and note that haul filters were removed (`docs/OUTPOST_TRIM.md`, built 2026-11-14): choosing what's sold needs its own per-outpost setting.
 
 ## 1. The shape of it
 
@@ -74,7 +74,7 @@ Status: **frozen until after 1.0** (see `docs/ROADMAP_1_0.md`). Nothing here is 
 
 ### 2.5 ⚖️ Trading Post
 - **What it does:** passing traders buy from its store automatically. Each hour it sells up to 30 weight of goods at 1.2× their reference price, for wealth.
-- **Choosing what's sold:** this uses the same per-outpost resource filter as haul filters. The wealth itself still needs porters (it's light).
+- **Choosing what's sold:** this needs its own per-outpost resource setting (haul filters, which it once borrowed, were removed with the outpost trim). The wealth itself comes home by carter like everything else.
 - **Villages:** each friendly NPC village within 6 tiles (trust 40 or more) adds +10% sales.
 - **Caravans:** your Market's caravans can start here instead of in town, which shortens routes and saves time.
 - **Needs a road** (§2 of the R6c work) to be chartered.
