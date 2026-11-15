@@ -42,7 +42,12 @@ Do these first; they are small and one of them is hurting live towns.
 | Clicking a villager | A **radial menu** around them, not a card: Inspect, Family, Change work, House. |
 | Selected villager | Highlighted, and stands idle until the player clicks away. |
 | Movement | Purposeful: into and out of buildings, meeting and "talking". |
-| Game effect | None for now. Later: a villager with an open moment stands with an exclamation mark. |
+| Game effect | None: the scene only **shows** the game's state, it never changes it. |
+| Moments | In this build: a villager with an open moment stands with an exclamation mark (§3.7). |
+| Build mode | One Build mode replaces Build and Edit (§2.3). |
+| Outskirts | Have villagers from the start, the same as Town. |
+| Sprite delivery | One GIF per direction; a script packs them into sheets (§3.1). |
+| Mood, life events, town events | Agreed and in this build (§3.8 to §3.10), after the core. |
 | Building art | The owner will generate it. Build with placeholders that swap out. |
 
 ---
@@ -244,13 +249,70 @@ sends workers toward their buildings.
   the menu's buttons.
 - The menu opens with a quick fan-out (150 ms); none under reduced motion.
 
-### 3.7 Moments (build last; ask the owner before switching it on)
+### 3.7 Moments
 
 A citizen who is the subject of an open moment is always in the cast. They
 stand at a clear spot near the centre with a bobbing **!** bubble. Clicking
 them opens that moment in the dialogue box instead of the radial menu. If the
 moment payload does not already name its citizen, add `citizen_ids` to it.
 This is the first tie between the scene and play, and the cheapest one.
+
+### 3.8 Mood
+
+Small emotes over heads, driven by the town's real state, so the scene reads as a
+picture of how the town is doing. An emote is a little bubble with one pixel icon,
+shown for 2 to 3 s, on at most two villagers at a time, each villager at most once
+a minute. The mix follows the numbers:
+
+| State (from data the client already has) | Emote | Behaviour |
+|---|---|---|
+| Happiness high (70 % and up) | green smiling face, music note, heart | now and then a villager does a little hop or two dance a few steps together |
+| Happiness middling | none, or a plain "…" | normal |
+| Happiness low (under 40 %) | grey frowning face, rain cloud | walks slower, idles longer, fewer chats |
+| Food short or famine | empty bowl | some stand by the granary |
+| No bed (unhoused) | small house with a question mark, on that villager only | idles near the Neighbourhood |
+| Festival running | music note, lantern | see §3.10 |
+
+Use the villager's own happiness where the citizen data has it, the town's
+otherwise. Colour is never the only signal: the faces differ in shape as well as
+colour. Emote icons are one small sheet (`assets/sprites/emotes.png`, 16 × 16 px
+each, drawn at 2×); until the owner supplies it, draw simple placeholders.
+
+Dancing needs no new art in the first version: a dance is the idle animation with
+a hop and a turn through the directions. If the owner later makes a dance or
+cheer animation per species, the packer picks up `dance_*.gif` the same way.
+
+### 3.9 Life events seen happening
+
+Driven by new chronicle entries (the client already loads the chronicle). When
+Home is showing and a new entry arrives, or one is under 10 minutes old when Home
+opens, play its small scene once. Each lasts under a minute and is skipped under
+reduced motion (the news line still appears).
+
+| Chronicle kind | Scene |
+|---|---|
+| Birth | The parents stand outside their home with a heart bubble; a neighbour walks over and "chats". |
+| Coming of age | The new adult walks from home to their workplace with a star bubble; the first villager they pass gives a hop. |
+| Partnership | The two walk side by side across the town with hearts. |
+| Death | Up to four villagers, family first, gather by the home with a candle bubble, stand a while, and leave slowly. No dancing or happy emotes in town for those minutes. |
+| Settler arrives | The newcomer walks in from the edge of the scene with a bundle bubble and goes to their new home; someone meets them on the way. |
+| Inheritance | The heir walks to the home and comes out with a small sparkle. |
+
+Only one such scene plays at a time; others wait their turn, newest dropped first
+if more than three are waiting. People in a scene join the cast for its length
+even if the cast is full.
+
+### 3.10 Town-wide events
+
+| Event | Scene |
+|---|---|
+| Festival running | Most of the cast gathers on the village green and dances in a loose ring, lanterns and notes above; a few still wander. |
+| Raid incoming or under way | Villagers hurry indoors (run speed); guards stand at the gate or walls in the Outskirts; the town is nearly empty until it ends, then people come out, with relieved or sad emotes by the result. |
+| Famine | See §3.8: bowls, slow walking, a small crowd at the granary. |
+| Night | Most indoors, windows lit (§3.5). |
+| Tier upgrade just finished | Everyone out cheers once (hop, star bubbles). |
+
+Priority when several apply: raid, then death, then festival, then the rest.
 
 ---
 
@@ -270,7 +332,15 @@ Each step ships on its own and is shown to the owner.
 7. **Selection and the radial menu** (§3.6).
 8. **Phone and comfort pass**: touch sizes, cast of 8, reduced motion, frame
    time on a mid-range phone (target: under 2 ms a frame for the loop).
-9. **Moment markers** (§3.7), once the owner says go.
+9. **Moment markers** (§3.7).
+10. **Mood** (§3.8).
+11. **Life events** (§3.9).
+12. **Town-wide events** (§3.10).
+
+Steps 1 to 9 are the core. Steps 10 to 12 are layers on the same engine: each is a
+reader of state the client already has plus a few scripted errands, so do not let
+them leak into the engine as special cases. Give the engine one hook, "play this
+script with these villagers", and build all three on it.
 
 ## 5. Tests
 
@@ -286,6 +356,11 @@ Each step ships on its own and is shown to the owner.
 - Selecting stops movement; deselecting resumes it.
 - The building routing table: every key in `SV_VISUALS` opens something.
 - Missing sheet → mouse; missing direction → mirrored.
+- Mood: the emote mix for high, middling and low happiness; never more than two
+  at once; a death scene suppresses happy emotes.
+- Life events: each chronicle kind maps to a script; one at a time; the queue
+  drops beyond three; an old entry (over 10 minutes) plays nothing.
+- Town events: the priority order; a raid sends everyone indoors.
 
 Browser check (Playwright, as for the earlier phases): Home at 1400 × 900 and
 390 × 844, no page errors, the chips are gone, a building click opens its
@@ -309,25 +384,18 @@ screen, a villager click shows four buttons.
 
 ## 7. Ideas that tie in later (not in this build)
 
-- **Mood at a glance.** Small emotes over heads driven by real state: a music
-  note when the town is happy, a rumbling tummy when food is short. The scene
-  becomes a readout of the town without a number.
-- **Life events seen happening.** A newborn: a parent stands outside the home
-  with a heart. A coming of age: the youth walks to their new workplace for the
-  first time. A death: villagers gather by the home with a candle for a minute.
-- **Settlers arrive on foot** from the edge of the scene with a bundle, and
-  walk to their new home.
-- **Festivals**: everyone gathers on the green and dances.
-- **Raids**: villagers run indoors; guards stand at the gate.
 - **Who is inside.** A building's nameplate lists who is in there now.
 - **Travellers.** A visiting figure walks to the tavern when a visitor moment
   is open.
 - **Seasons and weather**: snow on roofs, lanterns at night, rain.
+- **Dance and cheer animations** per species, if the owner wants more than the
+  hop-and-turn.
+- **Pets and wildlife**: a bird on a roof, a butterfly, a cat by the tavern.
 
-## 8. Still open (ask the owner)
+## 8. Answered by the owner (2026-11-15)
 
-1. Moment markers (§3.7): include in this build, or leave for later?
-2. Is merging Edit into one Build mode (§2.3) acceptable?
-3. Sprite delivery: GIFs per direction as described in §3.1, or will the
-   generator export sheets directly?
-4. Should the Outskirts have villagers from the start, or Town only first?
+1. Moment markers: **in this build.**
+2. One Build mode replacing Edit: **yes.**
+3. Sprites: **one GIF per direction**; the packer makes the sheets.
+4. Outskirts: **villagers from the start.**
+5. Mood emotes, dancing, life events and town-wide events: **yes, all in.**
