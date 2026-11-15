@@ -11,7 +11,7 @@ screen, and the townsfolk are seen walking about and can be clicked.
 Parts A and B are **frontend only and cosmetic**. Nothing a villager does on
 screen changes the game, and the server is not told where anyone is standing.
 Part C (the Neighbourhood) adds a little server data. **Parts D and E (builders,
-building time and upkeep) are real changes to play** and has the server work; treat them with
+building time and upkeep) are real changes to play** and have the server work; treat them with
 the same care as Phase 1.
 
 ---
