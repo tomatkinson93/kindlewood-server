@@ -1,6 +1,6 @@
 # Dungeon content plan: classes, cards, creatures, floors, events and treasure
 
-Status: **proposal, 2026-11-15. Nothing here is built.** Companion to `docs/DUNGEONS.md`. The same file is in both repos.
+Status: **proposal, 2026-11-15, with the owner's decisions of the same day (§9). Nothing here is built.** Companion to `docs/DUNGEONS.md`. The same file is in both repos.
 
 Every number below was produced by `scripts/dungeon_balance_sim.js` (server repo), which plays whole dungeon runs on the real combat engine with a card-playing bot. The proposed cards and creatures live as data in that script. To reproduce:
 
@@ -23,7 +23,7 @@ node scripts/dungeon_balance_sim.js rules 300
 ## 1. What the numbers say, in short
 
 1. **Today's creatures are far too weak for a dungeon.** With creatures at today's strength or a little above (up to +75% health at purple), the suggested party cleared every skull colour 98–100% of the time. Dungeon creatures need **+50% health at green, rising to +175% at purple** (§5).
-2. **Party size decides almost everything.** Each citizen brings their own turn, hand and 3 energy. One citizen short of the suggested party, the clear rate falls to 0–4% at every colour. The suggested party size on the dungeon card is close to a requirement and should be worded that way.
+2. **Party size decides almost everything.** Each citizen brings their own turn, hand and 3 energy. One citizen short, the clear rate collapses (yellow: 78% with four, 4% with three). **Decided: every dungeon requires a party of exactly four.**
 3. **The draft matters more than any card.** In an orange dungeon, a drafted deck cleared 54% of runs; the default home deck (5 Strike, 5 Defend, 2 Quick Jab, 1 Rally) cleared 13%.
 4. **Class cards must only be drawn by citizens who can play them.** With that rule a four-class party cleared 67% of orange runs; with class cards landing in anyone's hand it cleared 55%.
 5. **Suggested lengths:** green 3 fights, yellow 4, orange 6, red 7, purple 9 (§6). That is 5 to 20 minutes of fighting.
@@ -62,18 +62,42 @@ Three fighting classes are in the game already (Guard, Archer, and the Scout's R
 
 Notes:
 
-- **Schools are the career fork.** Careers already fork at level 10. A Wizard chooses Ember (fire, damage) or Frost (control, shields); Storm cards are rare finds any Wizard can use. A Greenspeaker chooses Growth or Hex.
+- **Schools are research branches** in the class's building (§3.2), so a town can learn all of them in time. Whether a Wizard must also pick one school at the career fork (level 10) is left for the class spec.
 - The names avoid the Phase 5 species careers (Warden, Pathfinder and the rest).
 - Intelligence and charisma barely matter in combat today. These classes are what give those stats a use.
-- Where each class trains (which building) is not decided here. New building types are on the roadmap's freeze list, so the first version should attach them to buildings that exist.
+- **First release: Guard, Archer, Wizard and Hearthkeeper** (decided). Skirmisher, Wildheart, Greenspeaker and Minstrel follow later; their cards stay in this plan and in the simulator so the balance is already checked.
 
-### 3.2 How a town gets class cards
+### 3.2 Where classes train, and how a town gets class cards
 
-Proposed, to fit the existing collection (`lib/cards.js`):
+**Decided: each class has its own building, and upgrading and researching it is the most direct way to unlock that class's cards.** There will be other ways (below), but the building is the main road.
 
-- The two common cards of a class are owned as soon as any citizen in the town reaches **level 3** in it.
-- The third and fourth arrive at **level 6** and at the **fork (level 10)**.
-- The rare card of each class (marked ★ below) is **found in dungeons**: elites and bosses of orange and above.
+New building types are on the roadmap's freeze list until 1.0; these arrive with the class release, after it.
+
+| Class | Building | Notes |
+|---|---|---|
+| Guard, Archer | **Watchtower** (exists) | Already their post (`lib/watchtower.js`). Its levels and a new "Drill" research line unlock their cards. |
+| Wizard | **Wizard's Tower** (new) | Three levels. A research branch for each school: Ember, Frost, Storm. |
+| Hearthkeeper | **Hearth Shrine** (new) | Three levels. One research line, "Rites of the Hearth". |
+
+How the cards unlock (a card is owned by the town once unlocked, as now):
+
+| Step | Wizard | Hearthkeeper | Guard | Archer |
+|---|---|---|---|---|
+| Building level 1 | Firebolt, Ice Ward | Kindle, Ember Ward | Stand Fast | Aimed Shot |
+| First research | Scorch (Ember I), Frost Lance (Frost I) | Banish the Blight | Guard's Oath | Pin Down |
+| Building level 2 | Thunderclap | Hearthlight | Hammer Blow | Piercing Arrow |
+| Second research | Fireball (Ember II), Deep Freeze (Frost II) | — | — | — |
+| Building level 3 + last research | Chain Lightning (Storm) | Rekindle | Hold the Line | Hail of Arrows |
+
+So a Wizard's Tower at level 1 gives a town two wizard cards on the day it is built, and a fully upgraded and researched one gives all eight.
+
+Other ways to the same cards, so the building is never the only road:
+
+- **Dungeons:** elites and bosses of orange and above can drop a class card the town does not own yet, including the ★ cards, ahead of the building.
+- **Allied villages** teach cards for wealth, as now (`lib/cards.js`).
+- **Career levels:** a citizen reaching level 10 in a class could unlock one card for the town. Optional; not needed if the building ladder feels right.
+
+Research uses the existing system (`lib/research_defs.js`: a project has a cost, prerequisites and can name the building it needs), so this is new content, not a new mechanic.
 
 ### 3.3 "Requires Wizard"
 
@@ -170,7 +194,7 @@ For comparison, Mend (owned by everyone) heals 10. A Hearthkeeper is the differe
 | ★ Rousing Chorus | 2, withers | +3 energy, draw 2 cards | `energy: 3` / `draw: 2` | 125% |
 
 ¹ The simulator's test scene aims every enemy at the caster, so block given to others scores low there. On paper Guard's Oath is 107% and Hold the Line is 52 block for 2 energy, which is why it withers.
-² A lost turn is scored against a 9-damage brigand. Against a boss that hits for 30 or more it is worth far more. Bosses should resist: a boss can lose at most one turn per battle.
+² A lost turn is scored against a 9-damage brigand. Against a boss that hits for 30 or more it is worth far more, which is why some bosses resist it (§4).
 
 **Existing cards for comparison** (same citizen): Cleave 107%, Second Wind 99%, Defend 93%, Battle Cry 91%, Expose 89%, Mend 79%, Arrow Rain 75%, Weaken 71%, Venom Edge 70%, Shield Bash 64% + a turn, Hamstring 64%. The class cards sit a clear step above these, as asked, without doubling them.
 
@@ -232,15 +256,25 @@ Families: **beast**, **brigand** (stoats, weasels and crows: no playable species
 
 ### Bosses (CR 6.5–9), one for each kind of land
 
-| Boss | Health | CR | Land | What it does |
-|---|---|---|---|---|
-| Redtooth, Brigand King | 230 | 6.5 | plains | Twin blades; barks orders (allies hit harder); gouge |
-| Old Greyfeather (owl) | 240 | 7.5 | forest | Talons; silent swoop on everyone; mantles (block) |
-| The Storm Matriarch (harpy) | 220 | 7.5 | mountain | Dive; gale; shriek |
-| Old Snapjaw (pike) | 260 | 8 | river | Snap; thrash; drags a citizen under (lose a turn) |
-| Grum, the Ogre Chief | 280 | 8.5 | hills | Great club; boulder; roar |
-| The Bog Mother (toad) | 300 | 8.5 | marsh | Slam; spore cloud; bloats (heals herself) |
-| The Hollow King (withered) | 270 | 9 | ruins | Rusted blade; hollow wail; crown of rot |
+**Decided: resistance to control (lost turns, slow, being pushed) depends on the boss.** Three levels:
+
+- **Open:** no resistance. Control cards work in full. These bosses hit hardest, so freezing them is the intended answer.
+- **Wary:** can lose at most one turn per battle; slow works.
+- **Steadfast:** never loses a turn; slow and push do nothing. Weak and vulnerable still work on every boss.
+
+The level is shown on the dungeon card, so a party knows before the draft whether control cards are worth taking.
+
+| Boss | Health | CR | Land | What it does | Control |
+|---|---|---|---|---|---|
+| Redtooth, Brigand King | 230 | 6.5 | plains | Twin blades; barks orders (allies hit harder); gouge | Wary |
+| Old Greyfeather (owl) | 240 | 7.5 | forest | Talons; silent swoop on everyone; mantles (block) | Wary; cannot be slowed |
+| The Storm Matriarch (harpy) | 220 | 7.5 | mountain | Dive; gale; shriek | Open to lost turns; cannot be slowed or pushed |
+| Old Snapjaw (pike) | 260 | 8 | river | Snap; thrash; drags a citizen under (lose a turn) | Wary; cannot be pushed |
+| Grum, the Ogre Chief | 280 | 8.5 | hills | Great club; boulder; roar | Open |
+| The Bog Mother (toad) | 300 | 8.5 | marsh | Slam; spore cloud; bloats (heals herself) | Steadfast |
+| The Hollow King (withered) | 270 | 9 | ruins | Rusted blade; hollow wail; crown of rot | Steadfast |
+
+Elites are Wary. Everything else is Open. This needs a `control` field on the creature and a check where lost turns and slow are applied; the simulator does not model it yet, so the two Steadfast bosses will be somewhat harder than the tables in §6 say for parties that lean on control.
 
 That is 26 new creatures and 11 existing ones. Every kind of land has at least two minions, three regulars, a heavy, an elite and a boss. Full move lists and stats are in the simulator script, in the same shape the enemy editor stores.
 
@@ -267,37 +301,37 @@ Why so much: each citizen plays about three cards a turn from a full hand, so a 
 
 "Fights" include the elites and the boss. A rest gives back 30% of full health. A landing (between floors) is a rest plus the choice to go deeper.
 
-| Skull | Floors | Fights | Of which | Rests | Events and treasure | Steps per floor | Deck | Suggested party |
+| Skull | Floors | Fights | Of which | Rests | Events and treasure | Steps per floor | Deck | Party of four, expected level |
 |---|---|---|---|---|---|---|---|---|
-| 🟢 Green | 1 | 3 | boss | 1 | 1–2 | 5 | 12 | 2 villagers |
-| 🟡 Yellow | 1 | 4 | boss | 1 | 2 | 7 | 12 | 3 novices |
-| 🟠 Orange | 2 | 6 | 1 elite, boss | 2 + landing | 3 | 5–6 | 14 | 4 trained |
-| 🔴 Deep red | 2 | 7 | 1 elite, boss | 2 + landing | 4 | 6–7 | 14 | 4 trained, with classes |
-| 🟣 Purple | 3 | 9 | 2 elites, boss | 3 + 2 landings | 5 | 5–6 | 16 | 4 veterans, with classes |
+| 🟢 Green | 1 | 3 | boss | 1 | 1–2 | 5 | 12 | villagers |
+| 🟡 Yellow | 1 | 4 | boss | 1 | 2 | 7 | 12 | novices |
+| 🟠 Orange | 2 | 6 | 1 elite, boss | 2 + landing | 3 | 5–6 | 14 | trained |
+| 🔴 Deep red | 2 | 7 | 1 elite, boss | 2 + landing | 4 | 6–7 | 14 | trained, with classes |
+| 🟣 Purple | 3 | 9 | 2 elites, boss | 3 + 2 landings | 5 | 5–6 | 16 | veterans, with classes |
 
 `docs/DUNGEONS.md` §4 now carries these figures. The first guess had up to 11 fights at purple; nine is where the clear rate and the playing time both sit right.
 
 **Deck size ramps with the skull:** 12 cards at green and yellow, 14 at orange and red, 16 at purple. Longer fights reshuffle more often, and a bigger deck gives class cards room.
 
-**A typical fight** (creatures per fight): green 2; yellow 2–3; orange and red 3–4; purple 3–4 with more heavies. Boss fights add one or two companions from yellow upward.
+**Every dungeon takes exactly four citizens** (decided). **A typical fight** has three creatures at every colour; what changes is what they are. Green: regulars and minions, one heavy. Yellow: regulars and heavies. Orange and red: 3–4, with heavies in most fights. Purple: 3–4, mostly heavies. The boss always has one or two companions.
 
 ### 6.2 Clear rates
 
 300 runs each. The bot drafts its deck, plays sensibly but without foresight, carries no supplies and cannot stand a downed citizen up in battle. Real players with supplies and revives should do better, so read these as a floor.
 
-| Skull | Suggested party, starter cards only | + unlocked cards | + class cards | One citizen short | One level under |
+| Skull | Four citizens, starter cards only | + unlocked cards | + class cards | One level under | Three citizens (not allowed; shown for the reason) |
 |---|---|---|---|---|---|
-| 🟢 Green (2 villagers) | 81% | 93% | 94% | 1% | — |
-| 🟡 Yellow (3 novices) | 74% | 84% | 91% | 4% | 58% |
-| 🟠 Orange (4 trained) | 52% | 52% | 69% | 3% | 18% |
-| 🔴 Deep red (4 trained) | 20% | 30% | 40% | 1% | 2% |
-| 🟣 Purple (4 veterans) | 3% | 9% | 24% | 0% | 1% |
+| 🟢 Green (villagers) | 100% | 100% | 100% | — | 79% |
+| 🟡 Yellow (novices) | 78% | 78% | 75% | 58% | 4% |
+| 🟠 Orange (trained) | 52% | 52% | 69% | 18% | 3% |
+| 🔴 Deep red (trained) | 20% | 30% | 40% | 2% | 1% |
+| 🟣 Purple (veterans) | 3% | 9% | 24% | 1% | 0% |
 
 Levels used: **villager** (all stats 8, combat 1, no armour), **novice** (main stat 10, combat 2, leather), **trained** (main 11, second 10, combat 4, leather: about class level 10), **veteran** (main 13, second 11, combat 7, chainmail: class level 20). The class party is Guard, Archer, Hearthkeeper, Wizard.
 
 Reading it:
 
-- Green is safe for anyone who sends two citizens. A new town with only starter cards loses about one run in five.
+- Green is a safe first dungeon: four villagers with starter cards clear it every time, though on average one of them is knocked down along the way and rolls for injury. Yellow is the first real test: about one run in four is lost.
 - Classes are worth 10 to 20 points from orange upward. Red and purple are built to need them.
 - Purple without class cards is close to impossible, by design.
 - An over-levelled party helps less than a complete one: four veterans in an orange dungeon clear 86%.
@@ -306,8 +340,8 @@ Reading it:
 
 | Skull | Health lost per fight (share of the party's total) | Citizens downed per run | Citizen turns per run (with a full card collection) | Fighting time at about 15 s a turn |
 |---|---|---|---|---|
-| 🟢 Green | 15–24% | 0.3–0.8 | about 20 | 5 minutes |
-| 🟡 Yellow | 11–19% | 0.7–1.5 | about 35 | 9 minutes |
+| 🟢 Green | 10–13% | 0.6–0.7 | about 25 | 6 minutes |
+| 🟡 Yellow | 16–19% | 1.9–2.1 | about 40 | 10 minutes |
 | 🟠 Orange | 16–20% | 2.2–2.7 | about 60 | 15 minutes |
 | 🔴 Deep red | 16–20% | 2.9–3.5 | about 66 | 17 minutes |
 | 🟣 Purple | 19–24% | 3.4–3.9 | about 74 | 19 minutes |
@@ -387,7 +421,7 @@ A dungeon is played by hand, once per town, with real risk, so it should pay sev
 | 🔴 Deep red | about 900 | 230 | 250 | 420: 1 epic material, rare gear, a boss trophy | 1 card for certain; 35% a class ★ card |
 | 🟣 Purple | about 1,600 | 350 | 450 | 800: 2 epic materials, named gear, a boss trophy, a title | 1 rare or better for certain; 60% a class ★ card |
 
-Counting the clear rate of a class party (§6.2), the *expected* take per attempt is about 110 at green, 230 at yellow, 345 at orange, 360 at red and 385 at purple. Red and purple are barely better wealth per attempt than orange: what they offer is the things that only drop there.
+Counting the clear rate of a class party (§6.2), the *expected* take per attempt is about 120 at green, 190 at yellow, 345 at orange, 360 at red and 385 at purple. Red and purple are barely better wealth per attempt than orange: what they offer is the things that only drop there.
 
 How it is split inside a run:
 
@@ -415,11 +449,21 @@ New, and only from dungeons:
 
 What should not be a dungeon reward: the five basic resources in bulk (dungeons should not replace farms and mines), and anything that raises a citizen's stats for good.
 
-## 9. Open questions
+## 9. Decisions and open questions
+
+Decided 2026-11-15:
+
+| Question | Decision |
+|---|---|
+| Party size | **Required, and four** for every dungeon to start with. |
+| First classes | **Guard, Archer, Wizard, Hearthkeeper.** The other four later. |
+| Boss resistance to control | **Depends on the boss** (§4): Open, Wary or Steadfast. |
+| Where classes train | **New buildings** (Wizard's Tower, Hearth Shrine; Guards and Archers at the Watchtower). Upgrading and researching the building is the most direct way to unlock that class's cards; other ways exist (§3.2). |
+
+Still open:
 
 1. **The scaling.** +50% to +175% health is a large correction. The alternative is to leave quest creatures as they are and give every dungeon creature its own, higher base stats. The result is the same; the question is which is easier to tune from the enemy editor.
-2. **Party size.** Should a dungeon *require* its suggested party size, given that one short is near-certain defeat? Or should smaller parties be allowed and warned?
-3. **Class names and the list.** Eight classes is a lot of content. A first release could ship Guard, Archer, Wizard and Hearthkeeper (the party the simulation used) and add the rest later.
-4. **Where classes train.** Which existing buildings, given the freeze on new ones.
-5. **Weak, vulnerable and Focus** (§2, rows 5 and 6): change them now, or watch how players use them first?
-6. **Boss resistance.** "At most one lost turn per battle" for bosses is new engine behaviour. Agreed?
+2. **Weak, vulnerable and Focus** (§2, rows 5 and 6): change them now, or watch how players use them first?
+3. **A new town and the party of four.** A dungeon needs four free adults. Is that always true of a town early on, or should green dungeons wait behind a tier (a Village, say)?
+4. **Green at 100%.** Green can be left as a certain win that still costs a knock-down, or tightened to about 90%. Yellow already supplies the first real risk.
+5. **Building names and costs** for the Wizard's Tower and Hearth Shrine, and which tier unlocks them.

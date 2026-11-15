@@ -436,8 +436,8 @@ function encounter(terrain, shape, rnd) {
 }
 // Plans: what a typical route holds, in order. R = rest, L = landing (rest between floors).
 const PLANS = {
-  green:  { party: ['fresh', 2], deck: 12, rooms: [['minion', 'minion'], 'R', ['regular', 'minion'], ['boss']] },
-  yellow: { party: ['novice', 3], deck: 12, rooms: [['regular', 'minion'], ['regular', 'regular', 'minion'], 'R', ['heavy', 'regular'], ['boss', 'minion']] },
+  green:  { party: ['fresh', 4], deck: 12, rooms: [['regular', 'regular', 'minion'], 'R', ['heavy', 'regular', 'minion'], ['boss', 'regular']] },
+  yellow: { party: ['novice', 4], deck: 12, rooms: [['regular', 'regular', 'regular'], ['heavy', 'regular', 'regular'], 'R', ['heavy', 'heavy', 'minion'], ['boss', 'regular', 'minion']] },
   orange: { party: ['trained', 4], deck: 14, rooms: [['regular', 'regular', 'regular', 'minion'], ['heavy', 'regular', 'regular'], 'R', ['heavy', 'heavy', 'regular'], 'L',
             ['heavy', 'regular', 'regular', 'minion'], ['elite', 'regular', 'regular'], 'R', ['boss', 'regular', 'minion']] },
   red:    { party: ['trained', 4], deck: 14, rooms: [['regular', 'regular', 'regular'], ['heavy', 'regular', 'minion'], 'R', ['elite', 'regular'], 'L',

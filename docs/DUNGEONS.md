@@ -31,6 +31,9 @@ Rules that hold everywhere:
 | Farming limit | Once per dungeon per town. No daily cap, no entry cost. |
 | Quest dungeons | A mix of story dungeons and generated ones. |
 | Clan dungeons | No, for now. |
+| Party size | **Required: exactly four citizens** for every dungeon, to start with. Simulated runs one citizen short almost never clear. |
+| Boss resistance to control | Depends on the boss; shown on the dungeon card (`docs/DUNGEON_CONTENT.md` §4). |
+| Classes | First release: Guard, Archer, Wizard, Hearthkeeper. Each class has a building; upgrading and researching it is the most direct way to unlock its cards (`docs/DUNGEON_CONTENT.md` §3.2). |
 | Auto-resolve | Never. |
 | When | After the remaining 1.0 phases. |
 | Turning back | Keeps all loot; only citizens who went down roll for injury. |
@@ -49,8 +52,8 @@ Rules that hold everywhere:
 ## 3. A run, step by step
 
 1. **Find it.** A map dungeon shows only on a tile the player has scouted (`fog_of_war`), and must be within range of the town (as camps are: `ASSAULT_RANGE` in `lib/raid_camps.js`).
-2. **Read the card.** Skull colour, number of floors, the kind of creatures inside, the boss's outline, the suggested party size, and the hours left before it goes.
-3. **Choose a party** of 1–4 adults who are not busy (`outpost_state.busyReason`), and pack supplies (§8.1). They are busy until the run ends. Setting out uses up the town's one attempt.
+2. **Read the card.** Skull colour, number of floors, the kind of creatures inside, the boss's outline and how well it resists control, the level the party should be, and the hours left before it goes.
+3. **Choose a party of exactly four** adults who are not busy (`outpost_state.busyReason`), and pack supplies (§8.1). They are busy until the run ends. Setting out uses up the town's one attempt.
 4. **Draft the deck** (§3.4).
 5. **Walk there.** The party appears on the map as a journey (`lib/travel.js`). Travel is short; the dungeon is the content, not the walk.
 6. **Play the rooms.** The floor is a small branching path. The player picks the next room from those connected to the current one.
@@ -118,15 +121,15 @@ Things to watch:
 
 Fixed when the dungeon is created. The skull is the map icon and heads the dungeon card.
 
-| Skull | Name | Floors | Fights | Of which | Deck | Suggested party | Creatures' health / strength |
+| Skull | Name | Floors | Fights | Of which | Deck | Party of four, expected level | Creatures' health / strength |
 |---|---|---|---|---|---|---|---|
-| 🟢 green | Easy | 1 | 3 | boss | 12 | 2 | +50% / +40% |
-| 🟡 yellow | Moderate | 1 | 4 | boss | 12 | 3 | +75% / +60% |
-| 🟠 orange | Hard | 2 | 6 | 1 elite, boss | 14 | 4, trained | +100% / +80% |
-| 🔴 deep red | Deadly | 2 | 7 | 1 elite, boss | 14 | 4, trained, with classes | +125% / +100% |
-| 🟣 purple | Nightmare | 3 | 9 | 2 elites, boss | 16 | 4 veterans, with classes | +175% / +140% |
+| 🟢 green | Easy | 1 | 3 | boss | 12 | villagers | +50% / +40% |
+| 🟡 yellow | Moderate | 1 | 4 | boss | 12 | novices | +75% / +60% |
+| 🟠 orange | Hard | 2 | 6 | 1 elite, boss | 14 | trained | +100% / +80% |
+| 🔴 deep red | Deadly | 2 | 7 | 1 elite, boss | 14 | trained, with classes | +125% / +100% |
+| 🟣 purple | Nightmare | 3 | 9 | 2 elites, boss | 16 | veterans, with classes | +175% / +140% |
 
-These come from simulated runs on the real combat engine (`docs/DUNGEON_CONTENT.md` §5 and §6, which also give rests, events, clear rates and playing time). Two findings shape the table: today's creatures are much too weak for a party playing cards, hence the large modifiers; and a party one citizen short of the suggestion almost never clears, so the suggested size is close to a requirement.
+These come from simulated runs on the real combat engine (`docs/DUNGEON_CONTENT.md` §5 and §6, which also give rests, events, clear rates and playing time). Two findings shape the table: today's creatures are much too weak for a party playing cards, hence the large modifiers; and a party one citizen short almost never clears, so every dungeon requires exactly four citizens.
 
 All numbers are starting values for tuning.
 
@@ -307,4 +310,4 @@ This is the larger part of the work.
 
 ## 11. Open questions
 
-All questions from the first three rounds are answered (§2). The open ones now are about content and balance, and are listed in `docs/DUNGEON_CONTENT.md` §9: how the creature scaling is stored, whether the suggested party size is a requirement, which classes ship first, where classes train, and boss resistance to lost turns.
+The design questions are answered (§2). What remains is about content and balance and is listed in `docs/DUNGEON_CONTENT.md` §9: how the creature scaling is stored, whether weak, vulnerable and Focus change, whether a new town always has four free adults, and the names and costs of the class buildings.
