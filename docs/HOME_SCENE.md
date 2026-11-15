@@ -633,6 +633,36 @@ Each step ships on its own and is shown to the owner.
    ground at desktop and phone sizes, the packer end to end).
 3. **Buildings as buttons** (§2): click routing, nameplates, bubbles, props,
    the placeholder look, the manifest. Remove the chips.
+   **Built 2026-11-15** (`js/home-scene.js` `KWHome`, `css/home-scene.css`,
+   `assets/images/buildings/manifest.json`; proofs in `verify/scene_proofs.js`
+   §6–10). Every built building, prop and empty plot is a `<button>` with a
+   label ("Granary, open the Stores"); Tab runs left to right and the hidden
+   area is `inert`. Where it differs from the text above, and why:
+   - **Smelter** opens Crafting too (it is a crafting station like the three in the table).
+   - The phone-only **Town** chip stays beside Build: it is how phones reach the town card.
+   - **Edit** stays in the header until step 4 replaces it with Build mode. Until
+     then, upgrade and demolish for a building with its own screen are in the
+     Build chip's list (and Edit's panel).
+   - **Bubbles** that exist now: research done (Library), "<item> ready" (its
+     station), back from a quest (Tavern), famine or food low (Granary), no bed
+     for N (Neighbourhood), market news (Market, from the place bar's dot), a
+     festival on or ready (the green). There is no "stores full": stores have no
+     cap. The quests dot is never lit by anything, so the tavern uses the
+     `quest_resolved` event instead. Event bubbles last until the building is
+     opened or the page reloads.
+   - **Show names**' first 3 days count from the player's first look at Home on
+     that device (no account age is sent to the client).
+   - **The manifest** has `"native": true` for art drawn on the villagers' pixel
+     grid, shown at 1×; today's images are marked `false` and keep the slot
+     sizing until they are redrawn (the owner is replacing all art).
+   - **Signposts** stand at 70 % (town) and 6 % (outskirts), not the very edges:
+     on desktop the town card covers the scene's right quarter. **Flag:** that
+     card also hides the Library and Guild Hall plots in Town and the Scout Post
+     and Walls in the Outskirts (true before this step). The art and layout
+     redo should leave that quarter clear, or the scene should end at the card.
+   - On phones the scene is 860 px wide and scrolls sideways (as before); step 8
+     looks at that.
+   - Scaffolding and time left on the nameplate wait for building time (Part D).
 4. **Build mode** (§2.3), replacing Edit.
 5. **Villager engine** (§3.2 to §3.4): the cast, walking, depth, idle.
 6. **Behaviour** (§3.5): errands, indoors, chat, children, night.
