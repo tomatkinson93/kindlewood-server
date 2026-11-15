@@ -78,7 +78,7 @@ Mail, rankings, help and settings move under the profile menu. Fishing and the t
 
 Each phase is one or two rounds of work in the style used so far, with tests. The order matters: later phases lean on earlier ones.
 
-**Agreed order:** 0 → 1 → 2 → 4 → 3 → 5 → 6. Consolidation (4) comes before onboarding (3) so the guide is written once, for the final layout.
+**Agreed order:** 0 → 1 → 2 → 4 → **4b (the living Home scene, core)** → 3 → **4b (building time and the Neighbourhood)** → 5 → 6, then **Dungeons**. Consolidation (4) comes before onboarding (3) so the guide is written once, for the final layout; the Home scene's core (4b, steps 1–9) comes before it too, because the guide points at buildings in that scene. (Updated 2026-11-15.)
 
 ### Phase 0 — Foundations (built 2026-11-10)
 - **Bundle the frontend** into a few files with a build step, and deploy it automatically (§7).
@@ -132,6 +132,24 @@ Each phase is one or two rounds of work in the style used so far, with tests. Th
 - Remove or merge small duplicate screens (Journeys folds into The Land; Stores into Home).
 - A pacing pass on tier costs using the funnel numbers. The target is a Village in the first two or three sessions.
 
+### Phase 4b — The living Home scene
+**The build spec is `docs/HOME_SCENE.md`** (agreed with the owner 2026-11-15, written with Fable). It replaces the Home chips of `LAYOUT_SPEC.md` §2.2.
+- **First, the beds cliff (§0, fix 1):** towns from before the life cycle have far more people than beds (the owner's: 83 and 24), so births and settlers stop and the town ages out. Grant plain homes once per town until beds ≥ living people. Small, and hurting live towns now: do it before anything else. (§0's other fix, the deploy workflow, is done: it is a test check since 2026-11-15.)
+- **The core (steps 2–9), frontend only and cosmetic:**
+  - a style test of pixel villagers against the backdrop;
+  - buildings as the buttons (the chips go);
+  - one Build mode;
+  - real citizens walking the town, with purposeful errands;
+  - a radial menu on a villager;
+  - a phone pass;
+  - moment markers.
+- **Then, after Phase 3 (steps 10–17):**
+  - the Neighbourhood as its own scene (houses on plots, a few styles);
+  - **building time with a new builder job** (step 12, the one part that changes play: its own review, behind `construction.on`);
+  - mood, life events and town-wide events on the same engine;
+  - last, **upkeep and building health** (behind `upkeep.on`, only once players are seen keeping builders).
+- Art: the owner is moving everything to a soft pixel style, villagers first. Build with placeholders that swap out.
+
 ### Phase 5 — Species identity
 One unique building, one unique career and one rule-bending trait each. First proposals, to be tuned:
 
@@ -150,6 +168,18 @@ Multi-species towns stay out of 1.0. To keep that door open, species will be rea
 - Each season a clan picks one **shared work**: a Great Hall, a beacon chain, a bridge, or holding a **Withered advance** back from clan land.
 - Members contribute goods, porters and guards; progress shows on the map; finishing it changes the map for everyone in the clan and is recorded in each family's chronicle.
 - Existing boons, goals and Signal Towers feed into it instead of standing alone.
+
+### Dungeons (after the 1.0 phases)
+**The design is `docs/DUNGEONS.md`; the content plan is `docs/DUNGEON_CONTENT.md`** (agreed 2026-11-15, written with Fable; numbers from `scripts/dungeon_balance_sim.js`, which plays whole runs on the real combat engine).
+- **Parties:** exactly four citizens; skull colours from green (3 fights, about a 90% clear) to purple (9 fights).
+- **Classes:** the first four are Guard, Archer, Wizard and Hearthkeeper. Class cards are drawn only by citizens who can play them.
+- **New buildings:** the Hearth Shrine from Village tier and the Wizard's Tower from Town tier.
+- **Creatures:** dungeon creatures need far more health than quest creatures (+50% at green to +175% at purple), plus a boss for each kind of land.
+- **Events and treasure** budgeted per clear.
+- **Still open** (`DUNGEON_CONTENT.md` §9):
+  - scale today's creatures, or give dungeon creatures their own stats;
+  - whether to change weak, vulnerable and Focus now;
+  - the costs of the two buildings and their research.
 
 ### After 1.0
 - Outpost specialisations, cut down to three or four charters and two new resources.
