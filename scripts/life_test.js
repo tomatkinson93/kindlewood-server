@@ -667,6 +667,69 @@ async function main() {
     check(Math.abs(LIFE.ageOf((await q('SELECT born_at FROM citizens WHERE id = $1', [old1])).rows[0]) - 1 / 28) < 0.01, 'the ageing part runs only once (a later boot leaves born_at alone)');
   }
 
+  console.log('The beds cliff (HOME_SCENE.md §0): homes for everyone, once');
+  {
+    const BC = require('../lib/beds_cliff');
+    check(BC.homesNeeded(83, 24) === 15 && BC.homesNeeded(10, 0) === 3 && BC.homesNeeded(12, 12) === 0 && BC.homesNeeded(5, 20) === 0,
+      'homes needed: 83 people and 24 beds → 15 huts; 10 and 0 → 3; none when beds already cover everyone');
+    // An old town: 11 living and a ghost, one hut of 4 (3 of them in it), 8 homeless.
+    const name2 = `cliff_${RUN}`;
+    const u2 = (await q("INSERT INTO users (username, email, password_hash, species) VALUES ($1,$2,'x','Mice') RETURNING id", [name2, `${name2}@t.l`])).rows[0];
+    const s2 = (await q(`INSERT INTO settlements (user_id, name, world_version, tier, tile_q, tile_r, last_tick, population)
+                         VALUES ($1,$2,2,'camp',$3,1,NOW(),11) RETURNING id`, [u2.id, name2, tq])).rows[0];
+    await q("INSERT INTO buildings (settlement_id, type, level) VALUES ($1, 'starter_house', 1)", [s2.id]);
+    const h1 = (await q("INSERT INTO houses (settlement_id, name, building_type, capacity) VALUES ($1, 'Willow Hut #1', 'starter_house', 4) RETURNING id", [s2.id])).rows[0].id;
+    const folk = [];
+    for (let i = 0; i < 11; i++) {
+      folk.push((await q(`INSERT INTO citizens (settlement_id, name, gender, role, house_id, life_stage, born_at)
+                          VALUES ($1, $2, $3, 'idle', $4, 'adult', $5) RETURNING id`,
+        [s2.id, `Cliff${i} Fernley`, i % 2 ? 'male' : 'female', i < 3 ? h1 : null, LIFE.bornAtFor(30).toISOString()])).rows[0].id);
+    }
+    await q(`INSERT INTO citizens (settlement_id, name, gender, role, life_stage, born_at) VALUES ($1, 'Old Bones', 'male', 'idle', 'deceased', $2)`,
+      [s2.id, LIFE.bornAtFor(80).toISOString()]);
+    // And a town that already has room is left alone.
+    const name3 = `roomy_${RUN}`;
+    const u3 = (await q("INSERT INTO users (username, email, password_hash, species) VALUES ($1,$2,'x','Mice') RETURNING id", [name3, `${name3}@t.l`])).rows[0];
+    const s3 = (await q(`INSERT INTO settlements (user_id, name, world_version, tier, tile_q, tile_r, last_tick, population)
+                         VALUES ($1,$2,2,'camp',$3,2,NOW(),2) RETURNING id`, [u3.id, name3, tq])).rows[0];
+    await q("INSERT INTO houses (settlement_id, name, building_type, capacity) VALUES ($1, 'Willow Hut #1', 'starter_house', 4)", [s3.id]);
+    for (let i = 0; i < 2; i++) await q(`INSERT INTO citizens (settlement_id, name, gender, role, life_stage, born_at) VALUES ($1, $2, 'female', 'idle', 'adult', $3)`,
+      [s3.id, `Roomy${i} Ashby`, LIFE.bornAtFor(30).toISOString()]);
+
+    const r1 = await BC.run({ only: [s2.id, s3.id] });
+    check(r1.towns.length === 1 && r1.towns[0].id === s2.id && r1.towns[0].granted === 2, 'the short town gets 2 huts (11 living, 4 beds: 8 more beds needed, the dead not counted)');
+    const b2 = await LIFE.beds(s2.id);
+    check(b2.beds === 12 && b2.living === 11 && b2.free === 1, 'beds now cover everyone (12 beds, 11 living, 1 free)');
+    const huts = (await q("SELECT name, capacity FROM houses WHERE settlement_id = $1 ORDER BY id", [s2.id])).rows;
+    check(huts.map(h => h.name).join(',') === 'Willow Hut #1,Willow Hut #2,Willow Hut #3' && huts.every(h => h.capacity === 4),
+      'they are ordinary Willow Huts of 4, numbered on from the town\'s own');
+    const bRows = (await q("SELECT COUNT(*)::int AS n FROM buildings WHERE settlement_id = $1 AND type = 'starter_house'", [s2.id])).rows[0].n;
+    check(bRows === 3, 'each has its building row, so the Neighbourhood shows 3 huts');
+    const homeless = (await q("SELECT COUNT(*)::int AS n FROM citizens WHERE settlement_id = $1 AND house_id IS NULL AND life_stage <> 'deceased'", [s2.id])).rows[0].n;
+    check(homeless === 0, 'housing sorts itself: nobody living is left without a home');
+    const lines = (await q("SELECT kind, text, family_id FROM chronicle WHERE settlement_id = $1 AND kind = 'town'", [s2.id])).rows;
+    check(lines.length === 1 && /raised homes for everyone/.test(lines[0].text) && /2 new Willow Huts/.test(lines[0].text) && lines[0].family_id === null,
+      'one chronicle line for the town ("The town raised homes for everyone")');
+    check((await q("SELECT COUNT(*)::int AS n FROM houses WHERE settlement_id = $1", [s3.id])).rows[0].n === 1
+      && !(await q("SELECT 1 FROM chronicle WHERE settlement_id = $1 AND kind = 'town'", [s3.id])).rows.length, 'a town with enough beds is left alone');
+
+    const r2 = await BC.run({ only: [s2.id, s3.id] });
+    check(r2.towns.length === 0 && (await q("SELECT COUNT(*)::int AS n FROM houses WHERE settlement_id = $1", [s2.id])).rows[0].n === 3
+      && (await q("SELECT COUNT(*)::int AS n FROM chronicle WHERE settlement_id = $1 AND kind = 'town'", [s2.id])).rows[0].n === 1,
+      'running it again grants nothing and writes no second line');
+
+    // The game-wide run is guarded by migration_marks: with the mark set it does nothing, even for a short town.
+    for (let i = 0; i < 4; i++) await q(`INSERT INTO citizens (settlement_id, name, gender, role, life_stage, born_at) VALUES ($1, $2, 'male', 'idle', 'adult', $3)`,
+      [s3.id, `Late${i} Ashby`, LIFE.bornAtFor(30).toISOString()]);
+    await q('INSERT INTO migration_marks (key) VALUES ($1) ON CONFLICT DO NOTHING', [BC.MARK]);
+    const r3 = await BC.run();
+    check(r3.skipped === true && (await q("SELECT COUNT(*)::int AS n FROM houses WHERE settlement_id = $1", [s3.id])).rows[0].n === 1,
+      'once the mark is set (the first boot after deploy), it never runs again');
+    const t2 = jwt.sign({ userId: u2.id, username: name2, species: 'Mice' }, SECRET);
+    const ch = await fetch(BASE + '/api/families/all/chronicle', { headers: { Authorization: 'Bearer ' + t2 } }).then(r => r.json()).catch(() => ({}));
+    check(Array.isArray(ch.entries) && ch.entries.some(e => e.kind === 'town'), "the player sees it in the town's chronicle");
+  }
+
   await pool.end();
 }
 
