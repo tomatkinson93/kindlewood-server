@@ -32,6 +32,8 @@ The window component (§3) is needed from **Phase 1**, for the new Families scre
 | 🧺 **The Road** | the notice board | Quests · Battles · Decks · Market · Villages |
 | 🛡 **The Clan** | the clan hall | Members · Chat · Goals · Treasury · the shared project |
 
+> **Home changes (2026-11-15):** the chips on Home are being replaced. Buildings in the scene open their own screens, one Build button remains, and villagers walk the town and can be clicked. See `docs/HOME_SCENE.md`, which overrides the Home row above.
+
 Under the **profile menu** (top right): Messages, Rankings, Online, Help, Feedback, Settings, Sign out. Unread dots on Messages and Chat also light a dot on the profile button or the Clan place.
 
 ### 2.3 Behaviour
