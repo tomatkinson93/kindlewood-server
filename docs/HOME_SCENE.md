@@ -1,0 +1,333 @@
+# The living Home scene (build spec)
+
+Status: **agreed with the owner 2026-11-15, not built.** This replaces the Home
+part of `LAYOUT_SPEC.md` §2.2 (the chips). Mockup: the first board of the layout
+canvas ("Home as a living scene").
+
+The aim: Home should feel like a small town you look into, not a picture with
+buttons laid over it. Two changes do that. Buildings become the way into each
+screen, and the townsfolk are seen walking about and can be clicked.
+
+Everything here is **frontend only and cosmetic**. Nothing a villager does on
+screen changes the game. The server is not told where anyone is standing.
+
+---
+
+## 0. Before this: two fixes from the review
+
+Do these first; they are small and one of them is hurting live towns.
+
+1. **The beds cliff.** Towns that existed before the life cycle have far more
+   people than beds (the owner's: 83 people, 24 beds; a test town: 10 and 0).
+   Births and settlers both need a free bed, and the migration capped everyone
+   at 45, so these towns age together and then empty. Fix, once per town,
+   guarded by `migration_marks`: grant plain homes until beds ≥ living people
+   (4 beds each, placed in the Neighbourhood, free), and write one chronicle
+   line ("The town raised homes for everyone"). Add a `life_test` case.
+2. **The deploy workflow.** It fails on every run because
+   `verify/research_proofs.js` needs the server repository and the workflow
+   checks out the frontend alone. Check out the server repository beside it (or
+   skip that one proof in the workflow with a clear log line). Until this is
+   green the host serves raw files and none of the bundling is live.
+
+---
+
+## 1. Decisions already made
+
+| Question | Decision |
+|---|---|
+| Art style | The owner is moving **all** art to a soft, cartoony pixel style with a painterly touch. Villagers come first, then buildings, then backdrops. |
+| Villager sprites | One set **per species** (7). Each set: walk and idle, 8 directions. Mouse exists now. |
+| Who is shown | Real citizens only: alive, and in town. Not on a quest, at an outpost, scouting, trading on the road, hauling or away as an envoy. |
+| Clicking a villager | A **radial menu** around them, not a card: Inspect, Family, Change work, House. |
+| Selected villager | Highlighted, and stands idle until the player clicks away. |
+| Movement | Purposeful: into and out of buildings, meeting and "talking". |
+| Game effect | None for now. Later: a villager with an open moment stands with an exclamation mark. |
+| Building art | The owner will generate it. Build with placeholders that swap out. |
+
+---
+
+## 2. Part A: buildings are the buttons
+
+### 2.1 What goes
+
+The chip row on Home (`TOOLS.home` in `js/places.js`) goes, except **Build**.
+The Town / Outskirts / Edit toggles in the scene's own header go too.
+
+### 2.2 What each thing opens
+
+A click (or Enter) on a built building opens its main screen:
+
+| Building | Opens | Today's call |
+|---|---|---|
+| Granary | Stores | `openInventoryModal()` |
+| Tavern | The tavern | `visitTavern()` |
+| Market | The market | the Market screen (stays in The Road as well) |
+| Library | Research | `openLibrary()` |
+| Workshop, Smithy, Jeweller | Crafting, on that station | `openCraftingAny()` with the station chosen |
+| Guild Hall | Upgrade the town | `openTierUpgradeModal()` |
+| Neighbourhood | Homes | `openHousingModal()` |
+| Fishing Post | Fishing | `visitFishingPost()` |
+| Every other building (farm, mine, lumber camp, …) | Its own panel: workers, output, upgrade | the existing `sv-bp` panel |
+
+Things that are not buildings get a **prop** in the scene:
+
+- **Festival**: a village green with a maypole, shown once festivals unlock.
+- **Wonders**: a building site with scaffolding, shown from City tier.
+- **Town ↔ Outskirts**: a wooden signpost at the right edge of Town ("To the
+  Outskirts →") and at the left edge of the Outskirts ("← To town").
+
+### 2.3 Build mode
+
+One **Build** button remains, top left. It replaces both Build and Edit:
+
+- Off (normal): empty plots are hidden. Buildings open their screens.
+- On: empty plots show ("Build here"), buildings can be dragged to another
+  plot, and a click on a building opens the manage panel (upgrade, demolish).
+  Villagers are hidden. A "Done" button and Esc leave the mode.
+
+A town with nothing built yet starts with Build mode's plots showing, so a new
+player is never looking at an empty meadow with no way forward.
+
+### 2.4 Labels and bubbles
+
+- Name labels are **not** shown all the time. Hover or keyboard focus lifts the
+  building slightly, adds a warm glow and shows a nameplate: name, and one line
+  saying what it opens ("Granary · Open the Stores").
+- On touch there is no hover: the first tap opens the screen directly. To keep
+  buildings findable, all nameplates show for 4 seconds when Home opens, and a
+  "Show names" toggle sits in the profile menu (on by default for a player's
+  first 3 days).
+- A **bubble** floats over a building when something there is waiting: a craft
+  finished, research done, a visitor at the tavern, stores full, a festival
+  ready. One bubble per building, the most urgent wins. The bubble text is
+  short ("Sickle ready"). These reuse the dots the place bar already tracks.
+- Under construction or upgrading: scaffolding overlay and the time left on the
+  nameplate.
+
+### 2.5 Every building is a real button
+
+Each is a `<button>` with an `aria-label` that says the name and what it opens.
+Tab order follows left to right. The profile menu keeps a plain list of the
+same screens as a fallback (it is also what a screen reader user will prefer).
+
+### 2.6 Placeholders and art
+
+Until a building has art it shows a tidy placeholder in the new style: a simple
+hut silhouette in the building's colour with its glyph on a hanging sign. No
+bare emoji blocks.
+
+Art the owner will supply (transparent PNG, drawn at the **same pixel size as
+the villagers**, so a doorway is about 70 px tall next to a 62 px villager;
+most buildings 220 to 320 px wide):
+
+`tavern, market, granary, neighbourhood, starter_house, farm, lumber_camp,
+fishing_post, forager_hut, guild_hall, smithy, jeweller, workshop, mine,
+smelter, library, walls, watchtower, scout_post`, plus props: `village_green,
+wonder_site, signpost`.
+
+Files go in `assets/images/buildings/<key>.png`. Add
+`assets/images/buildings/manifest.json` with, per key, the image size and the
+**door point** (x, y in the image) where villagers go in and out. A missing
+entry means "use the placeholder and the bottom centre as the door".
+
+---
+
+## 3. Part B: villagers
+
+### 3.1 Sprites
+
+The owner's sprite: 96 × 96 px frames, 6 frames, 200 ms each, the figure about
+47 × 62 px inside the frame. Walk and idle, 8 directions.
+
+- The owner delivers GIFs (as generated). A script, `scripts/pack_sprites.js`,
+  packs them into two sheets per species:
+  `assets/sprites/villagers/<species>_walk.png` and `<species>_idle.png`.
+  Rows are directions in this order: S, SW, W, NW, N, NE, E, SE. Columns are
+  frames. The script also writes `villagers.json` (frame size, frame count,
+  frame time, the foot point). Source GIFs live in `art/villagers/<species>/`
+  named `walk_se.gif`, `idle_s.gif`, and so on.
+- If a species has no sheet yet, use the mouse sheet. If a direction is
+  missing, mirror its opposite (W from E, NW from NE, SW from SE).
+- Draw with `image-rendering: pixelated` at **whole-number scale only** (1× on
+  desktop and phone; 2× on very large screens). No depth scaling: pixel art
+  shimmers at odd sizes.
+- Variety without more art: children are drawn at 0.75× (the one exception to
+  the whole-number rule; revisit if it looks soft), elders walk slower, and
+  each family gets a cloak tint from a small palette (a CSS `hue-rotate` on the
+  sprite, tuned so fur does not turn green; if that looks wrong, drop it).
+
+### 3.2 How they are drawn
+
+Each villager is a DOM element (a `<button>` holding a sprite `<div>` whose
+`background-position` steps through the sheet) inside the scene's foreground
+layer, the same layer as the building slots. Reasons: clicks, focus and screen
+readers come free; and villagers can pass in front of and behind buildings
+simply by `z-index = their foot y`. Buildings get `z-index` from their own foot
+y the same way.
+
+One `requestAnimationFrame` loop moves everyone with `transform` only. It stops
+when Home is not showing, when the tab is hidden, in Build mode, and for
+players who ask for reduced motion (they get villagers standing idle in place).
+
+### 3.3 Who is on screen (the cast)
+
+- Eligible: living citizens for whom `citizenAway(c)` is null.
+- Shown at once: up to **14** on desktop, **8** on a phone. A city of 83 does
+  not put 83 figures on the meadow. The rest count as "indoors".
+- Picking: anyone who is the subject of an open moment first (§3.7); then
+  spread across families; a child only together with one of its parents;
+  at least one elder if the town has one.
+- Town shows people who work in town buildings, the unemployed, children and
+  elders. The Outskirts show people who work in outskirts buildings.
+- The cast changes slowly: every minute or so one villager walks into a
+  building and a different one walks out. Nobody pops in or out of thin air,
+  except when Home first opens (start them spread out, some indoors).
+- When citizen data refreshes: someone who has left (quest, death) walks into
+  the nearest building and is dropped; nobody is re-created if still present.
+
+### 3.4 Where they can walk
+
+Positions use the slots' own percent coordinates. Each area has one walkable
+ground polygon (`SV_GROUND = { town: [...], outskirts: [...] }`, roughly the
+band from y 66 % to 94 %). Villagers walk in straight lines between points
+inside it. No obstacle avoidance in the first version: depth sorting makes
+walking "behind" a building read correctly.
+
+Points of interest: each built building's door (from the manifest, following
+the building if the player moved it), plus a few named spots per area (the
+well, the riverbank, the signpost, a bench by the tavern).
+
+Speed about 40 px a second for adults, 30 for elders, 55 for children. The
+direction row is chosen from the movement angle (8 ways).
+
+### 3.5 What they do
+
+A small state machine per villager, client-side, with a seeded random source so
+tests can replay it:
+
+| State | What happens |
+|---|---|
+| **Errand** | Pick a place that makes sense (own workplace by day, the tavern in the evening, home at night, otherwise a named spot). Walk there. |
+| **Indoors** | At a door: fade out over 300 ms, stay "inside" 20 to 60 s, fade in, pick a new errand. The building gives a tiny bounce when someone enters. |
+| **Idle** | Stand with the idle animation for 3 to 10 s, facing the camera or the nearest villager. |
+| **Chat** | Two villagers who are both free and within about 200 px walk to each other, stop a step apart facing each other, and take turns showing a small speech bubble (three animated dots, sometimes a tiny picture: fish, heart, acorn, music note) for 4 to 7 s. Then both go on their way. A pair does not chat again for 2 minutes. |
+| **Follow** | A child walks a little behind a parent, and now and then runs ahead and waits. Two children near each other may chase for a few seconds. |
+| **Selected** | See §3.6. |
+| **Waiting** | See §3.7. |
+
+Time of day (the game clock the top bar already shows): by night most of the
+cast is indoors and two or three are out; the tavern's windows glow. Morning
+sends workers toward their buildings.
+
+### 3.6 Selecting a villager: the radial menu
+
+- Click, tap or Enter on a villager selects them. They stop, switch to idle
+  facing the camera, and get a bright outline and a ring on the ground. The
+  rest of the town carries on. Nearby villagers will not start a chat with them.
+- Their name and one line appear under them ("Poppy Brightburrow · farmer, 20").
+- Round buttons fan out in an arc around them (above by default; the arc turns
+  to stay on screen near an edge). Each is 44 px (48 on touch) with an icon and
+  a short label beneath:
+
+| Button | Does | Call |
+|---|---|---|
+| Inspect | The full profile | `openCitizenProfile(id)` |
+| Family | Their family line | `KWFamilies.open({ family })` |
+| Change work | Pick a job | the existing job picker for that citizen |
+| House | Where they live, move them | `openHousingModal()` on their home |
+
+- Children have no Change work. Youths show **Apprenticeship** in its place.
+- Click elsewhere, Esc, or choosing a button deselects. After a window opened
+  from the menu closes, the villager walks on.
+- Keyboard: Tab reaches villagers after the buildings; arrow keys move between
+  the menu's buttons.
+- The menu opens with a quick fan-out (150 ms); none under reduced motion.
+
+### 3.7 Moments (build last; ask the owner before switching it on)
+
+A citizen who is the subject of an open moment is always in the cast. They
+stand at a clear spot near the centre with a bobbing **!** bubble. Clicking
+them opens that moment in the dialogue box instead of the radial menu. If the
+moment payload does not already name its citizen, add `citizen_ids` to it.
+This is the first tie between the scene and play, and the cheapest one.
+
+---
+
+## 4. Build order
+
+Each step ships on its own and is shown to the owner.
+
+1. **The two fixes** (§0).
+2. **Style test.** Sprite packer, and one mouse walking a loop in the real
+   scene, all 8 directions. Nothing else. The owner looks at pixel villagers
+   against the current backdrop and decides the order of the art move.
+3. **Buildings as buttons** (§2): click routing, nameplates, bubbles, props,
+   the placeholder look, the manifest. Remove the chips.
+4. **Build mode** (§2.3), replacing Edit.
+5. **Villager engine** (§3.2 to §3.4): the cast, walking, depth, idle.
+6. **Behaviour** (§3.5): errands, indoors, chat, children, night.
+7. **Selection and the radial menu** (§3.6).
+8. **Phone and comfort pass**: touch sizes, cast of 8, reduced motion, frame
+   time on a mid-range phone (target: under 2 ms a frame for the loop).
+9. **Moment markers** (§3.7), once the owner says go.
+
+## 5. Tests
+
+`verify/scene_proofs.js`, pure logic with a fake clock and seeded randomness:
+
+- The cast never includes anyone away or dead, never exceeds the cap, never
+  holds a child without a parent, always holds moment subjects.
+- Every errand target lies inside the walkable polygon; a door follows a moved
+  building.
+- Direction row chosen from an angle, for all 8.
+- Chat: two free villagers in range pair up; a selected one never does; the
+  cooldown holds.
+- Selecting stops movement; deselecting resumes it.
+- The building routing table: every key in `SV_VISUALS` opens something.
+- Missing sheet → mouse; missing direction → mirrored.
+
+Browser check (Playwright, as for the earlier phases): Home at 1400 × 900 and
+390 × 844, no page errors, the chips are gone, a building click opens its
+screen, a villager click shows four buttons.
+
+## 6. Things to hold back on (review notes)
+
+- **Do not redraw everything at once.** Villagers, then buildings, then the
+  backdrops (there is one set of four layers per biome). The style test in
+  step 2 exists so no art is made on a guess.
+- **Pixel size must match.** A building drawn at a finer or coarser pixel grid
+  than the villagers will look wrong however good it is. Fix the grid first:
+  one art pixel is one screen pixel at 1×.
+- **Eight directions is more than this scene needs.** The town is seen from
+  the side, so most walking is east, west and the four diagonals. For the six
+  species still to make, E, NE, SE, N and S (five rows, mirrored for the rest)
+  would be enough if generation time matters.
+- **No pathfinding, no collisions, no server sync** in the first version. They
+  cost a lot and nobody will notice their absence at 14 villagers.
+- **Do not make the scene the only way in.** Keep the list in the profile menu.
+
+## 7. Ideas that tie in later (not in this build)
+
+- **Mood at a glance.** Small emotes over heads driven by real state: a music
+  note when the town is happy, a rumbling tummy when food is short. The scene
+  becomes a readout of the town without a number.
+- **Life events seen happening.** A newborn: a parent stands outside the home
+  with a heart. A coming of age: the youth walks to their new workplace for the
+  first time. A death: villagers gather by the home with a candle for a minute.
+- **Settlers arrive on foot** from the edge of the scene with a bundle, and
+  walk to their new home.
+- **Festivals**: everyone gathers on the green and dances.
+- **Raids**: villagers run indoors; guards stand at the gate.
+- **Who is inside.** A building's nameplate lists who is in there now.
+- **Travellers.** A visiting figure walks to the tavern when a visitor moment
+  is open.
+- **Seasons and weather**: snow on roofs, lanterns at night, rain.
+
+## 8. Still open (ask the owner)
+
+1. Moment markers (§3.7): include in this build, or leave for later?
+2. Is merging Edit into one Build mode (§2.3) acceptable?
+3. Sprite delivery: GIFs per direction as described in §3.1, or will the
+   generator export sheets directly?
+4. Should the Outskirts have villagers from the start, or Town only first?
