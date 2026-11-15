@@ -27,7 +27,7 @@ Do these first; they are small and one of them is hurting live towns.
    guarded by `migration_marks`: grant plain homes until beds ≥ living people
    (4 beds each, placed in the Neighbourhood, free), and write one chronicle
    line ("The town raised homes for everyone"). Add a `life_test` case.
-2. **The deploy workflow.** It fails on every run because
+2. ~~**The deploy workflow.**~~ **Done 2026-11-15**, differently: the site deploys from Porkbun (the repo's files as they are), so the workflow became a test check (`.github/workflows/proofs.yml`), and proofs that need the server repo skip and say so (the full suite runs them). Was: it fails on every run because
    `verify/research_proofs.js` needs the server repository and the workflow
    checks out the frontend alone. Check out the server repository beside it (or
    skip that one proof in the workflow with a clear log line). Until this is
