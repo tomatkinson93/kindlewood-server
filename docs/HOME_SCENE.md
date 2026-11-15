@@ -563,14 +563,15 @@ game nibbling at you.
 
 - **Camps are exempt.** Wear starts at Village tier. A new player learns
   building first.
-- **A grace period.** When the switch is turned on, and whenever a town's last
-  builder is lost, nothing wears for 3 real days. The news says so, plainly:
-  "Nobody is looking after the town. Buildings will start to wear in 3 days."
+- **No grace period.** (Owner, 2026-11-15: there are no active players yet,
+  only the owner testing.) Wear starts as soon as buildings are uncovered.
+  Losing the last builder still writes a plain news line: "Nobody is looking
+  after the town. Buildings have started to wear." Revisit a grace period
+  before the game opens to players.
 - **Houses never lose their beds.** A broken house keeps its residents and
   still counts for births and settlers; its residents are a little less happy
   until it is mended. Otherwise a builder dying of old age while the player is
-  away could stop births and start a second population cliff. *(Review's
-  recommendation; the owner should confirm.)*
+  away could stop births and start a second population cliff.
 - **Everything starts at 100** when the switch goes on.
 - The town card shows upkeep in one line: "Upkeep: 2 builders look after 16 of
   19 buildings", amber when short. The away report says what wore while the
@@ -661,8 +662,8 @@ Server, `scripts/neighbourhood_test.js` and `scripts/construction_test.js`:
 - Cancel refunds in full before work and half after.
 - Upkeep (`scripts/upkeep_test.js`): enough builders, nothing wears; too few,
   only the uncovered buildings wear, least important first; 5 days to broken;
-  worn still works, broken gives nothing; a camp never wears; the grace period
-  holds after the last builder is lost; a broken house keeps its beds; repair
+  worn still works, broken gives nothing; a camp never wears; wear starts at
+  once when the last builder is lost; a broken house keeps its beds; repair
   happens when the queue is empty and "Repair now" jumps the queue; an away
   builder covers nothing; with the switch off, health never moves.
 
@@ -715,10 +716,9 @@ screen, a villager click shows four buttons.
     later**; placeholders until then.
 12. House styles: **the owner will make four new sets**; the four names in C.4
     are stand-ins.
+13. Broken houses keep their beds: **yes.** Worn buildings work fully and only
+    broken ones stop: **yes.** 8 buildings per builder and 5 days to break:
+    **yes**, as starting numbers.
+14. The 3-day grace period for upkeep: **dropped** for now.
 
-## 9. Still open (ask the owner)
-
-1. Houses never lose their beds when broken (E.5): agreed?
-2. Worn buildings still work fully, and only broken ones stop (E.2): agreed?
-3. One builder looks after 8 buildings, and an untended building breaks in
-   5 days (E.3): right feel?
+Nothing is open. Questions that come up while building go to the owner.
