@@ -620,6 +620,17 @@ Each step ships on its own and is shown to the owner.
 2. **Style test.** Sprite packer, and one mouse walking a loop in the real
    scene, all 8 directions. Nothing else. The owner looks at pixel villagers
    against the current backdrop and decides the order of the art move.
+   **Built 2026-11-15**, waiting on the owner's GIFs. `scripts/pack_sprites.js`
+   (no dependencies; its GIF reader matches Pillow pixel for pixel) packs
+   `art/villagers/<species>/<anim>_<dir>.gif` (see `art/villagers/README.md`)
+   into sheets and `villagers.json`. `js/villagers.js` draws one mouse walking
+   an eight-legged loop (one leg per direction, then 3 s idle facing S) in the
+   area that is showing, with a small panel: direction, 1×/2×, pause, off. Turn
+   it on with `?villagers=test` (remembered per device; `?villagers=off`). Until
+   the sheets exist a placeholder mouse is drawn. It hides in Edit mode, stops
+   when the tab is hidden, and stands still under reduced motion. Proofs:
+   `verify/scene_proofs.js` (directions, sheet fallbacks, the loop stays on the
+   ground at desktop and phone sizes, the packer end to end).
 3. **Buildings as buttons** (§2): click routing, nameplates, bubbles, props,
    the placeholder look, the manifest. Remove the chips.
 4. **Build mode** (§2.3), replacing Edit.
