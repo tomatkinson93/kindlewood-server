@@ -8,8 +8,11 @@ The aim: Home should feel like a small town you look into, not a picture with
 buttons laid over it. Two changes do that. Buildings become the way into each
 screen, and the townsfolk are seen walking about and can be clicked.
 
-Everything here is **frontend only and cosmetic**. Nothing a villager does on
-screen changes the game. The server is not told where anyone is standing.
+Parts A and B are **frontend only and cosmetic**. Nothing a villager does on
+screen changes the game, and the server is not told where anyone is standing.
+Part C (the Neighbourhood) adds a little server data. **Part D (builders and
+building time) is a real change to play** and has the server work; treat it with
+the same care as Phase 1.
 
 ---
 
@@ -48,6 +51,12 @@ Do these first; they are small and one of them is hurting live towns.
 | Outskirts | Have villagers from the start, the same as Town. |
 | Sprite delivery | One GIF per direction; a script packs them into sheets (§3.1). |
 | Mood, life events, town events | Agreed and in this build (§3.8 to §3.10), after the core. |
+| Neighbourhood | Its own scene, for houses only, with villagers. Houses snap to a grid of plots. Built so a town can have **several neighbourhoods later** (Part C). |
+| House styles | A few to start, cosmetic only. Paid cosmetics much later. |
+| Building time | Buildings are no longer instant. A new **builder** job does the work (Part D). |
+| No builders | **Nothing gets built.** (Owner's choice over a slow base rate; §D.5 lists the guard rails this needs.) |
+| How long | Short: minutes for early buildings, about 2 hours at most with one builder. |
+| Several sites | A queue in the player's order; all builders work on the first. |
 | Building art | The owner will generate it. Build with placeholders that swap out. |
 
 ---
@@ -316,6 +325,191 @@ Priority when several apply: raid, then death, then festival, then the rest.
 
 ---
 
+## 3C. Part C: the Neighbourhood
+
+### C.1 What it is
+
+Clicking the Neighbourhood in Town no longer opens the housing window. It opens a
+third scene, beside Town and Outskirts, that holds **only houses**. Villagers
+walk here too. The old housing window (`js/housing.js`) is retired; what it did
+moves into this scene.
+
+In Town, the Neighbourhood stays as one building: a cluster of roofs that is the
+door to the scene. Its nameplate shows beds ("Homes · 18 of 20 beds") and its
+bubble warns when people have no bed. A signpost in the scene leads back to town.
+
+### C.2 Data (server)
+
+Model it for several neighbourhoods from the first day, even though a town has
+one for now.
+
+- New table `neighbourhoods (id, settlement_id, name, position, created_at)`.
+  A migration gives every town one ("The Old Quarter").
+- `houses` gains `neighbourhood_id`, `plot` (a number), `style` (text, default
+  `thatch`) and, for Part D, a state. `(neighbourhood_id, plot)` is unique.
+  The migration puts existing houses on plots in the order they were built.
+- Every route takes or returns a neighbourhood id. Nothing may assume "the"
+  neighbourhood. Beds are still counted across the whole town.
+- New routes: place a house on a plot (pays the cost, starts construction),
+  move a house to a free plot (free, instant), set its style (free, instant),
+  demolish (as now: residents lose their bed first).
+
+### C.3 Plots
+
+- Each neighbourhood is a grid: **3 rows of 12 plots, 36 in all**, along lanes.
+  The scene is about three screens wide and pans sideways (drag, arrow keys, or
+  the mouse at the edge). It opens centred on the newest house.
+- Plots open with the town's tier: Camp 6, Village 12, Town 24, City 36. (36
+  houses is 144 beds; when that is not enough, the second neighbourhood is the
+  answer, not a bigger grid.) If a town already has more houses than its tier
+  allows, it keeps them all.
+- In Build mode free plots show as staked ground. Outside it they are plain
+  grass, so the place looks like a village, not a form.
+- Doors face the lane, so every house can be reached by walking the lanes. That
+  is the reason for a grid: no path-finding is needed.
+
+### C.4 Styles
+
+- A style is **looks only**. Every house holds the same beds
+  (`LIFE.HOUSE_BEDS`, 4) whatever it looks like. Keep it that way for ever:
+  when paid cosmetics arrive they must never be worth beds or happiness.
+- Start with four: thatched cottage, timber-frame house, stone cottage, turf-roof
+  burrow. The catalogue lives on the server (`lib/house_styles.js`): `key`,
+  `label`, `source` (`base` for all four now; later `festival`, `shop`, …). The
+  server checks a player owns the style they ask for, so the later shop needs no
+  redesign.
+- Changing a house's style is free and instant. Art: one PNG per style at the
+  shared pixel size, door point in the buildings manifest.
+
+### C.5 The scene
+
+- The same engine as Town (§3). The cast is drawn from people who **live** here.
+  Errands centre on home: out of their own door in the morning, back at night,
+  chats over the fence, children playing in the lane.
+- A house with people in it has lit windows at night and chimney smoke. An empty
+  house is dark.
+- Nameplate on hover: the house's name and who lives there. Houses are named for
+  the family in them ("The Brightburrow home") unless the player has renamed it;
+  a mixed house keeps its given name. This replaces "Willow Hut #3".
+- Clicking a house opens its panel in the context panel: residents (each one
+  clickable), free beds, move someone in or out, rename, change style.
+- Build mode here: place a house, drag one to another plot, demolish.
+- A villager without a bed (§3.8) stands in the lane by a free plot.
+
+### C.6 Later (not now)
+
+- **More neighbourhoods**: a new one opens at a later tier, each with its own
+  backdrop (riverside, hillside). A row of signposts picks between them.
+- **Decorations** on plots and lanes: wells, gardens, fences, lanterns, washing
+  lines. These are the natural paid or festival cosmetics.
+- **A family's home growing with the family**: a porch or a second storey as a
+  line reaches its third generation. Looks only.
+
+---
+
+## 3D. Part D: builders and building time
+
+### D.1 The change
+
+Today a building, an upgrade or a house is finished the moment it is paid for.
+After this, paying starts a **construction site**. Builders work on it and it is
+finished when the work is done.
+
+### D.2 The builder job
+
+- A new class, `builder`, in `lib/careers/classes.js`. It **needs no building**
+  (`needs: null`), so a brand-new camp can have one. Adults only, like other jobs.
+- Each builder who is in town (alive, adult, not away) adds work to the first
+  site in the queue. Builders earn career XP from work done. Their tree is short
+  for now: faster building at each step, a capstone with a clear number. The
+  Stonemason keeps the cost discount; builders are about speed, not price.
+- With nothing to build, builders **gather a little timber and stone** (about
+  half a woodcutter's rate). Without this, a builder is dead weight between
+  projects and the player is pushed into swapping jobs back and forth, which is
+  chore work. *(Suggested by the review; the owner should confirm.)*
+
+### D.3 Work and time
+
+- Every site has `work_needed`, in builder-minutes. One builder does one unit a
+  minute before perks.
+- Sizes, all in `lib/tuning.js` so they can be changed live:
+  a house 5; a first-level building 3 to 10 by kind; an upgrade
+  `base × level^1.3`; **never more than 120** (2 hours with one builder).
+- Three builders finish in a third of the time. No cap on builders for now;
+  watch it in play.
+- Progress is worked out on the server from the clock, in the worker tick
+  (`lib/quest_worker.js`), with a pure function `advance(sites, builders, from,
+  to)` that tests can call. It runs while the player is offline. Work left over
+  when one site finishes carries on into the next.
+- Compare-and-swap the write, as the other ticks do.
+
+### D.4 The queue
+
+- Up to 5 sites. The player can reorder and cancel.
+- Cost is paid when the site is ordered. Cancel before any work is done: full
+  refund. After: half.
+- All present builders work on the first site.
+
+### D.5 No builders means no progress (and the guard rails for that)
+
+The owner chose this over a slow base rate. It is the stricter rule, so the game
+must never leave a player wondering why nothing is happening:
+
+- Ordering a building with no builder: the confirm says so, with a button that
+  opens the job picker ("Nobody is a builder. Choose one").
+- A site with no builder shows a "Waiting for a builder" bubble in the scene and
+  in the town card, and one news line (not one per minute).
+- If the last builder dies, leaves on a quest or changes job while a site is
+  open: a news line and the same bubble.
+- The first steps list (`lib/first_steps.js`) and, later, the guide in Phase 3
+  teach it: "Make someone a builder" comes before "Build a hut".
+- The funnel log gains "first building finished", to see whether new players
+  get stuck here. If they do, revisit this rule.
+
+### D.6 What works while building
+
+- A **new** building does nothing until finished.
+- An **upgrade** leaves the building working at its present level. Never punish
+  a player for improving something.
+- A **house** adds no beds until finished. When it finishes, `autoHouse` runs.
+- Demolishing is instant.
+- The one-off homes granted in §0 are finished at once.
+- Outpost buildings and Wonders are **not** changed here. Flag for later.
+
+### D.7 When something is finished
+
+A news line and a chronicle line ("The Library was finished by Delia and Fenn"),
+a bubble on the building, and in the scene the builders cheer.
+
+### D.8 In the scenes
+
+- A site is drawn where the building will stand: three stages by work done
+  (staked ground and a pile of timber; a frame with scaffolding; nearly done).
+  Two sizes of generic site art cover every building; houses use the same.
+- Builders are always in the cast (up to 4 shown). They walk to the site and
+  play the **work** animation, with rests and the odd trip to the stores.
+- Work animation: a new sprite per species, `work_e.gif` (hammering; mirrored
+  for west) is enough. Until it exists: the idle animation, a hammer emote and
+  puffs of dust at the site.
+- Hover or tap the site: what it is, a progress bar, and an honest estimate
+  ("about 12 minutes with 2 builders") or "Waiting for a builder".
+- The town card's "Going up" list is the queue: drag to reorder, cancel.
+
+### D.9 Things to watch
+
+- **Tests.** Around thirty server suites build things and expect them at once.
+  Give tests one clear way through (a helper that orders, then finishes the site
+  through the Dev Tools route). Do not add a secret "instant" switch that could
+  be left on.
+- **Dev Tools**: finish a site now; set builder count; show the queue.
+- **Early friction.** This adds a wait to the first minutes of the game. Keep the
+  first three buildings at 3 minutes or less with one builder.
+- **Never sell speed.** If money enters the game later, it buys looks (C.4),
+  not finished buildings. A cosy game that sells skipping its own waits stops
+  being cosy.
+
+---
+
 ## 4. Build order
 
 Each step ships on its own and is shown to the owner.
@@ -333,11 +527,17 @@ Each step ships on its own and is shown to the owner.
 8. **Phone and comfort pass**: touch sizes, cast of 8, reduced motion, frame
    time on a mid-range phone (target: under 2 ms a frame for the loop).
 9. **Moment markers** (§3.7).
-10. **Mood** (§3.8).
-11. **Life events** (§3.9).
-12. **Town-wide events** (§3.10).
+10. **Neighbourhood data** (C.2): tables, migration, routes, tests. No visible change yet.
+11. **Neighbourhood scene** (C.3 to C.5): plots, styles, the house panel; retire the housing window.
+12. **Construction on the server** (D.2 to D.7): the builder class, sites, the queue, the tick, the guard rails, Dev Tools, and the test helper. Ship behind the tuning switch `construction.on` so it can be turned on for the owner's town first.
+13. **Construction in the scenes** (D.8): sites, working builders, the queue in the town card.
+14. **Mood** (§3.8).
+15. **Life events** (§3.9).
+16. **Town-wide events** (§3.10).
 
-Steps 1 to 9 are the core. Steps 10 to 12 are layers on the same engine: each is a
+Steps 1 to 9 are the core. Steps 10 to 13 are the Neighbourhood and building
+time; step 12 is the only one that changes how the game plays, so it gets its own
+review before it is switched on for everyone. Steps 14 to 16 are layers on the same engine: each is a
 reader of state the client already has plus a few scripted errands, so do not let
 them leak into the engine as special cases. Give the engine one hook, "play this
 script with these villagers", and build all three on it.
@@ -361,6 +561,19 @@ script with these villagers", and build all three on it.
 - Life events: each chronicle kind maps to a script; one at a time; the queue
   drops beyond three; an old entry (over 10 minutes) plays nothing.
 - Town events: the priority order; a raid sends everyone indoors.
+
+Server, `scripts/neighbourhood_test.js` and `scripts/construction_test.js`:
+
+- Every town has a neighbourhood after the migration; old houses sit on
+  distinct plots; two houses cannot share a plot; a style the player does not
+  own is refused; a style never changes beds.
+- `advance()`: no builders, no progress; one builder, one unit a minute; three
+  builders, three; an away builder does not count; leftover work carries into
+  the next site; nothing exceeds the cap; the queue order is honoured.
+- An upgrade keeps the building working; a new building does nothing until
+  done; a house gives beds only when done and then people are housed.
+- Cancel refunds in full before work and half after.
+- Idle builders gather; they stop gathering the moment a site is ordered.
 
 Browser check (Playwright, as for the earlier phases): Home at 1400 × 900 and
 390 × 844, no page errors, the chips are gone, a building click opens its
@@ -399,3 +612,15 @@ screen, a villager click shows four buttons.
 3. Sprites: **one GIF per direction**; the packer makes the sheets.
 4. Outskirts: **villagers from the start.**
 5. Mood emotes, dancing, life events and town-wide events: **yes, all in.**
+6. House placement: **snap to a grid of plots**, and allow for several
+   neighbourhoods later.
+7. No builders: **nothing gets built.**
+8. Build times: **short** (minutes, to about 2 hours).
+9. Several sites: **a queue**, in the player's order.
+
+## 9. Still open (ask the owner)
+
+1. Idle builders gathering a little timber and stone (D.2): yes or no?
+2. Will the owner generate a **work** (hammering) animation per species, and
+   the construction-site art (two sizes, three stages)?
+3. The four starting house styles (C.4): are these the right four?
