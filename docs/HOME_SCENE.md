@@ -10,8 +10,8 @@ screen, and the townsfolk are seen walking about and can be clicked.
 
 Parts A and B are **frontend only and cosmetic**. Nothing a villager does on
 screen changes the game, and the server is not told where anyone is standing.
-Part C (the Neighbourhood) adds a little server data. **Part D (builders and
-building time) is a real change to play** and has the server work; treat it with
+Part C (the Neighbourhood) adds a little server data. **Parts D and E (builders,
+building time and upkeep) are real changes to play** and has the server work; treat them with
 the same care as Phase 1.
 
 ---
@@ -57,6 +57,8 @@ Do these first; they are small and one of them is hurting live towns.
 | No builders | **Nothing gets built.** (Owner's choice over a slow base rate; §D.5 lists the guard rails this needs.) |
 | How long | Short: minutes for early buildings, about 2 hours at most with one builder. |
 | Several sites | A queue in the player's order; all builders work on the first. |
+| Upkeep | Buildings have **health**. Builders keep it up; with no builders buildings wear down until they stop working, and must be repaired. Repairs cost no materials for now (Part E). |
+| Art | The owner will make four new house styles, and later a work animation per species and construction-site art. Placeholders until then. |
 | Building art | The owner will generate it. Build with placeholders that swap out. |
 
 ---
@@ -373,8 +375,8 @@ one for now.
 - A style is **looks only**. Every house holds the same beds
   (`LIFE.HOUSE_BEDS`, 4) whatever it looks like. Keep it that way for ever:
   when paid cosmetics arrive they must never be worth beds or happiness.
-- Start with four: thatched cottage, timber-frame house, stone cottage, turf-roof
-  burrow. The catalogue lives on the server (`lib/house_styles.js`): `key`,
+- Start with four. The owner is making the art; until it arrives use stand-ins
+  (thatched cottage, timber-frame house, stone cottage, turf-roof burrow). The catalogue lives on the server (`lib/house_styles.js`): `key`,
   `label`, `source` (`base` for all four now; later `festival`, `shop`, …). The
   server checks a player owns the style they ask for, so the later shop needs no
   redesign.
@@ -423,10 +425,8 @@ finished when the work is done.
   site in the queue. Builders earn career XP from work done. Their tree is short
   for now: faster building at each step, a capstone with a clear number. The
   Stonemason keeps the cost discount; builders are about speed, not price.
-- With nothing to build, builders **gather a little timber and stone** (about
-  half a woodcutter's rate). Without this, a builder is dead weight between
-  projects and the player is pushed into swapping jobs back and forth, which is
-  chore work. *(Suggested by the review; the owner should confirm.)*
+- With nothing to build, builders **look after the town** (Part E). They do not
+  gather resources.
 
 ### D.3 Work and time
 
@@ -510,6 +510,91 @@ a bubble on the building, and in the scene the builders cheer.
 
 ---
 
+## 3E. Part E: upkeep and building health
+
+### E.1 The idea
+
+Every building has **health**, 0 to 100. Builders look after the town. A town
+with too few builders slowly wears down; a building that reaches 0 is **broken**
+and gives nothing until it is repaired. Repair costs time, not materials (for
+now).
+
+This is the second rule that punishes having no builders (the first is D.5), and
+it is the only thing in this document that can take something away from a player.
+So it is built to be slow, loud and fully recoverable, and it has **its own
+switch** (`upkeep.on`), turned on only after building time has been live for a
+while.
+
+### E.2 Health and its three states
+
+| Health | State | Effect | Looks |
+|---|---|---|---|
+| 60 to 100 | Sound | Works normally | Normal |
+| 1 to 59 | Worn | **Still works normally** | Missing tiles, a patched roof, weeds |
+| 0 | Broken | Gives nothing: no output, no screen behind it, no jobs | Boarded up, a "needs repair" bubble |
+
+Worn is a warning the player can see for days before anything is lost. Do not
+scale output with health: a sliding penalty is hard to read and feels like the
+game nibbling at you.
+
+### E.3 Wear
+
+- Each builder in town (alive, adult, not away) looks after **8 buildings**
+  (`upkeep.per_builder`, tunable). Houses count as buildings. This holds whether
+  or not they are also working on a site: upkeep is not a second job the player
+  must schedule.
+- If builders × 8 covers every building, nothing wears. Otherwise the buildings
+  not covered wear: the least important first (so the Granary and homes go
+  last), at a rate that takes a sound building to broken in **5 real days**
+  (`upkeep.days_to_break`).
+- Worked out on the server in the same tick as construction, from the clock, so
+  it is fair while the player is offline.
+
+### E.4 Repair
+
+- Builders mend worn and broken buildings whenever the construction queue is
+  empty, the most damaged first, at 1 health per builder-minute (a broken
+  building is whole again in under 2 hours with one builder).
+- The player can also put a repair at the front of the queue from the building's
+  panel ("Repair now"), ahead of new building.
+- No materials. A news line when something breaks and when it is mended.
+
+### E.5 Guard rails
+
+- **Camps are exempt.** Wear starts at Village tier. A new player learns
+  building first.
+- **A grace period.** When the switch is turned on, and whenever a town's last
+  builder is lost, nothing wears for 3 real days. The news says so, plainly:
+  "Nobody is looking after the town. Buildings will start to wear in 3 days."
+- **Houses never lose their beds.** A broken house keeps its residents and
+  still counts for births and settlers; its residents are a little less happy
+  until it is mended. Otherwise a builder dying of old age while the player is
+  away could stop births and start a second population cliff. *(Review's
+  recommendation; the owner should confirm.)*
+- **Everything starts at 100** when the switch goes on.
+- The town card shows upkeep in one line: "Upkeep: 2 builders look after 16 of
+  19 buildings", amber when short. The away report says what wore while the
+  player was gone.
+- Nothing is ever destroyed. Broken is the floor.
+
+### E.6 In the scenes
+
+- Worn and broken looks are an overlay drawn by code for now (cracks, boards,
+  weeds), so no new art is needed per building. The owner may add proper worn
+  art later.
+- A builder with no site walks a round of the buildings they look after and
+  taps at each with the work animation. A repair shows as a small scaffold.
+- A broken building's bubble opens its panel with "Repair now".
+
+### E.7 Later (not now)
+
+- Repairs that cost a little timber or stone.
+- Raids, storms and fires that knock health down, which gives defence and
+  builders more to do together.
+- A builder perk for looking after more buildings.
+
+---
+
 ## 4. Build order
 
 Each step ships on its own and is shown to the owner.
@@ -534,6 +619,7 @@ Each step ships on its own and is shown to the owner.
 14. **Mood** (§3.8).
 15. **Life events** (§3.9).
 16. **Town-wide events** (§3.10).
+17. **Upkeep** (Part E), server and scene, behind `upkeep.on`. Last on purpose: turn it on only after building time has been live long enough to know that players keep builders.
 
 Steps 1 to 9 are the core. Steps 10 to 13 are the Neighbourhood and building
 time; step 12 is the only one that changes how the game plays, so it gets its own
@@ -573,7 +659,12 @@ Server, `scripts/neighbourhood_test.js` and `scripts/construction_test.js`:
 - An upgrade keeps the building working; a new building does nothing until
   done; a house gives beds only when done and then people are housed.
 - Cancel refunds in full before work and half after.
-- Idle builders gather; they stop gathering the moment a site is ordered.
+- Upkeep (`scripts/upkeep_test.js`): enough builders, nothing wears; too few,
+  only the uncovered buildings wear, least important first; 5 days to broken;
+  worn still works, broken gives nothing; a camp never wears; the grace period
+  holds after the last builder is lost; a broken house keeps its beds; repair
+  happens when the queue is empty and "Repair now" jumps the queue; an away
+  builder covers nothing; with the switch off, health never moves.
 
 Browser check (Playwright, as for the earlier phases): Home at 1400 × 900 and
 390 × 844, no page errors, the chips are gone, a building click opens its
@@ -618,9 +709,16 @@ screen, a villager click shows four buttons.
 8. Build times: **short** (minutes, to about 2 hours).
 9. Several sites: **a queue**, in the player's order.
 
+10. Idle builders: **they maintain the town** (Part E); no gathering. Buildings
+    have health and break without upkeep. Repairs cost no materials for now.
+11. Work animation and construction-site art: **the owner will make them
+    later**; placeholders until then.
+12. House styles: **the owner will make four new sets**; the four names in C.4
+    are stand-ins.
+
 ## 9. Still open (ask the owner)
 
-1. Idle builders gathering a little timber and stone (D.2): yes or no?
-2. Will the owner generate a **work** (hammering) animation per species, and
-   the construction-site art (two sizes, three stages)?
-3. The four starting house styles (C.4): are these the right four?
+1. Houses never lose their beds when broken (E.5): agreed?
+2. Worn buildings still work fully, and only broken ones stop (E.2): agreed?
+3. One builder looks after 8 buildings, and an untended building breaks in
+   5 days (E.3): right feel?
