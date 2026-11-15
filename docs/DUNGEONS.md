@@ -1,6 +1,6 @@
 # Dungeons (design spec)
 
-Status: **design agreed 2026-11-15 (two rounds of answers), not built.** To be built **after the remaining 1.0 phases** (`docs/ROADMAP_1_0.md` §5). The same file is in both repos.
+Status: **design agreed 2026-11-15 (three rounds of answers), not built.** Classes, cards, creatures, events, treasure and the numbers behind the difficulty table are in `docs/DUNGEON_CONTENT.md`. To be built **after the remaining 1.0 phases** (`docs/ROADMAP_1_0.md` §5). The same file is in both repos.
 
 ## 1. What a dungeon is
 
@@ -39,6 +39,12 @@ Rules that hold everywhere:
 | Citizens who go down | They stay down but are **brought into every later fight**, so they can be healed back up (§3.1). |
 | Runs at once | One per town. |
 | Supplies | Yes: a party can carry items from the town's stores. An extended part of the release, tied to crafting (§8.1). |
+| Deck size | Start at 12 and ramp up with the skull: 12 at green and yellow, 14 at orange and red, 16 at purple. |
+| Class cards in the draft | Planned for the class release: when the party contains a class, the draft offers that class's cards, and never cards for a class that is not in the party (`docs/DUNGEON_CONTENT.md` §3.3). |
+| "Not for drafts" toggle | Yes: the player can leave owned cards out of the draft pool. |
+| Skipping the draft | No: the draft is always required, for now. |
+| Revive strength | A healed citizen stands up with whatever was healed. No cap. |
+| Supplies in battle | As in For the King: an item can be used in a fight, and it takes that citizen's turn. Between rooms items are free to use. |
 
 ## 3. A run, step by step
 
@@ -60,9 +66,10 @@ Today every battle starts each unit at full health. In a dungeon:
 - **Healing a downed citizen stands them back up** with the health healed, and they act from the next round. This works from a card in battle, at a rest room, from an event or from a supply item.
 - A battle is lost when no party member is standing.
 - Block, buffs, debuffs and the deck's piles reset between battles. Only health and "down" carry.
+- A healed citizen comes back with exactly the health that was healed: no cap.
 - A citizen who went down at any point in the run rolls for injury at the end, even if they were healed back up.
 
-Today a heal does nothing to a downed unit (`card_combat.heal` returns early), and Mend is a starter card, so every town will be able to do this. Reviving is switched on for dungeon battles only, so quest and raid battles play and replay exactly as before. Tuning lever if it proves too easy: a revived citizen comes back with at most a quarter of their health.
+Today a heal does nothing to a downed unit (`card_combat.heal` returns early), and Mend is a starter card, so every town will be able to do this. Reviving is switched on for dungeon battles only, so quest and raid battles play and replay exactly as before.
 
 ### 3.2 How a run ends
 
@@ -91,29 +98,35 @@ If the party is in the middle of a battle when this happens, the battle is forfe
 Before the party walks in, the player builds the deck for this run.
 
 - The game shows **three different cards** drawn at random from the cards the town owns (the starter set plus every unlock, `lib/cards.ownedSet`). The player keeps one. This repeats until the deck is full.
-- **Deck size: 12 picks**, the current minimum deck. The same at every skull colour, because in a card game a smaller deck is a stronger one. About a minute of choosing.
+- **Deck size: 12 picks** at green and yellow, 14 at orange and red, 16 at purple. Twelve is the current minimum deck; longer dungeons have longer fights and give class cards room. One to two minutes of choosing.
 - The same card can be offered again on a later pick, so a deck can hold copies. A new town owns only the nine starter cards, and still gets real choices.
 - **Two guards against a dead deck:** the first offer always includes an attack, and the second always includes a block. The player also gets **one re-roll** of an offer per draft.
 - **The draft comes after the commitment.** The attempt is used up when the party sets out, so a player cannot look at the offers and back out. The offers come from a seed fixed for this town and dungeon, so reloading the page shows the same three cards.
 - **Cards found inside.** Elites, treasure rooms and some events offer "keep one of three" again, adding a card to the deck for the rest of the run.
 - The drafted deck lasts for the run and is then gone. The deck builder and the active home deck stay as they are for quests, camps and raids.
 
-Things to watch (see open questions):
+Things to watch:
 
-- **Unlocking a weak card makes drafts worse**, because it joins the pool. Today that is harmless, since a player just leaves it out of the home deck.
-- The draft is a step between "send" and "play". On a green dungeon it is a noticeable share of a 5–10 minute visit.
+- **Unlocking a weak card would make drafts worse**, because it joins the pool. The "not for drafts" toggle below is the answer to that.
+- The draft is a step between "send" and "play". On a green dungeon it is a noticeable share of a 5–10 minute visit. It is always required, for now.
+
+**"Not for drafts".** In the card collection, each owned card has a toggle that leaves it out of draft offers. The pool must keep at least 9 cards, with at least two attacks and two blocks, so the guards above still work.
+
+**Classes (planned).** When combat classes arrive, some cards will need a class ("Requires Wizard"). The draft will offer class cards only for classes in the party, and one card in every offer will be a class card when the party has any. Details and the reasons are in `docs/DUNGEON_CONTENT.md` §3.3.
 
 ## 4. Difficulty
 
 Fixed when the dungeon is created. The skull is the map icon and heads the dungeon card.
 
-| Skull | Name | Floors | Rooms per floor | Fights (about) | Suggested party |
-|---|---|---|---|---|---|
-| 🟢 green | Easy | 1 | 5 | 2 + boss | 1–2 |
-| 🟡 yellow | Moderate | 1 | 7 | 3 + boss | 2–3 |
-| 🟠 orange | Hard | 2 | 6 | 5 + boss | 3–4 |
-| 🔴 deep red | Deadly | 2 | 7 | 6 + elite + boss | 4 |
-| 🟣 purple | Nightmare | 3 | 7 | 8 + 2 elites + boss | 4, well geared |
+| Skull | Name | Floors | Fights | Of which | Deck | Suggested party | Creatures' health / strength |
+|---|---|---|---|---|---|---|---|
+| 🟢 green | Easy | 1 | 3 | boss | 12 | 2 | +50% / +40% |
+| 🟡 yellow | Moderate | 1 | 4 | boss | 12 | 3 | +75% / +60% |
+| 🟠 orange | Hard | 2 | 6 | 1 elite, boss | 14 | 4, trained | +100% / +80% |
+| 🔴 deep red | Deadly | 2 | 7 | 1 elite, boss | 14 | 4, trained, with classes | +125% / +100% |
+| 🟣 purple | Nightmare | 3 | 9 | 2 elites, boss | 16 | 4 veterans, with classes | +175% / +140% |
+
+These come from simulated runs on the real combat engine (`docs/DUNGEON_CONTENT.md` §5 and §6, which also give rests, events, clear rates and playing time). Two findings shape the table: today's creatures are much too weak for a party playing cards, hence the large modifiers; and a party one citizen short of the suggestion almost never clears, so the suggested size is close to a requirement.
 
 All numbers are starting values for tuning.
 
@@ -201,7 +214,8 @@ The run-loot list is always on screen, so the "turn back and keep this, or risk 
 A party can carry items from the town's stores into the dungeon. This is what ties dungeons to crafting.
 
 - **Packing.** When the party is chosen, the player fills a pack: starting value **two slots per citizen**. Items leave the stores at once.
-- **Using.** Between rooms, from the path screen. Not during a battle in the first version.
+- **Using between rooms:** free, from the path screen.
+- **Using in a fight:** allowed, and it **takes that citizen's turn** (as in For the King). The citizen plays no cards that turn.
 - **First items** (made through the existing crafting system, from existing resources):
 
   | Item | Effect |
@@ -242,7 +256,7 @@ A battle inside a run is still a `settlement_quests` row with a `combat_encounte
 - `GET /api/dungeons/:id`: the dungeon card and the floor paths.
 - `POST /api/dungeons/:id/enter` `{ citizen_ids, pack }`: start the run. Returns the first draft offer.
 - `POST /api/dungeons/run/draft` `{ pick }` or `{ reroll: true }`: keep a card; returns the next offer, or the finished deck.
-- `POST /api/dungeons/run/use-item` `{ item, citizen_id }`: use a supply between rooms.
+- `POST /api/dungeons/run/use-item` `{ item, citizen_id }`: use a supply between rooms. In a fight, an item is a battle action (`use_item`) through `/api/combat/action`, recorded in the action log so replays match; it ends the citizen's turn.
 - `GET /api/dungeons/run`: the current run (for resume).
 - `POST /api/dungeons/run/move` `{ room }`: enter a connected room. Returns a battle run id, an event, a rest choice or loot.
 - `POST /api/dungeons/run/choose` `{ option }`: answer an event or rest.
@@ -286,14 +300,11 @@ This is the larger part of the work.
 - The draft: the same town and dungeon always get the same offers; an offer never repeats a card within itself; the first offer has an attack and the second a block; a pick outside the offer is refused; the deck ends at exactly 12.
 - Reviving: a heal on a downed ally stands them up in a dungeon battle and does nothing in a quest battle; old stored battles replay unchanged.
 - A citizen who went down and was healed still rolls for injury at the end.
-- Supplies: items leave the stores when packed, unused ones return on a kept ending, and none return on a defeat.
+- Supplies: items leave the stores when packed, unused ones return on a kept ending, and none return on a defeat. An item used in a fight ends that citizen's turn and replays identically.
+- "Not for drafts": a toggled-off card is never offered; the toggle is refused when it would leave the pool too small.
 - An idle run times out as turned back, including mid-battle.
 - The spawner never uses an occupied tile and gives every town an easy dungeon in range.
 
 ## 11. Open questions
 
-1. **Deck size.** 12 picks at every skull colour (proposed), or longer drafts for bigger dungeons?
-2. **Weak unlocks.** Should the player be able to leave some owned cards out of the draft pool, so that unlocking a card is never a loss? Proposed: yes, a simple "not for drafts" toggle in the card collection, with a minimum pool size.
-3. **Skipping the draft.** Offer "use my home deck" as a quick option on green dungeons, or is the draft always required?
-4. **Revive strength.** Does a healed citizen stand up with whatever was healed (proposed), or with a cap?
-5. **Supplies in battle.** Between rooms only (proposed for the first version), or usable as an action in a fight?
+All questions from the first three rounds are answered (§2). The open ones now are about content and balance, and are listed in `docs/DUNGEON_CONTENT.md` §9: how the creature scaling is stored, whether the suggested party size is a requirement, which classes ship first, where classes train, and boss resistance to lost turns.

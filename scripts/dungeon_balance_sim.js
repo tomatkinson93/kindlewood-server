@@ -170,7 +170,7 @@ const MONSTERS = [
   M('rot_shaman', 'Rot Shaman', 'withered', ['ruins'], 'regular', 30, 5, 6, 6, 4, [mv('hex', 'Hex', 'damage: intelligence*0.6 + 3'), mv('mend', 'Dark Mend', 'heal: 6', 'ally', 'choose', 'buff')], OLD),
   M('night_wolf', 'Night Wolf', 'beast', ['forest', 'plains', 'hills'], 'regular', 34, 8, 10, 6, 4, [mv('bite', 'Bite', 'damage: strength*0.8 + 2'), mv('howl', 'Pack Howl', 'damage: strength*0.4 + 1', 'all_enemies', 'aoe')], OLD),
   // ── new: minions ──
-  M('gloom_bat', 'Gloom Bat', 'beast', ['mountain', 'ruins', 'forest'], 'minion', 18, 4, 13, 3, 2, [mv('bite', 'Bite', 'damage: agility*0.4 + 2'), mv('screech', 'Screech', 'debuff weak: 2', 'all_enemies', 'aoe', 'debuff')]),
+  M('gloom_bat', 'Gloom Bat', 'beast', ['mountain', 'ruins', 'forest', 'hills'], 'minion', 18, 4, 13, 3, 2, [mv('bite', 'Bite', 'damage: agility*0.4 + 2'), mv('screech', 'Screech', 'debuff weak: 2', 'all_enemies', 'aoe', 'debuff')]),
   M('barrow_beetle', 'Barrow Beetle', 'beast', ['hills', 'ruins', 'plains'], 'minion', 30, 5, 4, 10, 2, [mv('pinch', 'Pinch', 'damage: strength*0.8 + 2', 'enemy', 'front'), mv('shell', 'Shell Up', 'block: endurance*1 + 2', 'self', 'choose', 'block')]),
   M('mire_leech', 'Mire Leech', 'beast', ['marsh', 'river'], 'minion', 20, 4, 6, 5, 2, [mv('latch', 'Latch On', 'damage: 4\npoison: 2')]),
   M('bramble_sprite', 'Bramble Sprite', 'fey', ['forest', 'plains'], 'minion', 16, 3, 12, 3, 3, [mv('dart', 'Thorn Dart', 'damage: agility*0.5 + 1'), mv('tangle', 'Tangle', 'slow: 3\ndamage: 3', 'enemy', 'choose', 'debuff')]),

@@ -22,7 +22,7 @@ node scripts/dungeon_balance_sim.js rules 300
 
 ## 1. What the numbers say, in short
 
-1. **Today's creatures are far too weak for a dungeon.** At their current strength, the suggested party cleared every skull colour 98–100% of the time. Dungeon creatures need **+50% health at green, rising to +175% at purple** (§5).
+1. **Today's creatures are far too weak for a dungeon.** With creatures at today's strength or a little above (up to +75% health at purple), the suggested party cleared every skull colour 98–100% of the time. Dungeon creatures need **+50% health at green, rising to +175% at purple** (§5).
 2. **Party size decides almost everything.** Each citizen brings their own turn, hand and 3 energy. One citizen short of the suggested party, the clear rate falls to 0–4% at every colour. The suggested party size on the dungeon card is close to a requirement and should be worded that way.
 3. **The draft matters more than any card.** In an orange dungeon, a drafted deck cleared 54% of runs; the default home deck (5 Strike, 5 Defend, 2 Quick Jab, 1 Rally) cleared 13%.
 4. **Class cards must only be drawn by citizens who can play them.** With that rule a four-class party cleared 67% of orange runs; with class cards landing in anyone's hand it cleared 55%.
@@ -188,7 +188,7 @@ Families: **beast**, **brigand** (stoats, weasels and crows: no playable species
 | Mire Leech | 20 | 1 | marsh, river | Latches on: 4 damage and poison 2 |
 | Bramble Sprite (fey) | 16 | 1 | forest, plains | Thorn darts; tangles (slow) |
 | Scree Crab | 28 | 1 | mountain, river | Claws the front; hunkers (10 block) |
-| Gloom Bat | 18 | 1.5 | mountain, ruins, forest | Bites; screech weakens the whole party |
+| Gloom Bat | 18 | 1.5 | mountain, ruins, forest, hills | Bites; screech weakens the whole party |
 | Barrow Beetle | 30 | 1.5 | hills, ruins, plains | Pinches the front; shells up |
 
 ### Regulars (CR 1–2)
@@ -257,9 +257,9 @@ Health and strength of every creature in the dungeon are raised by the skull's m
 | 🟡 Yellow | +75% | +60% | 70, hits for 15 | 490, club 35 |
 | 🟠 Orange | +100% | +80% | 80, hits for 16 | 560, club 39 |
 | 🔴 Deep red | +125% | +100% | 90, hits for 17 | 630, club 43 |
-| 🟣 Purple | +175% | +140% | 110, hits for 21 | 770, club 52 |
+| 🟣 Purple | +175% | +140% | 110, hits for 20 | 770, club 52 |
 
-Why so much: each citizen plays about three cards a turn from a full hand, so a party of four deals about 100 damage a round. Unscaled, the suggested party cleared every colour 98–100% of the time.
+Why so much: each citizen plays about three cards a turn from a full hand, so a party of four deals about 100 damage a round. In a first pass with small modifiers (none at green, up to +75% at purple) the suggested party cleared every colour 98–100% of the time.
 
 ## 6. Floors, rooms and results
 
@@ -275,7 +275,7 @@ Why so much: each citizen plays about three cards a turn from a full hand, so a 
 | 🔴 Deep red | 2 | 7 | 1 elite, boss | 2 + landing | 4 | 6–7 | 14 | 4 trained, with classes |
 | 🟣 Purple | 3 | 9 | 2 elites, boss | 3 + 2 landings | 5 | 5–6 | 16 | 4 veterans, with classes |
 
-This replaces the first guess in `docs/DUNGEONS.md` §4, which had up to 11 fights at purple. Nine is where the clear rate and the playing time both sit right.
+`docs/DUNGEONS.md` §4 now carries these figures. The first guess had up to 11 fights at purple; nine is where the clear rate and the playing time both sit right.
 
 **Deck size ramps with the skull:** 12 cards at green and yellow, 14 at orange and red, 16 at purple. Longer fights reshuffle more often, and a bigger deck gives class cards room.
 
@@ -304,7 +304,7 @@ Reading it:
 
 ### 6.3 Wear and time
 
-| Skull | Health lost per fight (share of the party's total) | Citizens downed per run | Citizen turns per run | Fighting time at about 15 s a turn |
+| Skull | Health lost per fight (share of the party's total) | Citizens downed per run | Citizen turns per run (with a full card collection) | Fighting time at about 15 s a turn |
 |---|---|---|---|---|
 | 🟢 Green | 15–24% | 0.3–0.8 | about 20 | 5 minutes |
 | 🟡 Yellow | 11–19% | 0.7–1.5 | about 35 | 9 minutes |
@@ -316,7 +316,7 @@ A party loses roughly a fifth of its total health in each fight and a rest retur
 
 Add a minute for the draft and a few for rooms and choices. Green fits one short visit; purple is two or three sittings, with the landings as stopping points.
 
-From orange upward two or three citizens go down in a typical run. That makes reviving, Hearthkeepers and bandages matter, and it is what the single injury roll at the end is for.
+From orange upward two or three citizens go down in a typical run (lost runs, where everyone falls, are counted). That makes reviving, Hearthkeepers and bandages matter, and it is what the single injury roll at the end is for.
 
 ## 7. Events
 
@@ -387,7 +387,7 @@ A dungeon is played by hand, once per town, with real risk, so it should pay sev
 | 🔴 Deep red | about 900 | 230 | 250 | 420: 1 epic material, rare gear, a boss trophy | 1 card for certain; 35% a class ★ card |
 | 🟣 Purple | about 1,600 | 350 | 450 | 800: 2 epic materials, named gear, a boss trophy, a title | 1 rare or better for certain; 60% a class ★ card |
 
-Counting the clear rate, the *expected* take is about 110 at green, 210 at yellow, 300 at orange, 320 at red and 300 at purple for a class party. Red and purple are not better wealth per attempt than orange: what they offer is the things that only drop there.
+Counting the clear rate of a class party (§6.2), the *expected* take per attempt is about 110 at green, 230 at yellow, 345 at orange, 360 at red and 385 at purple. Red and purple are barely better wealth per attempt than orange: what they offer is the things that only drop there.
 
 How it is split inside a run:
 
@@ -403,7 +403,7 @@ Already in the game (nothing new is needed for the first release):
 
 - **By land:** forest gives rare sap and ancient heartwood; hills and mountain give iron ore, gemstones and beast horn; river and marsh give luminous scale and blightbane herb; ruins give ancient coins and ancient blueprints; plains give hide and wealth.
 - **Gear:** leather armour and iron sword (yellow), chainmail and hunter's dagger (orange), steel sword and hunter's cloak (red), dragonscale armour (purple, rare).
-- **Cards:** the eight unlockable cards, by rarity.
+- **Cards:** the ten unlockable cards, by rarity.
 
 New, and only from dungeons:
 
