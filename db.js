@@ -685,6 +685,11 @@ async function _initDB() {
   // real migration number at deploy time doesn't break boot.
   await applyMigrationFiles(['clans_core', 'clan_territory', 'chat_hub', 'community_channels', 'moderation', 'clan_profile', 'clan_quests', 'time_gated_enemies', 'happenings', 'happening_modifiers', 'away_report', 'market', 'market_items', 'market_v2', 'market_npc', 'market_ledger', 'careers', 'crafting', 'resources', 'smelter', 'research', 'career_tuning', 'tavern', 'feedback', 'mail', 'rankings', 'cards', 'rares', 'town', 'wonders', 'r4_quests', 'r4_combat', 'raids', 'clan_treasury', 'defences', 'raid_extras', 'r5', 'outpost_store', 'outpost_buildings', 'outpost_r6c', 'milestones', 'outpost_trickle', 'name_cleanup', 'life_beds', 'life_cycle', 'moments', 'town_effects', 'moments_away', 'outpost_trim']);
 
+  // Once: towns from before the life cycle get homes for everyone
+  // (docs/HOME_SCENE.md §0). Never stops the boot; a failure retries next time.
+  _bootStep = 'beds cliff';
+  await require('./lib/beds_cliff').run().catch(e => console.error('[beds_cliff] failed:', e.message));
+
   _bootStep = 'world dimensions';
   // Apply persisted dimensions to mapgen module so all consumers see live values.
   try {

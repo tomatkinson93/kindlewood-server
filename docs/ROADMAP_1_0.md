@@ -134,7 +134,7 @@ Each phase is one or two rounds of work in the style used so far, with tests. Th
 
 ### Phase 4b — The living Home scene
 **The build spec is `docs/HOME_SCENE.md`** (agreed with the owner 2026-11-15, written with Fable). It replaces the Home chips of `LAYOUT_SPEC.md` §2.2.
-- **First, the beds cliff (§0, fix 1):** towns from before the life cycle have far more people than beds (the owner's: 83 and 24), so births and settlers stop and the town ages out. Grant plain homes once per town until beds ≥ living people. Small, and hurting live towns now: do it before anything else. (§0's other fix, the deploy workflow, is done: it is a test check since 2026-11-15.)
+- ~~**First, the beds cliff (§0, fix 1)**~~ **done 2026-11-15** (`lib/beds_cliff.js`): towns from before the life cycle had far more people than beds (the owner's: 83 and 24), so births and settlers stopped. On the first boot after deploy every such town gets free plain homes until beds ≥ living people, with a chronicle line. (§0's other fix, the deploy workflow, is done too: it is a test check since 2026-11-15.)
 - **The core (steps 2–9), frontend only and cosmetic:**
   - a style test of pixel villagers against the backdrop;
   - buildings as the buttons (the chips go);

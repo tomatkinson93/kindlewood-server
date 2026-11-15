@@ -18,9 +18,25 @@ the same care as Phase 1.
 
 ## 0. Before this: two fixes from the review
 
-Do these first; they are small and one of them is hurting live towns.
+Both done (2026-11-15).
 
-1. **The beds cliff.** Towns that existed before the life cycle have far more
+1. ~~**The beds cliff.**~~ **Done 2026-11-15** (`lib/beds_cliff.js`, run once at
+   boot after the migrations, guarded by `migration_marks` key `beds_cliff_homes`;
+   `life_test` "The beds cliff"). Every town with more living people than beds
+   gets free Willow Huts (4 beds each: an ordinary `buildings` row and `houses`
+   row, so the Neighbourhood shows them) until beds ≥ the living, one `town`
+   chronicle line ("The town raised homes for everyone: N new Willow Huts,
+   free."), and housing sorts itself. Each town is its own transaction with a
+   10-second lock wait, so a deploy beside the old server can't double-grant;
+   a town that fails is logged and the mark waits for the next boot. Notes:
+   - the grant can take a town past its tier's hut limit (camp 5, village 15,
+     town 30); the limit then only stops new huts until the town grows;
+   - beds ≥ living leaves 0–3 beds free. The town grows again as soon as
+     there is a free bed (or the player builds a hut while under the limit);
+   - **new towns still arrive with 10 people and no huts** (`routes/map.js`
+     `/arrive`), so a new player must build huts before the first birth or
+     settler. That is a design question for Phase 3, not this fix.
+   Was: Towns that existed before the life cycle have far more
    people than beds (the owner's: 83 people, 24 beds; a test town: 10 and 0).
    Births and settlers both need a free bed, and the migration capped everyone
    at 45, so these towns age together and then empty. Fix, once per town,
