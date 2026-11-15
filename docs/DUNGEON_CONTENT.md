@@ -76,8 +76,8 @@ New building types are on the roadmap's freeze list until 1.0; these arrive with
 | Class | Building | Notes |
 |---|---|---|
 | Guard, Archer | **Watchtower** (exists) | Already their post (`lib/watchtower.js`). Its levels and a new "Drill" research line unlock their cards. |
-| Wizard | **Wizard's Tower** (new) | Three levels. A research branch for each school: Ember, Frost, Storm. |
-| Hearthkeeper | **Hearth Shrine** (new) | Three levels. One research line, "Rites of the Hearth". |
+| Wizard | **Wizard's Tower** (new) | Available from **Town** tier. Three levels. A research branch for each school: Ember, Frost, Storm. |
+| Hearthkeeper | **Hearth Shrine** (new) | Available from **Village** tier. Three levels. One research line, "Rites of the Hearth". |
 
 How the cards unlock (a card is owned by the town once unlocked, as now):
 
@@ -313,7 +313,7 @@ Why so much: each citizen plays about three cards a turn from a full hand, so a 
 
 **Deck size ramps with the skull:** 12 cards at green and yellow, 14 at orange and red, 16 at purple. Longer fights reshuffle more often, and a bigger deck gives class cards room.
 
-**Every dungeon takes exactly four citizens** (decided). **A typical fight** has three creatures at every colour; what changes is what they are. Green: regulars and minions, one heavy. Yellow: regulars and heavies. Orange and red: 3–4, with heavies in most fights. Purple: 3–4, mostly heavies. The boss always has one or two companions.
+**Every dungeon takes exactly four citizens** (decided). **A typical fight** has three creatures at every colour; what changes is what they are. Green: three regulars, one fight with a heavy, and a boss with two regulars beside it. Yellow: regulars and heavies. Orange and red: 3–4, with heavies in most fights. Purple: 3–4, mostly heavies. The boss always has one or two companions.
 
 ### 6.2 Clear rates
 
@@ -321,7 +321,7 @@ Why so much: each citizen plays about three cards a turn from a full hand, so a 
 
 | Skull | Four citizens, starter cards only | + unlocked cards | + class cards | One level under | Three citizens (not allowed; shown for the reason) |
 |---|---|---|---|---|---|
-| 🟢 Green (villagers) | 100% | 100% | 100% | — | 79% |
+| 🟢 Green (villagers) | 95% | 93% | 94% | — | 18% |
 | 🟡 Yellow (novices) | 78% | 78% | 75% | 58% | 4% |
 | 🟠 Orange (trained) | 52% | 52% | 69% | 18% | 3% |
 | 🔴 Deep red (trained) | 20% | 30% | 40% | 2% | 1% |
@@ -331,7 +331,7 @@ Levels used: **villager** (all stats 8, combat 1, no armour), **novice** (main s
 
 Reading it:
 
-- Green is a safe first dungeon: four villagers with starter cards clear it every time, though on average one of them is knocked down along the way and rolls for injury. Yellow is the first real test: about one run in four is lost.
+- Green is a safe first dungeon but not a certain one (decided: about 90% for a player who makes no deliberately poor choices). Four villagers with starter cards clear it 19 times in 20, and one or two of them are usually knocked down on the way and roll for injury. Yellow is the first real test: about one run in four is lost.
 - Classes are worth 10 to 20 points from orange upward. Red and purple are built to need them.
 - Purple without class cards is close to impossible, by design.
 - An over-levelled party helps less than a complete one: four veterans in an orange dungeon clear 86%.
@@ -340,7 +340,7 @@ Reading it:
 
 | Skull | Health lost per fight (share of the party's total) | Citizens downed per run | Citizen turns per run (with a full card collection) | Fighting time at about 15 s a turn |
 |---|---|---|---|---|
-| 🟢 Green | 10–13% | 0.6–0.7 | about 25 | 6 minutes |
+| 🟢 Green | 18–20% | 1.4–1.5 | about 30 | 7 minutes |
 | 🟡 Yellow | 16–19% | 1.9–2.1 | about 40 | 10 minutes |
 | 🟠 Orange | 16–20% | 2.2–2.7 | about 60 | 15 minutes |
 | 🔴 Deep red | 16–20% | 2.9–3.5 | about 66 | 17 minutes |
@@ -421,7 +421,7 @@ A dungeon is played by hand, once per town, with real risk, so it should pay sev
 | 🔴 Deep red | about 900 | 230 | 250 | 420: 1 epic material, rare gear, a boss trophy | 1 card for certain; 35% a class ★ card |
 | 🟣 Purple | about 1,600 | 350 | 450 | 800: 2 epic materials, named gear, a boss trophy, a title | 1 rare or better for certain; 60% a class ★ card |
 
-Counting the clear rate of a class party (§6.2), the *expected* take per attempt is about 120 at green, 190 at yellow, 345 at orange, 360 at red and 385 at purple. Red and purple are barely better wealth per attempt than orange: what they offer is the things that only drop there.
+Counting the clear rate of a class party (§6.2), the *expected* take per attempt is about 115 at green, 190 at yellow, 345 at orange, 360 at red and 385 at purple. Red and purple are barely better wealth per attempt than orange: what they offer is the things that only drop there.
 
 How it is split inside a run:
 
@@ -458,12 +458,12 @@ Decided 2026-11-15:
 | Party size | **Required, and four** for every dungeon to start with. |
 | First classes | **Guard, Archer, Wizard, Hearthkeeper.** The other four later. |
 | Boss resistance to control | **Depends on the boss** (§4): Open, Wary or Steadfast. |
-| Where classes train | **New buildings** (Wizard's Tower, Hearth Shrine; Guards and Archers at the Watchtower). Upgrading and researching the building is the most direct way to unlock that class's cards; other ways exist (§3.2). |
+| Where classes train | **New buildings:** the Hearth Shrine from **Village** tier and the Wizard's Tower from **Town** tier; Guards and Archers at the Watchtower. Upgrading and researching the building is the most direct way to unlock that class's cards; other ways exist (§3.2). |
+| A new town and the party of four | A town always has four free adults, so green dungeons need no tier gate. |
+| Green | About a 90% clear rate for a player making sensible choices, not a certain win (§6.2: 93–95% in simulation). |
 
 Still open:
 
 1. **The scaling.** +50% to +175% health is a large correction. The alternative is to leave quest creatures as they are and give every dungeon creature its own, higher base stats. The result is the same; the question is which is easier to tune from the enemy editor.
 2. **Weak, vulnerable and Focus** (§2, rows 5 and 6): change them now, or watch how players use them first?
-3. **A new town and the party of four.** A dungeon needs four free adults. Is that always true of a town early on, or should green dungeons wait behind a tier (a Village, say)?
-4. **Green at 100%.** Green can be left as a certain win that still costs a knock-down, or tightened to about 90%. Yellow already supplies the first real risk.
-5. **Building names and costs** for the Wizard's Tower and Hearth Shrine, and which tier unlocks them.
+3. **Costs** of the Wizard's Tower and Hearth Shrine and of their research lines.

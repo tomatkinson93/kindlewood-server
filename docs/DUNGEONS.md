@@ -33,7 +33,8 @@ Rules that hold everywhere:
 | Clan dungeons | No, for now. |
 | Party size | **Required: exactly four citizens** for every dungeon, to start with. Simulated runs one citizen short almost never clear. |
 | Boss resistance to control | Depends on the boss; shown on the dungeon card (`docs/DUNGEON_CONTENT.md` §4). |
-| Classes | First release: Guard, Archer, Wizard, Hearthkeeper. Each class has a building; upgrading and researching it is the most direct way to unlock its cards (`docs/DUNGEON_CONTENT.md` §3.2). |
+| Classes | First release: Guard, Archer, Wizard, Hearthkeeper. Each class has a building (Hearth Shrine from Village tier, Wizard's Tower from Town tier, the Watchtower for Guards and Archers); upgrading and researching it is the most direct way to unlock its cards (`docs/DUNGEON_CONTENT.md` §3.2). |
+| Green difficulty | About a 90% clear rate for sensible play, not a certain win. A town always has four free adults, so green needs no tier gate. |
 | Auto-resolve | Never. |
 | When | After the remaining 1.0 phases. |
 | Turning back | Keeps all loot; only citizens who went down roll for injury. |
@@ -310,4 +311,4 @@ This is the larger part of the work.
 
 ## 11. Open questions
 
-The design questions are answered (§2). What remains is about content and balance and is listed in `docs/DUNGEON_CONTENT.md` §9: how the creature scaling is stored, whether weak, vulnerable and Focus change, whether a new town always has four free adults, and the names and costs of the class buildings.
+The design questions are answered (§2). What remains is about content and balance and is listed in `docs/DUNGEON_CONTENT.md` §9: how the creature scaling is stored, whether weak, vulnerable and Focus change, and the costs of the class buildings.

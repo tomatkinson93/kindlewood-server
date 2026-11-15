@@ -436,7 +436,7 @@ function encounter(terrain, shape, rnd) {
 }
 // Plans: what a typical route holds, in order. R = rest, L = landing (rest between floors).
 const PLANS = {
-  green:  { party: ['fresh', 4], deck: 12, rooms: [['regular', 'regular', 'minion'], 'R', ['heavy', 'regular', 'minion'], ['boss', 'regular']] },
+  green:  { party: ['fresh', 4], deck: 12, rooms: [['regular', 'regular', 'regular'], 'R', ['heavy', 'regular', 'regular'], ['boss', 'regular', 'regular']] },
   yellow: { party: ['novice', 4], deck: 12, rooms: [['regular', 'regular', 'regular'], ['heavy', 'regular', 'regular'], 'R', ['heavy', 'heavy', 'minion'], ['boss', 'regular', 'minion']] },
   orange: { party: ['trained', 4], deck: 14, rooms: [['regular', 'regular', 'regular', 'minion'], ['heavy', 'regular', 'regular'], 'R', ['heavy', 'heavy', 'regular'], 'L',
             ['heavy', 'regular', 'regular', 'minion'], ['elite', 'regular', 'regular'], 'R', ['boss', 'regular', 'minion']] },
