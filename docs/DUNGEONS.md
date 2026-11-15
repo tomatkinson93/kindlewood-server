@@ -1,6 +1,6 @@
 # Dungeons (design spec)
 
-Status: **design agreed 2026-11-15, not built.** To be built **after the remaining 1.0 phases** (`docs/ROADMAP_1_0.md` §5). The same file is in both repos.
+Status: **design agreed 2026-11-15 (two rounds of answers), not built.** To be built **after the remaining 1.0 phases** (`docs/ROADMAP_1_0.md` §5). The same file is in both repos.
 
 ## 1. What a dungeon is
 
@@ -16,7 +16,7 @@ Rules that hold everywhere:
 1. **Difficulty is shown before the party sets out**, and it is fixed per dungeon. It never scales to the player.
 2. **Manual play only.** There is no auto-resolve for dungeon battles.
 3. **One player controls the party.** No clan or multiplayer dungeons for now (revisit much later).
-4. **The home deck is used as it is.** No card drafting during a run.
+4. **The deck is drafted at the door.** Each run starts by drafting a deck from the town's unlocked cards (§3.4). The home deck is not used in dungeons.
 5. **It writes back to the family.** Every run leaves chronicle lines, and events test careers and traits, so this is not "combat as a separate game" (roadmap §4).
 
 ## 2. Decisions made (2026-11-15)
@@ -25,7 +25,7 @@ Rules that hold everywhere:
 |---|---|
 | Who can clear a map dungeon? | Every town that can reach it, **once per town** per dungeon. All towns see the same layout. |
 | Losing a run | **All loot from the run is lost, and every citizen in the party rolls on the injury table.** |
-| Deck | The town's active deck. |
+| Deck | **Drafted on entry** from the town's unlocked cards: three random cards are shown, the player keeps one, and this repeats until the deck is full (§3.4). This replaced the earlier answer, "home deck". |
 | Floors | Depends on the difficulty (§4). |
 | Difficulty | Fixed per dungeon, shown as a coloured skull (§4). |
 | Farming limit | Once per dungeon per town. No daily cap, no entry cost. |
@@ -33,36 +33,47 @@ Rules that hold everywhere:
 | Clan dungeons | No, for now. |
 | Auto-resolve | Never. |
 | When | After the remaining 1.0 phases. |
+| Turning back | Keeps all loot; only citizens who went down roll for injury. |
+| Deaths | The normal injury table applies at every skull colour, green included. |
+| Blessings and curses | Yes: events can give run-only ones (§5.2). |
+| Citizens who go down | They stay down but are **brought into every later fight**, so they can be healed back up (§3.1). |
+| Runs at once | One per town. |
+| Supplies | Yes: a party can carry items from the town's stores. An extended part of the release, tied to crafting (§8.1). |
 
 ## 3. A run, step by step
 
 1. **Find it.** A map dungeon shows only on a tile the player has scouted (`fog_of_war`), and must be within range of the town (as camps are: `ASSAULT_RANGE` in `lib/raid_camps.js`).
 2. **Read the card.** Skull colour, number of floors, the kind of creatures inside, the boss's outline, the suggested party size, and the hours left before it goes.
-3. **Choose a party** of 1–4 adults who are not busy (`outpost_state.busyReason`). They are busy until the run ends.
-4. **Walk there.** The party appears on the map as a journey (`lib/travel.js`). Travel is short; the dungeon is the content, not the walk.
-5. **Play the rooms.** The floor is a small branching path. The player picks the next room from those connected to the current one.
-6. **After each room: press on or turn back.** Turning back ends the run and keeps everything found so far.
-7. **The end.** Beat the boss (cleared), turn back (left early), or lose a battle (defeat).
+3. **Choose a party** of 1–4 adults who are not busy (`outpost_state.busyReason`), and pack supplies (§8.1). They are busy until the run ends. Setting out uses up the town's one attempt.
+4. **Draft the deck** (§3.4).
+5. **Walk there.** The party appears on the map as a journey (`lib/travel.js`). Travel is short; the dungeon is the content, not the walk.
+6. **Play the rooms.** The floor is a small branching path. The player picks the next room from those connected to the current one.
+7. **After each room: press on or turn back.** Turning back ends the run and keeps everything found so far.
+8. **The end.** Beat the boss (cleared), turn back (left early), or lose a battle (defeat).
 
 ### 3.1 Wounds carry over
 
 Today every battle starts each unit at full health. In a dungeon:
 
 - A citizen's health at the end of one battle is their health at the start of the next.
-- A citizen who goes down in a battle that the party wins stays **out for the rest of the run**. The party fights on without them.
-- Block, buffs, debuffs and the deck's piles reset between battles. Only health and "out" carry.
-- Rest rooms and some events restore health.
+- A citizen who goes down in a battle that the party wins **stays down**. They are still brought into every later fight, lying down at 0 health: they take no turn and cannot be targeted by enemies.
+- **Healing a downed citizen stands them back up** with the health healed, and they act from the next round. This works from a card in battle, at a rest room, from an event or from a supply item.
+- A battle is lost when no party member is standing.
+- Block, buffs, debuffs and the deck's piles reset between battles. Only health and "down" carry.
+- A citizen who went down at any point in the run rolls for injury at the end, even if they were healed back up.
+
+Today a heal does nothing to a downed unit (`card_combat.heal` returns early), and Mend is a starter card, so every town will be able to do this. Reviving is switched on for dungeon battles only, so quest and raid battles play and replay exactly as before. Tuning lever if it proves too easy: a revived citizen comes back with at most a quarter of their health.
 
 ### 3.2 How a run ends
 
 | Ending | Loot | Injuries | Dungeon for this town |
 |---|---|---|---|
 | **Cleared** (boss beaten) | all kept, plus the clear reward | only citizens who went down roll | done |
-| **Turned back** (between rooms) | all kept | only citizens who went down roll | done: no second attempt |
+| **Turned back** (between rooms) | all kept (agreed) | only citizens who went down roll | done: no second attempt |
 | **Defeat** (a battle lost) | **all lost** | **every citizen in the party rolls** | done |
 | **Timed out** (left paused too long, §3.3) | as turned back | as turned back | done |
 
-Injuries are rolled **once, when the run ends**, never per room. The injury table (`lib/injury_table.js`) has a 2% fatal band, so a defeat with four citizens has about an 8% chance of a death. That is the intended weight of losing; see open question 1.
+Injuries are rolled **once, when the run ends**, never per room. The injury table (`lib/injury_table.js`) has a 2% fatal band, so a defeat with four citizens has about an 8% chance of a death. That is the intended weight of losing, and it applies at every skull colour (agreed).
 
 ### 3.3 Leaving and coming back
 
@@ -74,6 +85,23 @@ A run that is left alone ends by itself as **turned back**:
 - when the map dungeon's 72 hours run out (a run in progress gets 2 extra hours to finish).
 
 If the party is in the middle of a battle when this happens, the battle is forfeited as a retreat, not a defeat. Being away never costs more than the rest of the dungeon.
+
+### 3.4 Drafting the deck
+
+Before the party walks in, the player builds the deck for this run.
+
+- The game shows **three different cards** drawn at random from the cards the town owns (the starter set plus every unlock, `lib/cards.ownedSet`). The player keeps one. This repeats until the deck is full.
+- **Deck size: 12 picks**, the current minimum deck. The same at every skull colour, because in a card game a smaller deck is a stronger one. About a minute of choosing.
+- The same card can be offered again on a later pick, so a deck can hold copies. A new town owns only the nine starter cards, and still gets real choices.
+- **Two guards against a dead deck:** the first offer always includes an attack, and the second always includes a block. The player also gets **one re-roll** of an offer per draft.
+- **The draft comes after the commitment.** The attempt is used up when the party sets out, so a player cannot look at the offers and back out. The offers come from a seed fixed for this town and dungeon, so reloading the page shows the same three cards.
+- **Cards found inside.** Elites, treasure rooms and some events offer "keep one of three" again, adding a card to the deck for the rest of the run.
+- The drafted deck lasts for the run and is then gone. The deck builder and the active home deck stay as they are for quests, camps and raids.
+
+Things to watch (see open questions):
+
+- **Unlocking a weak card makes drafts worse**, because it joins the pool. Today that is harmless, since a player just leaves it out of the home deck.
+- The draft is a step between "send" and "play". On a green dungeon it is a noticeable share of a 5–10 minute visit.
 
 ## 4. Difficulty
 
@@ -112,7 +140,15 @@ Event rooms reuse the moments definition shape (text, options, a `choose` functi
 - Rules for the generator: the first room is always a fight; never two rests in a row; an elite never before step 3; at least one rest or event on every route to the boss; every route reaches the boss.
 - The whole floor is visible from the start. A party with a scout career sees room contents one floor ahead.
 
-### 5.2 Generation
+### 5.2 Blessings and curses
+
+An event can leave a mark that lasts until the run ends:
+
+- A **blessing** or **curse** is a change to the party's or the enemies' stats (the existing `combat_mods` keys: `party_strength`, `party_agility`, `party_endurance`, `enemy_health`, `enemy_strength`, `enemy_agility`), or a card added to or removed from the drafted deck.
+- They are listed on the path screen beside the run loot, so the player always knows what the party carries.
+- Typical shape: a shrine offers a blessing at a price in health, or a curse comes with a better find.
+
+### 5.3 Generation
 
 Everything comes from one seed stored on the dungeon. The same seed always gives the same floors, rooms, enemy groups and events, so every town sees the same dungeon, and the server can rebuild it at any time. Battle seeds are derived from the dungeon seed, the town and the room, so two towns do not get identical card draws.
 
@@ -160,6 +196,27 @@ No new resources (they are on the roadmap's freeze list). Rewards use what exist
 
 The run-loot list is always on screen, so the "turn back and keep this, or risk it" choice is visible.
 
+### 8.1 Supplies (extended part of the release)
+
+A party can carry items from the town's stores into the dungeon. This is what ties dungeons to crafting.
+
+- **Packing.** When the party is chosen, the player fills a pack: starting value **two slots per citizen**. Items leave the stores at once.
+- **Using.** Between rooms, from the path screen. Not during a battle in the first version.
+- **First items** (made through the existing crafting system, from existing resources):
+
+  | Item | Effect |
+  |---|---|
+  | Bandage | Heals one citizen part-way; stands a downed citizen up. |
+  | Field rations | Heals the whole party a little. |
+  | Tonic | A small blessing for the next battle only. |
+  | Torch | Shows what is in the rooms of the next floor. |
+  | Rope | Lets the party leave a trapped treasure room or a bad event without the penalty. |
+
+- **Afterwards.** Unused items come home on a kept ending. On a defeat they are lost with the loot.
+- These are new **items and recipes**, not new resources, so they stay inside the roadmap's freeze list. Later, dungeon finds can become ingredients for better supplies.
+
+Supplies are built last (§9.6) so the core can be tuned without them first. Until they exist, rest rooms are the only healing outside battle.
+
 ## 9. How it is built
 
 ### 9.1 Data
@@ -167,13 +224,15 @@ The run-loot list is always on screen, so the "turn back and keep this, or risk 
 | Table | Purpose |
 |---|---|
 | `dungeons` | One row per dungeon: `id`, `source` (`map` / `quest`), `q`, `r`, `terrain`, `tier`, `seed`, `story_key` (if hand-written), `created_at`, `expires_at`, time gates. |
-| `dungeon_runs` | One row per town per dungeon (unique): `party_ids`, `status` (`travelling`, `active`, `cleared`, `left`, `defeat`, `timed_out`), `floor`, `room`, `path_taken`, `party_state` (health and who is out), `loot`, `last_action_at`. |
+| `dungeon_runs` | One row per town per dungeon (unique): `party_ids`, `status` (`travelling`, `active`, `cleared`, `left`, `defeat`, `timed_out`), `floor`, `room`, `path_taken`, `party_state` (health and who is down), `deck` (the drafted cards), `draft` (offers and picks so far), `effects` (blessings and curses), `pack` (supplies), `loot`, `last_action_at`. At most one unfinished run per town. |
 
 A battle inside a run is still a `settlement_quests` row with a `combat_encounter`, seed and action log, exactly as `raid_camps.battleRun` makes one, with `auto_resolve_combat` false and a `dungeon_run_id` column. That keeps `/api/combat` and the battle screen unchanged.
 
 ### 9.2 Engine changes
 
-- **Starting health.** `combat_resolver` takes a per-citizen starting health (and "out") from the run and freezes it with the battle's mods, so replays stay exact. This is the only change inside combat.
+- **Starting health.** `combat_resolver` takes a per-citizen starting health (and "down") from the run and freezes it with the battle's mods, so replays stay exact.
+- **The run's deck.** A battle with a dungeon run uses the run's drafted deck map in place of `getActiveDeckMap`, frozen the same way.
+- **Reviving.** With a `revive` flag frozen on the battle, `card_combat.heal` and ally targeting accept a downed ally, and a healed one rejoins the turn order next round. Without the flag nothing changes. Both copies of the dual-engine files change together (`lib/card_combat.js` and `js/card-combat.js`).
 - **After a battle.** A hook like `raid_camps.onBattleEnded`: on victory, save health and loot to the run and return to the path; on defeat, end the run. Skip `applyBattleAftermath` per battle; the run calls it once at the end with the right list of citizens.
 - **Busy.** `outpost_state.busyReason` learns "is in a dungeon".
 
@@ -181,7 +240,9 @@ A battle inside a run is still a `settlement_quests` row with a `combat_encounte
 
 - `GET /api/dungeons`: live dungeons the player has discovered, with this town's result on each.
 - `GET /api/dungeons/:id`: the dungeon card and the floor paths.
-- `POST /api/dungeons/:id/enter` `{ citizen_ids }`: start the run.
+- `POST /api/dungeons/:id/enter` `{ citizen_ids, pack }`: start the run. Returns the first draft offer.
+- `POST /api/dungeons/run/draft` `{ pick }` or `{ reroll: true }`: keep a card; returns the next offer, or the finished deck.
+- `POST /api/dungeons/run/use-item` `{ item, citizen_id }`: use a supply between rooms.
 - `GET /api/dungeons/run`: the current run (for resume).
 - `POST /api/dungeons/run/move` `{ room }`: enter a connected room. Returns a battle run id, an event, a rest choice or loot.
 - `POST /api/dungeons/run/choose` `{ option }`: answer an event or rest.
@@ -210,24 +271,29 @@ This is the larger part of the work.
 2. The path, room types, turning back, run loot, endings and the single injury roll.
 3. The generator and difficulty tiers.
 4. Map dungeons: spawner, 72-hour cycle, markers, once per town.
-5. Events and rest rooms; chronicle lines.
-6. Quest dungeons: story format, rumours.
-7. Content and tuning.
+5. The draft, and cards found inside.
+6. Events, rest rooms, blessings and curses; reviving; chronicle lines.
+7. Quest dungeons: story format, rumours.
+8. Content and tuning.
+9. Supplies and their crafting recipes (the extended part).
 
 ## 10. Tests
 
 - Same seed gives the same dungeon; every generated path obeys the rules in §5.1 (run over a few thousand seeds).
 - A replayed dungeon battle with carried health matches the stored result exactly.
 - Defeat: loot is empty and every party member has an injury roll. Turning back: loot is granted and only downed citizens roll.
-- A second `enter` for the same town and dungeon is refused.
+- A second `enter` for the same town and dungeon is refused, as is a second run while one is unfinished.
+- The draft: the same town and dungeon always get the same offers; an offer never repeats a card within itself; the first offer has an attack and the second a block; a pick outside the offer is refused; the deck ends at exactly 12.
+- Reviving: a heal on a downed ally stands them up in a dungeon battle and does nothing in a quest battle; old stored battles replay unchanged.
+- A citizen who went down and was healed still rolls for injury at the end.
+- Supplies: items leave the stores when packed, unused ones return on a kept ending, and none return on a defeat.
 - An idle run times out as turned back, including mid-battle.
 - The spawner never uses an occupied tile and gives every town an easy dungeon in range.
 
 ## 11. Open questions
 
-1. **Turning back.** This spec lets a party turn back between rooms and keep its loot, with injuries only for those who went down. The decision recorded was about *losing*. Is keeping loot on a retreat right, or should a retreat cost something (say, half the loot)?
-2. **Deaths.** A four-citizen defeat carries about an 8% chance that someone dies. Keep the normal table, or cap dungeon injuries below fatal on green and yellow dungeons?
-3. **Blessings.** "Home deck" rules out drafting. Should events still be able to give a run-only stat blessing or curse (cheap: it rides on `combat_mods`), or nothing at all that changes battles?
-4. **Out for the run.** A downed citizen sits out the rest of the run. The alternative is that they stand back up on 1 health in the next battle.
-5. **Supplies.** Should a party be able to carry food or bandages from the town's stores to heal between rooms? It would tie dungeons to the economy; it also adds a screen. Suggested: not in the first release.
-6. **How many at once.** One run at a time per town, or one per party?
+1. **Deck size.** 12 picks at every skull colour (proposed), or longer drafts for bigger dungeons?
+2. **Weak unlocks.** Should the player be able to leave some owned cards out of the draft pool, so that unlocking a card is never a loss? Proposed: yes, a simple "not for drafts" toggle in the card collection, with a minimum pool size.
+3. **Skipping the draft.** Offer "use my home deck" as a quick option on green dungeons, or is the draft always required?
+4. **Revive strength.** Does a healed citizen stand up with whatever was healed (proposed), or with a cap?
+5. **Supplies in battle.** Between rooms only (proposed for the first version), or usable as an action in a fight?
