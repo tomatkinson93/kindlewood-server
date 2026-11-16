@@ -165,6 +165,10 @@ Files go in `assets/images/buildings/<key>.png`. Add
 **door point** (x, y in the image) where villagers go in and out. A missing
 entry means "use the placeholder and the bottom centre as the door".
 
+(Superseded by `ART_GUIDE.md`: WebP at 2× with `manifest.v2.json`. Paths
+between the doors and the props layer, trees, flowers, a well, benches,
+lanterns, are in `ART_GUIDE.md` §4b.)
+
 ---
 
 ## 3. Part B: villagers
@@ -204,6 +208,18 @@ One `requestAnimationFrame` loop moves everyone with `transform` only. It stops
 when Home is not showing, when the tab is hidden, in Build mode, and for
 players who ask for reduced motion (they get villagers standing idle in place).
 
+Since the polish pass (2026-11-16):
+- **What a frame writes.** Only what changed: the frame when it ticks over,
+  the transform when the rounded position moves, and z-index on change. The
+  layer's size is read once at the top of the frame, before any write.
+- **No filter of their own.** The outline and lift are baked into the sheets,
+  so a villager carries only its family's look.
+- **Night** is one overlay over the world, not a filter on each villager
+  (`ART_GUIDE.md` §4b).
+- **Nothing else draws under Home.** The map's own loops pause while Home is
+  open. Measured numbers are in `HANDOVER.md` §4 (Frontend patterns); the
+  loop is about 0.7 ms per frame on an emulated mid-range phone.
+
 ### 3.3 Who is on screen (the cast)
 
 - Eligible: living citizens for whom `citizenAway(c)` is null.
@@ -230,7 +246,16 @@ walking "behind" a building read correctly.
 
 Points of interest: each built building's door (from the manifest, following
 the building if the player moved it), plus a few named spots per area (the
-well, the riverbank, the signpost, a bench by the tavern).
+well, the riverbank, the signpost, a bench by the tavern). The well, benches
+and pond come from the props layer (`ART_GUIDE.md` §4b). Big props (trees, the
+well, the pond) are places not to stop; there is still no path-finding.
+
+Nobody stacks:
+- No stopping point is chosen within 30 px of another villager's position or
+  target (`spreadPoint`).
+- Villagers waiting at a door fan out round it (`doorSpot`).
+- A chatting pair stands side by side about 40 px apart, facing each other,
+  and a third never joins (`chatSpots`).
 
 Speed about 40 px a second for adults, 30 for elders, 55 for children. The
 direction row is chosen from the movement angle (8 ways).
@@ -245,7 +270,7 @@ tests can replay it:
 | **Errand** | Pick a place that makes sense (own workplace by day, the tavern in the evening, home at night, otherwise a named spot). Walk there. |
 | **Indoors** | At a door: fade out over 300 ms, stay "inside" 20 to 60 s, fade in, pick a new errand. The building gives a tiny bounce when someone enters. |
 | **Idle** | Stand with the idle animation for 3 to 10 s, facing the camera or the nearest villager. |
-| **Chat** | Two villagers who are both free and within about 200 px walk to each other, stop a step apart facing each other, and take turns showing a small speech bubble (three animated dots, sometimes a tiny picture: fish, heart, acorn, music note) for 4 to 7 s. Then both go on their way. A pair does not chat again for 2 minutes. |
+| **Chat** | Two villagers who are both free and within about 200 px walk to two spots side by side about 40 px apart (clear of anyone else), stop facing each other, and take turns showing a small speech bubble (three animated dots, sometimes a tiny picture: fish, heart, acorn, music note) for 4 to 7 s. Then both go on their way. A pair does not chat again for 2 minutes. |
 | **Follow** | A child walks a little behind a parent, and now and then runs ahead and waits. Two children near each other may chase for a few seconds. |
 | **Selected** | See §3.6. |
 | **Waiting** | See §3.7. |
@@ -809,6 +834,25 @@ Each step ships on its own and is shown to the owner.
      underneath it (found while testing).
 
    **Steps 1 to 9, the core, are built.**
+
+   **Polish pass (2026-11-16)**, before the Neighbourhood and building time,
+   one commit each:
+   1. **Phones:** the town card's sheet opens collapsed to its handle on Home,
+      and each device remembers the player's last choice.
+   2. **Desktop:** the town card is a compact strip (name, tier, beds,
+      happiness) that expands on click. First steps is its own collapsed chip.
+      The pan limits let the rightmost building clear the card.
+   3. **Night:** one multiply overlay tints everything, and the night is
+      lighter. Lit windows glow above the overlay (`ART_GUIDE.md` §4b).
+   4. **Paths and props:** dirt paths drawn by code, and a props layer that
+      ships empty (`ART_GUIDE.md` §4b; proofs §20).
+   5. **No stacking:** villagers never stack (§3.4; proofs §19).
+   6. **Cheaper movement:** transform-only updates, the outline baked into
+      the sheets, and the map's loops paused under Home. Numbers are in
+      `HANDOVER.md`.
+   7. **First steps:** "Make someone a builder" comes first, shown only while
+      `construction.on` is switched on (server `lib/first_steps.js`,
+      `lib/tuning.js` `SWITCHES`).
 10. **Neighbourhood data** (C.2): tables, migration, routes, tests. No visible change yet.
 11. **Neighbourhood scene** (C.3 to C.5): plots, styles, the house panel; retire the housing window.
 12. **Construction on the server** (D.2 to D.7): the builder class, sites, the queue, the tick, the guard rails, Dev Tools, and the test helper. Ship behind the tuning switch `construction.on` so it can be turned on for the owner's town first.

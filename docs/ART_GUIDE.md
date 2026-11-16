@@ -168,20 +168,114 @@ Proofs: `verify/scene_proofs.js` §14 (and §8, §12 updated).
   centred and remembers where it was; a signpost lands you at the matching
   end. Phones pan by touch instead of scrolling an 860 px page.
 - **Shadows** by code under buildings (92 % wide) and villagers.
-- **Night**: SVG colour matrices (×0.42, ×0.48, ×0.78; lit ×0.72, ×0.72,
-  ×0.92; a halfway pair for the evening) on the meadow, strips, buildings and
-  villagers; lit images fade in over 3 s at dusk and stay through the night;
-  the sky changes with the phase. An empty Neighbourhood stays dark.
+- **Night**: first built as SVG colour matrices on each element (×0.42,
+  ×0.48, ×0.78; lit ×0.72, ×0.72, ×0.92). The polish pass replaced them with
+  one overlay and lightened the night (§4b). Lit images fade in over 3 s at
+  dusk and stay through the night; the sky changes with the phase. An empty
+  Neighbourhood stays dark.
   `KWCast.preview('night')` (or `'dusk'`, `'dawn'`, `'day'`) in the console
   holds a time of day for a look; `KWCast.preview(null)` goes back to the clock.
 - **Villagers** get a 1 px dark outline and a slight lift (with their family
-  look) and walk the whole meadow.
+  look) and walk the whole meadow. Since the polish pass both are baked into
+  the sheets (§4b).
 
 Not done yet: drifting clouds (no cloud art), §4 step 8 (house styles on the
 server waits for the Neighbourhood, `HOME_SCENE.md` step 10), a Dev Tools
 overlay for door points, `scripts/pack_buildings.js`, and the night tint on
 the signposts' painted words. The door points are as estimated; villagers walk
 to them and they look right at a glance.
+
+## 4b. The polish pass (2026-11-16)
+
+Proofs: `verify/scene_proofs.js` §14m–14n2 and §20.
+
+### Night and evening
+
+- **One overlay.** A single `mix-blend-mode: multiply` layer (`.sv-night`, z 1050)
+  covers the whole world. It tints everything under it in one pass: the meadow,
+  the strips, the sky, every building and prop, and the villagers. This
+  replaced a filter on each element, and with it the bug where a building with
+  no lit image (the Market) stayed in daylight.
+- **Strength.** Night is ×0.72, ×0.80, ×1.00 on red, green and blue, about
+  1.65× brighter than before by the meadow's luminance. The evening is ×0.92,
+  ×0.80, ×0.86. The values live in `KWHome.NIGHT_TINTS`.
+- **The sky** is a strip inside the world (`.sv-bd-sky`), under the overlay. Its
+  evening and night colours are therefore set brighter than they look.
+- **Lit windows.** The overlay would dim them, so their glow is drawn again above
+  it (`.sv-glow`, z 1060, screen mode). The glow is the lit image minus the day
+  image, worked out once per pair on a canvas (`KWHome.glowFor`; pixels that
+  changed by more than 48 in all, with a soft halo). It lines up with the
+  building, follows it when the scene redraws, and is hidden in Build mode.
+  A glowing building doesn't lift on hover. Known: a villager passing right in
+  front of a lit window picks up a little of its glow.
+- **Labels** (nameplates, bubbles, villager name tags, "!" markers) take a
+  filter that undoes the tint, so they read as they do by day.
+- **Stacking.** The foreground layers are no longer stacking contexts, so
+  everything sorts in the world's one stacking context:
+
+  | Layer | z |
+  |---|---|
+  | Backdrop strips | −5 to −2 |
+  | Paths | −1 |
+  | Depth (buildings, props, villagers) | 1–1000 |
+  | Selected villager | 1005 |
+  | Hovered or focused building | 1010 |
+  | Building being dragged | 1020 |
+  | Overlay | 1050 |
+  | Glow | 1060 |
+  | Radial menu | 1600 |
+
+### Villagers
+
+The 1 px dark outline (#2a180c) and the ×1.07 lift are baked into every frame
+by `scripts/pack_sprites.js` (`outlineFrame`). Re-pack after adding GIFs. A
+villager has no filter but its family's look. The selected one keeps a light
+outline as its one filter.
+
+### Paths
+
+`js/home-ground.js` draws the dirt paths by code:
+- **Look:** a band about 28 px wide under everything, as a soft-edged pair of
+  strokes in a warm brown at low contrast.
+- **Route:** each door has a short path down to its row's lane, 22 px below the
+  doors. The lanes are joined where they overlap, and the signpost sits on the
+  nearest lane.
+- **Redraw:** whenever the engine's survey sees the doors move (build, move,
+  remove, resize).
+- **Texture later:** when a tiling texture arrives, use it as the stroke's
+  pattern in `pathsSvg`.
+
+### Props
+
+Props come from `assets/images/scene_v2/props/manifest.json`, which ships
+empty, so nothing is drawn. Each entry looks like:
+
+```json
+"oak_1": { "kind": "tree", "file": "oak_1.webp", "w": 70, "h": 80, "foot": [35, 78] }
+```
+
+- **Fields:** `w`, `h` and `foot` are on-screen pixels. Files are at 2× (scale
+  2) and drawn smooth.
+- **Kinds:** `tree`, `bush`, `fence`, `flower`, `tuft`, `rock`, `well`,
+  `bench`, `pond`, `lantern`. Several entries of one kind are picked among at
+  random. A `lantern` takes a `lit` image as well, which fades in and glows
+  like a building's.
+- **Placement:** scattered from a seed fixed per town (its id and the area).
+  - Trees and bushes go along the tree line and the side edges; fences near
+    the back corners.
+  - Flowers, tufts and rocks spread thinly across the meadow.
+  - The well goes near where the lanes join (town only), benches beside a
+    lane, the pond in open meadow, lanterns along the lanes.
+  - Nothing lands on a path, a plot (built or not, with its doorstep and
+    nameplate) or a building.
+- **Behaviour:** props are depth-sorted with buildings and villagers and are
+  never clickable. The well, benches and pond become named spots villagers walk
+  to. Villagers never stop on trees, the well or the pond (no path-finding:
+  they just stand somewhere else).
+
+**The calmer meadow.** When it arrives, point `SV_BACKDROP.ground` in
+`js/settlement-view.js` at it, and add the tufts and flowers as props in the
+manifest above.
 
 ## 5. Adding a new building later
 
@@ -205,9 +299,9 @@ survive, then pull the edge in by one pixel.
   mirrored tree line looks too regular, ask the owner for a longer strip.
 - The meadow's yellow patches and tufts are a little strong and repeat visibly
   when tiled. A calmer meadow, with tufts and flowers as separate props scattered
-  by code, is on the owner's list.
+  by code, is on the owner's list. The props layer is ready for it (§4b).
 - The first lit houses were drawn in a slightly softer style than everything
-  after them. Under the night tint it does not show.
+  after them. Under the night overlay it does not show.
 - The door points are estimates (§3).
 
 ## 7. Where this overrides `HOME_SCENE.md`
@@ -218,6 +312,8 @@ survive, then pull the edge in by one pixel.
   houses about 215 px.
 - §3.4 "the band from y 66 % to 94 %": the whole meadow, from about 27 %.
 - §3.5 "the tavern's windows glow": every building with a lit image glows.
+- §3.4 "a few named spots per area (the well, … a bench by the tavern)": the
+  well, benches and pond come from the props layer once their art is in (§4b).
 - C.3 "about three screens wide": still true, and now Town and Outskirts pan as
   well.
 - C.4 style names, as in §3 above.

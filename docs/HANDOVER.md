@@ -372,6 +372,24 @@ Frozen until after 1.0:
   - A modal inside `.game-body` (z-index 5) sits under the top bar on phones, so move it to `<body>` when it opens (see `openDiplomacyModal`).
 - **Map layers** (`js/kwmap-*.js`) must not fetch or use randomness, and must leave the canvas untouched when there's nothing to draw (the proofs check this).
 - **Dev Tools** is `#cheat-modal` in `index.html`; its buttons call `KW*.dev*()` helpers.
+- **Animation loops pause when nothing shows them.** The Home scene covers the map without hiding it, so the map's IntersectionObservers still see it on screen. The map (`kwmap-core.js`), tile actions, the season particles and the welcome screen's embers also stop under Home (`window._svIsOpen()`, and the `kw:home` event on open and close). A new rAF loop needs the same gate. In a per-frame loop, read sizes once at the top, before any style write (`villager-engine.js` `S.size`), and write only values that changed (`villagers.js` `paint`).
+- **Home scene cost, measured 2026-11-16** (the polish pass, item 6). Setup: Playwright Chromium emulating a mid-range phone (390×844, DPR 2.5, CPU throttled 4×), 7–8 villagers out, 8 s windows, Chrome's Performance metrics. Headless Chromium rasterises in software, so treat the absolute frame rates as relative.
+
+  | Phase | Measure | Before | After |
+  |---|---|---|---|
+  | Day | frames in 8 s | 34 | 293 |
+  | Day | villager loop per frame | 3.04 ms | 0.74 ms |
+  | Day | script per frame | 17.6 ms | 0.9 ms |
+  | Day | style recalcs per frame | 9.2 (3.8 ms) | 2.0 (1.3 ms) |
+  | Day | forced layouts per frame | 0.24 | 0.06 |
+  | Night | frames in 8 s | 28 | 295 |
+  | Night | villager loop per frame | 4.84 ms | 0.67 ms |
+  | Night | script per frame | 24.1 ms | 0.9 ms |
+
+  The loop's target is under 2 ms. Most of the gain came from stopping the map drawing under Home. The rest came from:
+  - one multiply overlay at night instead of a filter on each element;
+  - the villager outline baked into the sheets, replacing four drop-shadows per villager;
+  - moving villagers by transform only, with no per-frame size reads.
 
 ### Tests
 - **Frontend proofs:** `cd kindlewood-frontend && for f in verify/*_proofs.js; do node $f | tail -1; done`. There are 44 proofs and all pass. They need no server.
