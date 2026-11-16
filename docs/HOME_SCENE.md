@@ -485,7 +485,12 @@ one for now.
 
 ### C.3 Plots
 
-- Each neighbourhood is a grid: **3 rows of 12 plots, 36 in all**, along lanes.
+- Each neighbourhood is a grid of 36 plots along lanes: **2 rows of 18**
+  (owner, 2026-11-16; first written as 3 rows of 12). The real house art is
+  about 215 × 205 px, and on a phone three rows sat only about 130 px apart, so
+  each house hid the door of the one behind and took its taps. In two rows no
+  house covers another. Plots open **from the middle outwards**, so a small
+  town is a short street, not a long empty lane.
   (Since 2026-11-16 the scene is a native horizontal scroller: a finger flings
   it with the browser's momentum, and the mouse drags it, see §4 step 8a.)
   The scene is about three screens wide and pans sideways (drag, arrow keys, or
@@ -960,6 +965,35 @@ Each step ships on its own and is shown to the owner.
    3. **A building's radial menu** (§2.2a).
    4. **The working day** (§3.5a).
 10. **Neighbourhood data** (C.2): tables, migration, routes, tests. No visible change yet.
+    **Built 2026-11-16** (server: `lib/neighbourhoods.js`, `lib/house_styles.js`,
+    `routes/neighbourhoods.js`, `migrations/0NN_neighbourhoods.sql`; tests
+    `scripts/neighbourhood_test.js`).
+    - **Data.** `neighbourhoods` (one per town, "The Old Quarter"); `houses`
+      gains `neighbourhood_id`, `plot`, `style`, `state` and `custom_name`.
+      `seat()` runs at boot and whenever a house without a plot is found: old
+      houses take plots in the order they were built, with a mix of the three
+      styles that have daytime art. More than 36 old houses spill into a second
+      neighbourhood.
+    - **Plots.** 0–35; row = plot ÷ 18 (0 is the back row). The tier opens 6,
+      12, 24 or 36 of them, as whole columns from the middle
+      (`BUILDINGS.starter_house.tierCaps`, which replaces the old hut caps of
+      5, 15, 30 and 60). A town over its tier's number keeps its homes.
+    - **Routes.** `GET /api/neighbourhoods`; `POST /:nid/houses` (place, pays
+      the cost); `POST /houses/:id/move` (free; onto a home, the two swap);
+      `…/style`; `…/demolish` (that house). The old Buildings routes still
+      work for homes: Build takes the first free open plot, and Demolish takes
+      the newest home.
+    - **Found and fixed on the way:**
+      - Demolishing a Willow Hut deleted every housing row in `buildings` but
+        only one house, so the count reset and the tier cap could be dodged.
+        Now one house and one row go, and `seat()` repairs old mismatches.
+      - Moving someone between two houses gave +10 happiness every time,
+        without limit. The bonus is now only for someone who had no home.
+      - Tier upgrades counted every hut as a building. They now count kinds of
+        building, so the Neighbourhood counts once (owner, 2026-11-16).
+    - **Names.** A house shows as "The Brightburrow home" when one family lives
+      in it, "Empty home" when nobody does, and its given name when families
+      share it or the player has named it.
 11. **Neighbourhood scene** (C.3 to C.5): plots, styles, the house panel; retire the housing window.
 12. **Construction on the server** (D.2 to D.7): the builder class, sites, the queue, the tick, the guard rails, Dev Tools, and the test helper. Ship behind the tuning switch `construction.on` so it can be turned on for the owner's town first.
 13. **Construction in the scenes** (D.8): sites, working builders, the queue in the town card.

@@ -1,5 +1,4 @@
 const express = require('express');
-const { createHouseForSettlement, removeHouseForSettlement } = require('./housing');
 const { query } = require('../db');
 const RD = require('../lib/resource_defs');
 const RS = require('../lib/research_defs');
@@ -90,7 +89,9 @@ router.get('/', requireAuth, async (req, res) => {
       const currentLevel = def.isHousing
         ? (housingCounts[def.id] || 0)
         : (existing ? existing.level : 0);
-      const canUpgrade = currentLevel < def.maxLevel;
+      // Homes: as many as the tier's plots (a town with more keeps them).
+      const maxLevel = def.isHousing ? Math.max(currentLevel, (def.tierCaps && def.tierCaps[settlement.tier || 'camp']) || def.maxLevel) : def.maxLevel;
+      const canUpgrade = currentLevel < maxLevel;
 
       // Check requirements met
       const requiresMet = def.requires.every(req => builtMap[req]);
@@ -108,7 +109,7 @@ router.get('/', requireAuth, async (req, res) => {
         icon: def.icon,
         imgFile: def.imgFile || null,
         currentLevel,
-        maxLevel: def.maxLevel,
+        maxLevel,
         canUpgrade,
         requiresMet,
         tierMet,
@@ -160,19 +161,18 @@ router.post('/build', requireAuth, async (req, res) => {
     const existing = existingRes.rows[0];
     const currentLevel = existing ? existing.level : 0;
 
-    // Tier-based soft cap for housing buildings
-    if (def.tierCaps) {
-      const settlementTierRes = await query('SELECT tier FROM settlements WHERE user_id=$1', [req.user.userId]);
-      const tier = settlementTierRes.rows[0]?.tier || 'camp';
-      const tierCap = def.tierCaps[tier] || def.tierCaps['camp'];
-      // For housing, count rows (not level) to get actual house count
-      const houseCountRes = await query(
-        'SELECT COUNT(*) FROM buildings WHERE settlement_id=$1 AND type=$2',
-        [settlement.id, buildingId]
-      );
-      const houseCount = parseInt(houseCountRes.rows[0].count);
-      if (houseCount >= tierCap)
-        return res.status(400).json({ error: `Upgrade your settlement tier to build more ${def.label}s. Current limit: ${tierCap}.` });
+    // A home goes on a plot in the Neighbourhood (lib/neighbourhoods.js): the
+    // first free one the town's tier has opened. Its own rules, cost and all.
+    if (def.isHousing) {
+      const N = require('../lib/neighbourhoods');
+      try {
+        const out = await N.place(settlement.id, {});
+        const count = (await query('SELECT COUNT(*)::int AS n FROM houses WHERE settlement_id=$1 AND building_type=$2', [settlement.id, buildingId])).rows[0].n;
+        return res.json({ ok: true, building: buildingId, newLevel: count, cost: out.cost, house: out.house });
+      } catch (e) {
+        if (e instanceof N.HouseError) return res.status(e.status).json({ error: e.message });
+        throw e;
+      }
     }
 
     if (!tierMetFor(def, settlement.tier))
@@ -219,13 +219,7 @@ router.post('/build', requireAuth, async (req, res) => {
       [...costKeys.map(r => cost[r]), settlement.id]);
 
     // Build or upgrade
-    if (def.isHousing) {
-      // Housing: always insert a new row per house (not level-based)
-      await query(
-        'INSERT INTO buildings (settlement_id, type, level) VALUES ($1,$2,1)',
-        [settlement.id, buildingId]
-      );
-    } else if (existing) {
+    if (existing) {
       await query('UPDATE buildings SET level=$1 WHERE id=$2', [currentLevel + 1, existing.id]);
     } else {
       await query(
@@ -245,12 +239,6 @@ router.post('/build', requireAuth, async (req, res) => {
           [req.user.userId, q, r]
         );
       }
-    }
-
-    // Create a house record for every housing build
-    if (def.isHousing) {
-      await createHouseForSettlement(settlement.id, buildingId);
-      await require('../lib/life').autoHouse(settlement.id).catch(e => console.error('[life] autoHouse:', e.message));
     }
 
     res.json({ ok: true, building: buildingId, newLevel: currentLevel + 1, cost });
@@ -284,6 +272,14 @@ router.post('/remove', requireAuth, async (req, res) => {
     const { BUILDINGS } = require('../buildings');
     const def = BUILDINGS[buildingId];
 
+    // A home: one house comes down (the newest), not every home in town
+    // (lib/neighbourhoods.js). The Neighbourhood scene names the house.
+    if (def?.isHousing) {
+      const N = require('../lib/neighbourhoods');
+      try { const out = await N.demolish(settlement.id); return res.json({ ok: true, refund: out.refund }); }
+      catch (e) { if (e instanceof N.HouseError) return res.status(e.status).json({ error: e.message }); throw e; }
+    }
+
     // Refund 50% of base build cost
     const refund = {};
     if (def?.cost) {
@@ -298,12 +294,6 @@ router.post('/remove', requireAuth, async (req, res) => {
 
     // Remove from DB
     await query('DELETE FROM buildings WHERE settlement_id=$1 AND type=$2', [settlement.id, buildingId]);
-
-    // Remove associated house if this is a housing building
-    if (def?.isHousing) {
-      await removeHouseForSettlement(settlement.id, buildingId);
-      await require('../lib/life').autoHouse(settlement.id).catch(e => console.error('[life] autoHouse:', e.message));
-    }
 
     // Unassign any citizens working this building
     const { ROLE_BUILDING_MAP } = require('../buildings');
@@ -334,3 +324,4 @@ router.get('/definitions', async (req, res) => {
 
 module.exports = router;
 module.exports.buildDiscount = buildDiscount;
+module.exports.scaledCost = scaledCost;
