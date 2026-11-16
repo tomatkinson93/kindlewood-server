@@ -14,6 +14,8 @@ Part C (the Neighbourhood) adds a little server data. **Parts D and E (builders,
 building time and upkeep) are real changes to play** and have the server work; treat them with
 the same care as Phase 1.
 
+> **The look changed on 2026-11-16.** `docs/ART_GUIDE.md` has the new art direction (a flat meadow, cartoon buildings, WebP at twice size, day and lit pairs), the art that already exists in `assets/images/scene_v2/`, and the steps to put it in. Where it differs from this document, the art guide wins.
+
 ---
 
 ## 0. Before this: two fixes from the review
