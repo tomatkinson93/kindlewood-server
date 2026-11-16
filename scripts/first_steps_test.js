@@ -42,6 +42,22 @@ async function main() {
   const done = Object.fromEntries(x.body.steps.map(st => [st.key, st.done]));
   check(done.lumber && done.jobs && done.outpost && done.research && !done.quest && !done.scout && !done.market && x.body.done === 4, 'steps tick off from what the town has done');
 
+  // "Make someone a builder" only once building time is switched on.
+  check(!x.body.steps.some(st => st.key === 'builder'), 'with construction.on off (the default) there is no builder step');
+  const FS = require('../lib/first_steps');
+  await q("INSERT INTO life_tuning (key, value) VALUES ('construction.on', 1) ON CONFLICT (key) DO UPDATE SET value = 1");
+  try {
+    let y = await FS.forSettlement({ id: s.id });
+    check(y.steps[0].key === 'builder' && y.steps[1].key === 'lumber' && y.total === 8 && !y.steps[0].done, 'switched on: "Make someone a builder" comes first, ahead of the first building');
+    await q("UPDATE citizens SET role='builder' WHERE settlement_id=$1", [s.id]);
+    y = await FS.forSettlement({ id: s.id });
+    check(y.steps[0].done, '…and ticks once someone is a builder');
+  } finally {
+    await q("DELETE FROM life_tuning WHERE key = 'construction.on'");
+    await q("UPDATE citizens SET role='woodcutter' WHERE settlement_id=$1", [s.id]);
+  }
+  check((await FS.forSettlement({ id: s.id })).total === 7, 'switched off again: gone');
+
   x = await api('POST', '/api/game/first-steps/dismiss');
   check(x.status === 200, 'dismiss');
   x = await api('GET', '/api/game/first-steps');
