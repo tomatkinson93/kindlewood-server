@@ -756,6 +756,32 @@ Each step ships on its own and is shown to the owner.
      it open the moment instead.
 8. **Phone and comfort pass**: touch sizes, cast of 8, reduced motion, frame
    time on a mid-range phone (target: under 2 ms a frame for the loop).
+   **Built 2026-11-16** (proofs `verify/scene_proofs.js` §16, and §15q–s).
+   - **Short screens** (a phone on its side) draw the town smaller in whole
+     steps: 1× from 600 px of scene height, ¾ from 420, else ½, so pixel art
+     stays even; panning and the far strips follow the scale.
+   - **Touch**: the villager hit box is 58 × 82 (48 × 70 with a mouse), the
+     menu's buttons 48 px, the build panel's buttons at least 44 px.
+   - **Build mode's "Move to…"**: the manage panel lists the area's other plots
+     as buttons (onto a building, the two swap), so a building moves without
+     dragging; focus follows it.
+   - **Reduced motion**: villagers stand still (step 5), bubbles and the menu
+     don't animate, and lit windows switch instead of fading.
+   - **Frame time**: the villager loop measured under 0.1 ms a frame on a
+     phone-sized screen with the CPU slowed 4× (`KWCast.frameMs`).
+   - The cast of 8 on phones has been in since step 5.
+   Also in this round, from the owner's notes:
+   - **Selecting a villager is press-and-release**, not the browser's click:
+     the villager stops while pressed, a press that moves under 10 px selects,
+     and the villager under the pointer is found even just behind a
+     building's transparent edge (whose image box used to take the press). In
+     a 40-click test on walking villagers, 40 selected (about 1 in 10 missed
+     before). The hold after a menu button now tracks the window it opened.
+   - **A Names chip** beside Build toggles every nameplate (pressed while on);
+     N does the same; it is the profile menu's Show names setting.
+   - **Faces in the family tree**: each person's box shows their face, cut from
+     the idle sheet facing the camera (44 px at 1×, 33 for a child, grey for
+     the dead); `KWVillagers.faceHtml(species, size)`.
 9. **Moment markers** (§3.7).
 10. **Neighbourhood data** (C.2): tables, migration, routes, tests. No visible change yet.
 11. **Neighbourhood scene** (C.3 to C.5): plots, styles, the house panel; retire the housing window.
