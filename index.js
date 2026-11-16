@@ -71,6 +71,7 @@ app.use('/api/diplomacy', diplomacyRoutes);
 // item-admin endpoints are in /api/game/items (routes/game.js)
 const housingRoutes = require('./routes/housing');
 app.use('/api/housing', housingRoutes);
+app.use('/api/neighbourhoods', require('./routes/neighbourhoods'));
 const eventsRoutes = require('./routes/events');
 app.use('/api/events', eventsRoutes);
 const relationshipsRoutes = require('./routes/relationships');

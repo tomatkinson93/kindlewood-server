@@ -46,17 +46,17 @@ The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-fronte
 6. ~~**Phase 4: Consolidation and the layout rework**~~ (built 2026-11-13 and 14; `docs/LAYOUT_SPEC.md` §2.8): the five places, Home on the settlement scene with the town card, the context panel, the bell as one place for news, the top bar and map controls, Dev Tools for admins only (markup from `GET /api/dev-tools`), Journeys in The Land's panel, one Stores screen, and the outpost trim (`OUTPOST_TRIM.md` § Built). Only the tier pacing pass is left; it waits for real funnel numbers.
 7. **Next, in order** (`docs/ROADMAP_1_0.md` §5, updated 2026-11-15):
    1. ~~**The beds cliff**~~ (done 2026-11-15, `lib/beds_cliff.js`; `HOME_SCENE.md` §0): on the first boot after deploy, towns with more people than beds get free Willow Huts until beds ≥ living, and a chronicle line. **After deploy:** check the boot log for `[beds_cliff] raised N homes in M town(s)` and that `migration_marks` has `beds_cliff_homes`. Open question for Phase 3: new towns still arrive with no huts.
-   2. **Phase 4b, the living Home scene, core** (`HOME_SCENE.md` §4 steps 2–9): style test, buildings as buttons, Build mode, walking villagers, the radial menu, phones, moment markers. **Step 2 (the style test) is built** and the owner's mouse is packed (`art/villagers/mouse/` → `node scripts/pack_sprites.js`; see it with `?villagers=test`). **Step 3 (buildings as buttons) is built** (`js/home-scene.js`), **step 4 (Build mode)** and **step 5 (the villager engine**, `js/villager-engine.js`: real citizens walk Home for everyone) and **step 6 (behaviour**: errands by time of day, indoors, chat, children, night); next is step 7, selecting a villager and the radial menu.
+   2. **Phase 4b, the living Home scene, core** (`HOME_SCENE.md` §4 steps 2–9): style test, buildings as buttons, Build mode, walking villagers, the radial menu, phones, moment markers. **Step 2 (the style test) is built** and the owner's mouse is packed (`art/villagers/mouse/` → `node scripts/pack_sprites.js`; see it with `?villagers=test`). **Step 3 (buildings as buttons) is built** (`js/home-scene.js`), **step 4 (Build mode)** and **step 5 (the villager engine**, `js/villager-engine.js`: real citizens walk Home for everyone) and **step 6 (behaviour**: errands by time of day, indoors, chat, children, night); and **the new art set** (`docs/ART_GUIDE.md` §4 steps 1–7, §4a: flat meadow, panning, night by tint and lit windows; the mouse-drift parallax is gone); and **step 7 (selecting a villager: the radial menu, with the owner's pop sounds)**; **step 8 (the phone and comfort pass**, plus press-and-release selection, a Names chip and faces in the family tree); and **step 9 (moment markers)**: the core (steps 1–9) is built. Two batches followed on 2026-11-16 (`HOME_SCENE.md` §4 after step 9). **The polish pass** (`ART_GUIDE.md` §4b): a collapsed town card and phone sheet, night as one overlay with glowing windows, dirt paths and an empty props layer, villagers that don't stack, cheaper movement (numbers in §4, Frontend patterns), and a "Make someone a builder" first step behind `construction.on`. **Five Home changes:** phone panning as a native scroll, loading and Home music (§3.11; silent cases in §4), a radial menu on buildings (§2.2a), and villagers keeping a working day (§3.5a). Next on the roadmap: Phase 3, onboarding and the guide (write its spec first), then Phase 4b steps 10–17.
    3. **Phase 3, onboarding and the guide** (`ROADMAP_1_0.md` §6; no build spec yet, so write one first). It also decides when The Road and The Clan unlock for new players (Phase 4 shows all five places from the start).
-   4. **Phase 4b, the rest** (`HOME_SCENE.md` steps 10–17): the Neighbourhood; building time with builders (step 12 changes play: its own review, behind `construction.on`); mood, life events and town events; upkeep last.
+   3a. **The new look** (`ART_GUIDE.md`, agreed 2026-11-16): a flat meadow, cartoon buildings and a code-drawn sky replace the painted landscape. Eleven buildings and the new backdrop are already in the frontend at `assets/images/scene_v2/` with their own manifest. `ART_GUIDE.md` §4 has the nine steps to put them in; do them before the Neighbourhood scene, which uses the four house images.
+   4. **Phase 4b, the rest** (`HOME_SCENE.md` steps 10–17; **steps 10 and 11, the Neighbourhood, are built**, 2026-11-16: houses on plots in two rows of 18, a third scene `js/neighbourhood.js`, tier upgrades count kinds of building; next is step 12, building time): the Neighbourhood; building time with builders (step 12 changes play: its own review, behind `construction.on`); mood, life events and town events; upkeep last.
    5. **Phase 5, species identity**, then **Phase 6, the clan project** (outlines in the roadmap; specs to write).
    6. **Dungeons** (`docs/DUNGEONS.md`, `docs/DUNGEON_CONTENT.md`), after the 1.0 phases; three questions still open (`DUNGEON_CONTENT.md` §9).
    - **Waiting on real play data:** the moments budget tuning (Phase 2 step 6), the tier pacing pass (Phase 4), and a Fable review of Phase 1.
    - **Loose ends:**
-     - demolishing a Willow Hut removes only one house;
      - old windows move to `KWWindow` as they are touched (the citizen profile first);
      - the mockup's Defences chip and the counts on chips wait for those screens.
-   **Hosting:** the frontend is on Porkbun static hosting, which serves the repo's files as they are. It runs NGINX, so `.htaccess` is ignored: no rewrite, caching or deny rules apply. Caching relies on the `?v=` in each link, and a file is off the site only if it isn't in the repo. Porkbun can't keep a file private; anything admin-only must come from the API (as Dev Tools' markup does).
+   **Hosting:** the frontend is on Porkbun static hosting, which serves the repo's files as they are. **Version stamps matter again:** every local script and stylesheet in `index.html` carries `?v=<hash of its contents>`; run `node scripts/stamp_versions.js` after changing any file under `js/` or `css/` (the proofs fail on a stale stamp, `assets_proofs` 1c). Without it, phones kept old stylesheets beside new scripts (seen 2026-11-16: no backdrop, oversized buildings, an unstyled villager button). It runs NGINX, so `.htaccess` is ignored: no rewrite, caching or deny rules apply. Caching relies on the `?v=` in each link, and a file is off the site only if it isn't in the repo. Porkbun can't keep a file private; anything admin-only must come from the API (as Dev Tools' markup does).
    **GitHub checks:** the frontend's workflow is a test check only (`.github/workflows/proofs.yml`, every push and pull request; it replaced an unused build-and-FTP deploy, 2026-11-15). It checks out the frontend alone, so proofs that compare with the server (`research_proofs`, the Dev Tools markup checks) skip and say so; the full suite (`kindlewood-server scripts/test_all.sh`, both repos side by side) runs them. The target is `docs/LAYOUT_MOCKUP.pdf`.
 
 All the owner's decisions for Phase 1 are made (`PHASE_1_LIFE_CYCLE.md` §11): the slower life pace, heirlooms with a small bonus, step 1 first.
@@ -371,8 +371,40 @@ Frozen until after 1.0:
   - A modal inside `.game-body` (z-index 5) sits under the top bar on phones, so move it to `<body>` when it opens (see `openDiplomacyModal`).
 - **Map layers** (`js/kwmap-*.js`) must not fetch or use randomness, and must leave the canvas untouched when there's nothing to draw (the proofs check this).
 - **Dev Tools** is `#cheat-modal` in `index.html`; its buttons call `KW*.dev*()` helpers.
+- **Animation loops pause when nothing shows them.** The Home scene covers the map without hiding it, so the map's IntersectionObservers still see it on screen. The map (`kwmap-core.js`), tile actions, the season particles and the welcome screen's embers also stop under Home (`window._svIsOpen()`, and the `kw:home` event on open and close). A new rAF loop needs the same gate. In a per-frame loop, read sizes once at the top, before any style write (`villager-engine.js` `S.size`), and write only values that changed (`villagers.js` `paint`).
+- **Music and when it stays silent** (`js/music.js`, `HOME_SCENE.md` §3.11). Browsers block sound until the player has pressed or typed something on the page. The loading and Home music never show an error: they wait silently and start on the first press or key.
+
+  | Case | What you hear |
+  |---|---|
+  | Fresh login (the player pressed Log in) | The loading music plays straight away. |
+  | Reload with a saved login | The loading music stays silent, unless the player taps the loading screen. Pressing Start playing counts as the first press, so Home's music starts with its 2 s fade. |
+  | First visit straight onto Home without a press (not reachable today: Start playing is always pressed first) | Silent until the first press. |
+  | Tab in the background | Paused. It resumes when the tab comes back. |
+  | Battle, tavern game or menu music playing | Home's music fades out until it stops. |
+  | Music volume 0 or muted | Silent. |
+  | A file not uploaded yet | Silent; one console note per file. |
+
+  The ambient beds (`assets/audio/ambient/*.mp3`, not uploaded yet) duck to 20 % under Home's music rather than being turned off.
+- **Home scene cost, measured 2026-11-16** (the polish pass, item 6). Setup: Playwright Chromium emulating a mid-range phone (390×844, DPR 2.5, CPU throttled 4×), 7–8 villagers out, 8 s windows, Chrome's Performance metrics. Headless Chromium rasterises in software, so treat the absolute frame rates as relative.
+
+  | Phase | Measure | Before | After |
+  |---|---|---|---|
+  | Day | frames in 8 s | 34 | 293 |
+  | Day | villager loop per frame | 3.04 ms | 0.74 ms |
+  | Day | script per frame | 17.6 ms | 0.9 ms |
+  | Day | style recalcs per frame | 9.2 (3.8 ms) | 2.0 (1.3 ms) |
+  | Day | forced layouts per frame | 0.24 | 0.06 |
+  | Night | frames in 8 s | 28 | 295 |
+  | Night | villager loop per frame | 4.84 ms | 0.67 ms |
+  | Night | script per frame | 24.1 ms | 0.9 ms |
+
+  The loop's target is under 2 ms. Most of the gain came from stopping the map drawing under Home. The rest came from:
+  - one multiply overlay at night instead of a filter on each element;
+  - the villager outline baked into the sheets, replacing four drop-shadows per villager;
+  - moving villagers by transform only, with no per-frame size reads.
 
 ### Tests
+- **Use a fresh test database for the whole suite.** `rankings_test` and `wonders_test` build "the biggest town" and expect it to lead the boards; on a database that has run them before, the older copies tie and they fail (seen 2026-11-16). They don't clean up after themselves; worth fixing when next touched.
 - **Frontend proofs:** `cd kindlewood-frontend && for f in verify/*_proofs.js; do node $f | tail -1; done`. There are 44 proofs and all pass. They need no server.
 - **Server tests:** 44 `scripts/*_test.js` files, run by `scripts/test_all.sh`. The last full run on a fresh DB was 2,525 passed, 0 failed. The suite needs a throwaway Postgres and the API running:
 

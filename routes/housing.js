@@ -6,7 +6,6 @@ const router = express.Router();
 
 const HOUSED_HAPPINESS_BONUS  =  10; // applied when citizen is housed
 const UNHOUSED_HAPPINESS_CAP  =  50; // max happiness for unhoused citizens
-const HOUSING_CAPACITY = { starter_house: require('../lib/life').CONFIG.HOUSE_BEDS };   // 4
 
 // ── GET /api/housing — all houses + residents for this settlement ──────────────
 router.get('/', requireAuth, async (req, res) => {
@@ -51,6 +50,7 @@ router.get('/', requireAuth, async (req, res) => {
         name: h.name,
         building_type: h.building_type,
         capacity: h.capacity,
+        neighbourhood_id: h.neighbourhood_id, plot: h.plot, style: h.style, state: h.state, custom_name: h.custom_name,
         residents: h.residents || [],
       })),
       unhoused: unhousedRes.rows,
@@ -99,10 +99,12 @@ router.post('/assign', requireAuth, async (req, res) => {
     if (citizenRes.rows[0].house_id === house.id) return res.json({ ok: true });
 
     // Assign
+    const hadHome = citizenRes.rows[0].house_id != null;
     await query('UPDATE citizens SET house_id=$1 WHERE id=$2', [house_id, citizen_id]);
 
-    // Apply happiness bonus
-    await query(
+    // The happiness of getting a home: only for someone who had none. (Moving
+    // between two houses used to give it every time, without limit.)
+    if (!hadHome) await query(
       `UPDATE citizens SET life = jsonb_set(life, '{happiness}',
         to_jsonb(LEAST(100, COALESCE((life->>'happiness')::int, 70) + $1))
        ) WHERE id=$2`,
@@ -166,7 +168,7 @@ router.patch('/:id/name', requireAuth, async (req, res) => {
     if (!settlement) return res.status(404).json({ error: 'No settlement.' });
 
     const result = await query(
-      'UPDATE houses SET name=$1 WHERE id=$2 AND settlement_id=$3 RETURNING id',
+      'UPDATE houses SET name=$1, custom_name=TRUE WHERE id=$2 AND settlement_id=$3 RETURNING id',
       [name, req.params.id, settlement.id]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'House not found.' });
@@ -178,36 +180,6 @@ router.patch('/:id/name', requireAuth, async (req, res) => {
   }
 });
 
-// ── Internal: create a house row when a starter_house building is built ───────
-// Called from buildings route after successful build
-async function createHouseForSettlement(settlementId, buildingType) {
-  const capacity = HOUSING_CAPACITY[buildingType] || require('../lib/life').CONFIG.HOUSE_BEDS;
-  // Count existing houses of this type to auto-name
-  const countRes = await query(
-    "SELECT COUNT(*) FROM houses WHERE settlement_id=$1 AND building_type=$2",
-    [settlementId, buildingType]
-  );
-  const num = parseInt(countRes.rows[0].count) + 1;
-  const name = `Willow Hut #${num}`;
-  await query(
-    'INSERT INTO houses (settlement_id, name, building_type, capacity) VALUES ($1,$2,$3,$4)',
-    [settlementId, name, buildingType, capacity]
-  );
-}
-
-// ── Internal: remove the most recently built house of a type (on demolish) ───
-async function removeHouseForSettlement(settlementId, buildingType) {
-  // Free residents first
-  const houseRes = await query(
-    `SELECT id FROM houses WHERE settlement_id=$1 AND building_type=$2 ORDER BY created_at DESC LIMIT 1`,
-    [settlementId, buildingType]
-  );
-  if (!houseRes.rows.length) return;
-  const houseId = houseRes.rows[0].id;
-  await query('UPDATE citizens SET house_id=NULL WHERE house_id=$1', [houseId]);
-  await query('DELETE FROM houses WHERE id=$1', [houseId]);
-}
+// Houses are built and pulled down by lib/neighbourhoods.js (place, demolish).
 
 module.exports = router;
-module.exports.createHouseForSettlement = createHouseForSettlement;
-module.exports.removeHouseForSettlement = removeHouseForSettlement;

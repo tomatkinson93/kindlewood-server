@@ -14,6 +14,8 @@ Part C (the Neighbourhood) adds a little server data. **Parts D and E (builders,
 building time and upkeep) are real changes to play** and have the server work; treat them with
 the same care as Phase 1.
 
+> **The look changed on 2026-11-16.** `docs/ART_GUIDE.md` has the new art direction (a flat meadow, cartoon buildings, WebP at twice size, day and lit pairs), the art that already exists in `assets/images/scene_v2/`, and the steps to put it in. Where it differs from this document, the art guide wins.
+
 ---
 
 ## 0. Before this: two fixes from the review
@@ -88,7 +90,9 @@ The Town / Outskirts / Edit toggles in the scene's own header go too.
 
 ### 2.2 What each thing opens
 
-A click (or Enter) on a built building opens its main screen:
+A click (or Enter) on a built building opens its radial menu (§2.2a), whose
+**Enter** opens its main screen; a double click, or Enter twice, goes straight
+there:
 
 | Building | Opens | Today's call |
 |---|---|---|
@@ -109,14 +113,41 @@ Things that are not buildings get a **prop** in the scene:
 - **Town ↔ Outskirts**: a wooden signpost at the right edge of Town ("To the
   Outskirts →") and at the left edge of the Outskirts ("← To town").
 
+Props keep their single click; only built buildings have the menu.
+
+### 2.2a A building's radial menu (built 2026-11-16)
+
+`js/building-menu.js`, in the villager menu's style:
+- **Enter** sits in the middle and is the largest button. It does what a click
+  did before. A double click, or Enter pressed twice on the keyboard, goes
+  straight in; opening the menu from the keyboard focuses Enter.
+- **The others** sit evenly round Enter:
+  - **Minimise** makes the building see-through (30 %) and click-through, so
+    villagers behind it can be picked. Its nameplate stays, and a click on the
+    nameplate restores it. `assets/audio/ui/minimize.wav` plays both ways. It
+    lasts until the player leaves Home, and a see-through building's windows
+    don't glow over it.
+  - **Upgrade** opens the existing upgrade panel. It is hidden at the top level.
+  - **Demolish** runs the existing flow, always with its confirmation. The
+    Neighbourhood doesn't have it (its huts go in its own window).
+  - **Who's here** lists the villagers the scene has inside right now
+    (working, visiting, or at home in the Neighbourhood). Clicking a name brings
+    them out of the door with their own menu open.
+- **Buttons that don't apply** are left out, not greyed.
+- **One menu at a time:** opening a building's menu closes a villager's, and
+  the other way round. A press elsewhere or Esc closes it.
+- **See through** is a chip beside Names that minimises, or restores, every
+  building at once.
+
 ### 2.3 Build mode
 
 One **Build** button remains, top left. It replaces both Build and Edit:
 
 - Off (normal): empty plots are hidden. Buildings open their screens.
 - On: empty plots show ("Build here"), buildings can be dragged to another
-  plot, and a click on a building opens the manage panel (upgrade, demolish).
-  Villagers are hidden. A "Done" button and Esc leave the mode.
+  plot, and a click on a building opens its panel for moving it ("Move to…").
+  Upgrade and Demolish are in the building's radial menu (§2.2a) since
+  2026-11-16. Villagers are hidden. A "Done" button and Esc leave the mode.
 
 A town with nothing built yet starts with Build mode's plots showing, so a new
 player is never looking at an empty meadow with no way forward.
@@ -163,6 +194,10 @@ Files go in `assets/images/buildings/<key>.png`. Add
 **door point** (x, y in the image) where villagers go in and out. A missing
 entry means "use the placeholder and the bottom centre as the door".
 
+(Superseded by `ART_GUIDE.md`: WebP at 2× with `manifest.v2.json`. Paths
+between the doors and the props layer, trees, flowers, a well, benches,
+lanterns, are in `ART_GUIDE.md` §4b.)
+
 ---
 
 ## 3. Part B: villagers
@@ -202,6 +237,18 @@ One `requestAnimationFrame` loop moves everyone with `transform` only. It stops
 when Home is not showing, when the tab is hidden, in Build mode, and for
 players who ask for reduced motion (they get villagers standing idle in place).
 
+Since the polish pass (2026-11-16):
+- **What a frame writes.** Only what changed: the frame when it ticks over,
+  the transform when the rounded position moves, and z-index on change. The
+  layer's size is read once at the top of the frame, before any write.
+- **No filter of their own.** The outline and lift are baked into the sheets,
+  so a villager carries only its family's look.
+- **Night** is one overlay over the world, not a filter on each villager
+  (`ART_GUIDE.md` §4b).
+- **Nothing else draws under Home.** The map's own loops pause while Home is
+  open. Measured numbers are in `HANDOVER.md` §4 (Frontend patterns); the
+  loop is about 0.7 ms per frame on an emulated mid-range phone.
+
 ### 3.3 Who is on screen (the cast)
 
 - Eligible: living citizens for whom `citizenAway(c)` is null.
@@ -228,7 +275,16 @@ walking "behind" a building read correctly.
 
 Points of interest: each built building's door (from the manifest, following
 the building if the player moved it), plus a few named spots per area (the
-well, the riverbank, the signpost, a bench by the tavern).
+well, the riverbank, the signpost, a bench by the tavern). The well, benches
+and pond come from the props layer (`ART_GUIDE.md` §4b). Big props (trees, the
+well, the pond) are places not to stop; there is still no path-finding.
+
+Nobody stacks:
+- No stopping point is chosen within 30 px of another villager's position or
+  target (`spreadPoint`).
+- Villagers waiting at a door fan out round it (`doorSpot`).
+- A chatting pair stands side by side about 40 px apart, facing each other,
+  and a third never joins (`chatSpots`).
 
 Speed about 40 px a second for adults, 30 for elders, 55 for children. The
 direction row is chosen from the movement angle (8 ways).
@@ -243,7 +299,7 @@ tests can replay it:
 | **Errand** | Pick a place that makes sense (own workplace by day, the tavern in the evening, home at night, otherwise a named spot). Walk there. |
 | **Indoors** | At a door: fade out over 300 ms, stay "inside" 20 to 60 s, fade in, pick a new errand. The building gives a tiny bounce when someone enters. |
 | **Idle** | Stand with the idle animation for 3 to 10 s, facing the camera or the nearest villager. |
-| **Chat** | Two villagers who are both free and within about 200 px walk to each other, stop a step apart facing each other, and take turns showing a small speech bubble (three animated dots, sometimes a tiny picture: fish, heart, acorn, music note) for 4 to 7 s. Then both go on their way. A pair does not chat again for 2 minutes. |
+| **Chat** | Two villagers who are both free and within about 200 px walk to two spots side by side about 40 px apart (clear of anyone else), stop facing each other, and take turns showing a small speech bubble (three animated dots, sometimes a tiny picture: fish, heart, acorn, music note) for 4 to 7 s. Then both go on their way. A pair does not chat again for 2 minutes. |
 | **Follow** | A child walks a little behind a parent, and now and then runs ahead and waits. Two children near each other may chase for a few seconds. |
 | **Selected** | See §3.6. |
 | **Waiting** | See §3.7. |
@@ -251,6 +307,34 @@ tests can replay it:
 Time of day (the game clock the top bar already shows): by night most of the
 cast is indoors and two or three are out; the tavern's windows glow. Morning
 sends workers toward their buildings.
+
+### 3.5a The working day (built 2026-11-16)
+
+Errands follow a daily routine per villager, driven by the game clock
+(`js/villager-engine.js` `routine`, `atWork`, `callOut`). It is cosmetic only:
+nothing changes output, happiness or any server state.
+
+- **Workers.** A grown-up whose job has a building in this area works inside
+  it. They walk there in the morning (10:00–11:00 game time, UTC) and come out
+  in the evening (22:24–23:00). In between come two or three breaks, adding up
+  to about a quarter of the day; each falls in its own part of the day, so
+  different villagers break at different times. On a break they wander, visit
+  other buildings, chat and sit at named spots.
+- **Everyone else.** Children, elders, the idle, and anyone whose job has no
+  building here behave as before, all day. Outskirts workers keep their day
+  in the Outskirts.
+- **Stable.** The routine comes from a seed fixed to the villager and the game
+  day, so a reload shows the same day. Workers on shift start inside when Home
+  opens, and Who's here (§2.2a) always matches the scene.
+- **Never empty.** By day at least 4 villagers stay out (3 on a phone)
+  whenever that many are present. Those inside on an errand come out first,
+  then the worker who has been inside longest takes an extra 4–8 minute break.
+  Nobody goes in if that would drop below the minimum.
+- **Evening and night.** In the evening half of errands go to the tavern, and
+  a visit there lasts 1.5–4 minutes. At night most go home and a few stay out.
+- Entering and leaving is always by walking to the door.
+
+Proofs: `verify/scene_proofs.js` §23.
 
 ### 3.6 Selecting a villager: the radial menu
 
@@ -341,6 +425,33 @@ even if the cast is full.
 
 Priority when several apply: raid, then death, then festival, then the rest.
 
+### 3.11 Music (built 2026-11-16)
+
+`js/music.js`; the files go in these places:
+
+| What | Path |
+|---|---|
+| Loading screen | `assets/audio/music/loading.mp3` |
+| Home, dawn and day | `assets/audio/music/home_day.mp3` |
+| Home, dusk and night (optional) | `assets/audio/music/home_night.mp3` |
+
+- **Loading screen.** The loading music loops. Pressing Start playing fades it
+  out over 1.5 s while Home's fades in over 2 s.
+- **Home.** Home's music loops while Home shows, and cross-fades between day
+  and night (4 s) with the scene's time of day. Without a night file, the day
+  one plays at night too.
+- **When it stops.** It fades out when Home closes or other music takes over
+  (a battle, a tavern game, the menu's `welcome.mp3`), and pauses while the
+  tab is hidden.
+- **Volume.** It follows the music volume and mute. The ambient beds duck to
+  20 % under it.
+- **Blocked sound.** Browsers block sound until the player has pressed
+  something. Until then nothing plays and nothing is said; the first press or
+  key starts what should be playing. A missing file is silent. Which cases stay
+  silent is in `HANDOVER.md`.
+- **welcome.mp3** (login screen, `js/welcome-music-guard.js`) never overlaps:
+  the loading music pauses it.
+
 ---
 
 ## 3C. Part C: the Neighbourhood
@@ -350,7 +461,7 @@ Priority when several apply: raid, then death, then festival, then the rest.
 Clicking the Neighbourhood in Town no longer opens the housing window. It opens a
 third scene, beside Town and Outskirts, that holds **only houses**. Villagers
 walk here too. The old housing window (`js/housing.js`) is retired; what it did
-moves into this scene.
+moves into this scene. (Built: steps 10 and 11 in §4.)
 
 In Town, the Neighbourhood stays as one building: a cluster of roofs that is the
 door to the scene. Its nameplate shows beds ("Homes · 18 of 20 beds") and its
@@ -374,7 +485,14 @@ one for now.
 
 ### C.3 Plots
 
-- Each neighbourhood is a grid: **3 rows of 12 plots, 36 in all**, along lanes.
+- Each neighbourhood is a grid of 36 plots along lanes: **2 rows of 18**
+  (owner, 2026-11-16; first written as 3 rows of 12). The real house art is
+  about 215 × 205 px, and on a phone three rows sat only about 130 px apart, so
+  each house hid the door of the one behind and took its taps. In two rows no
+  house covers another. Plots open **from the middle outwards**, so a small
+  town is a short street, not a long empty lane.
+  (Since 2026-11-16 the scene is a native horizontal scroller: a finger flings
+  it with the browser's momentum, and the mouse drags it, see §4 step 8a.)
   The scene is about three screens wide and pans sideways (drag, arrow keys, or
   the mouse at the edge). It opens centred on the newest house.
 - Plots open with the town's tier: Camp 6, Village 12, Town 24, City 36. (36
@@ -409,9 +527,11 @@ one for now.
 - Nameplate on hover: the house's name and who lives there. Houses are named for
   the family in them ("The Brightburrow home") unless the player has renamed it;
   a mixed house keeps its given name. This replaces "Willow Hut #3".
-- Clicking a house opens its panel in the context panel: residents (each one
-  clickable), free beds, move someone in or out, rename, change style.
-- Build mode here: place a house, drag one to another plot, demolish.
+- Clicking a house opens its radial menu (§2.2a); Enter opens its window:
+  residents (each one clickable), free beds, move someone in or out, rename,
+  change style.
+- Build mode here: place a house, pick one up and put it on another plot
+  (onto a home, they swap), demolish.
 - A villager without a bed (§3.8) stands in the lane by a free plot.
 
 ### C.6 Later (not now)
@@ -727,11 +847,191 @@ Each step ships on its own and is shown to the owner.
    - `KWCast._setPhase('night')` in the console shows the night (or `'dusk'`)
      until the next clock check, for a quick look.
 7. **Selection and the radial menu** (§3.6).
+   **Built 2026-11-16** (`js/villager-engine.js`, `css/home-scene.css`; proofs
+   `verify/scene_proofs.js` §15). Each villager is a real button (Tab reaches
+   them after the buildings); only a small box round the figure takes clicks,
+   so the frame's empty corners never cover a building. Selecting stops them
+   facing the camera with a bright outline, a ring on the ground and "Name ·
+   job, age" under them; four round buttons fan out above in 150 ms (turned and
+   narrowed near an edge of the view so they stay on screen; 48 px on touch).
+   Notes:
+   - **Sounds** (the owner's): `assets/audio/ui/pop_on.mp3` as the menu opens,
+     `pop_off.mp3` as it closes, however it closes (click away, Esc, or a
+     button). They play at the effects volume. The WAV was made an MP3 (4 KB).
+   - **Change work** and **Apprenticeship** open the citizen's profile scrolled
+     to and focused on its job picker (or the youth's trade picker): that is
+     where the existing picker lives. **House** opens the Homes window scrolled
+     to their house (houses there now carry `data-house`). **Family** opens their
+     family line.
+   - After a button, the villager stands until the window it opened closes,
+     then walks on.
+   - Enter on a focused villager opens the menu with the first button focused;
+     arrow keys move between buttons; Esc closes it and puts focus back on the
+     villager. Arrows inside the menu don't pan the scene.
+   - People kept indoors overnight now come out over 20 s in the morning, not
+     all at once.
+   - Clicking someone with an open moment still opens this menu; step 9 makes
+     it open the moment instead.
 8. **Phone and comfort pass**: touch sizes, cast of 8, reduced motion, frame
    time on a mid-range phone (target: under 2 ms a frame for the loop).
+   **Built 2026-11-16** (proofs `verify/scene_proofs.js` §16, and §15q–s).
+   - **Short screens** (a phone on its side) draw the town smaller in whole
+     steps: 1× from 600 px of scene height, ¾ from 420, else ½, so pixel art
+     stays even; panning and the far strips follow the scale.
+   - **Touch**: the villager hit box is 58 × 82 (48 × 70 with a mouse), the
+     menu's buttons 48 px, the build panel's buttons at least 44 px.
+   - **Build mode's "Move to…"**: the manage panel lists the area's other plots
+     as buttons (onto a building, the two swap), so a building moves without
+     dragging; focus follows it.
+   - **Reduced motion**: villagers stand still (step 5), bubbles and the menu
+     don't animate, and lit windows switch instead of fading.
+   - **Frame time**: the villager loop measured under 0.1 ms a frame on a
+     phone-sized screen with the CPU slowed 4× (`KWCast.frameMs`).
+   - The cast of 8 on phones has been in since step 5.
+   Also in this round, from the owner's notes:
+   - **Selecting a villager is press-and-release**, not the browser's click:
+     the villager stops while pressed, a press that moves under 10 px selects,
+     and the villager under the pointer is found even just behind a
+     building's transparent edge (whose image box used to take the press). In
+     a 40-click test on walking villagers, 40 selected (about 1 in 10 missed
+     before). The hold after a menu button now tracks the window it opened.
+   - **A Names chip** beside Build toggles every nameplate (pressed while on);
+     N does the same; it is the profile menu's Show names setting.
+   - **Villagers' name plates** (first names, under their feet) show with
+     Names on, during the touch peek, or on hover and focus.
+   - **Nobody unclickable**: someone walking into a building (the cast
+     changing every minute) used to ignore clicks until they were gone; now
+     they stop and stay when picked. Someone leaving town who is picked goes
+     on after the menu closes.
+   - **Faces in the family tree**: each person's box shows their face, cut from
+     the idle sheet facing the camera (44 px at 1×, 33 for a child, grey for
+     the dead); `KWVillagers.faceHtml(species, size)`.
 9. **Moment markers** (§3.7).
+   **Built 2026-11-16** (`js/villager-engine.js`; proofs `verify/scene_proofs.js`
+   §18). Each open moment is carried by one villager: its first citizen who is
+   out (in the moment's own order, its main person first). A town-wide
+   question (the season's choices, which name nobody) goes to a messenger: an
+   elder if one is out, else the oldest grown-up. They come outdoors (even at
+   night), walk to a clear spot near the middle of the view (on the lane
+   between the rows where nothing stands in front, else the open meadow at
+   the front; others waiting keep 60 px apart) and stand facing the camera
+   with a bobbing "!". Clicking (or Enter) opens the moment in the dialogue box
+   instead of the menu, with the pop sound; answered, the "!" goes within a
+   second and they walk on. Notes:
+   - **No server change was needed.** Every moment about townsfolk already
+     names them in `subject.citizen_ids`. The season's moments name nobody on
+     purpose (they are the town's), hence the messenger. Moments about an
+     outpost, a village's envoy or a settler on the road have nobody in town
+     and stay in the moment cards only (an envoy walking in is in §7's ideas).
+   - A press on a window, panel or card over the scene never picks a villager
+     underneath it (found while testing).
+
+   **Steps 1 to 9, the core, are built.**
+
+   **Polish pass (2026-11-16)**, before the Neighbourhood and building time,
+   one commit each:
+   1. **Phones:** the town card's sheet opens collapsed to its handle on Home,
+      and each device remembers the player's last choice.
+   2. **Desktop:** the town card is a compact strip (name, tier, beds,
+      happiness) that expands on click. First steps is its own collapsed chip.
+      The pan limits let the rightmost building clear the card.
+   3. **Night:** one multiply overlay tints everything, and the night is
+      lighter. Lit windows glow above the overlay (`ART_GUIDE.md` §4b).
+   4. **Paths and props:** dirt paths drawn by code, and a props layer that
+      ships empty (`ART_GUIDE.md` §4b; proofs §20).
+   5. **No stacking:** villagers never stack (§3.4; proofs §19).
+   6. **Cheaper movement:** transform-only updates, the outline baked into
+      the sheets, and the map's loops paused under Home. Numbers are in
+      `HANDOVER.md`.
+   7. **First steps:** "Make someone a builder" comes first, shown only while
+      `construction.on` is switched on (server `lib/first_steps.js`,
+      `lib/tuning.js` `SWITCHES`).
+
+   **Five Home changes (2026-11-16)**, one commit each:
+   1. **Panning on phones (8a).**
+      - **Native scroll.** The scene is a native horizontal scroll container
+        (`overflow-x`). A finger flings it with the browser's own momentum, and
+        it scrolls on the compositor, not in script.
+      - **Tap or pan.** The browser tells a tap from a pan, so a swipe that
+        starts on a building or a villager pans and opens or selects nothing.
+      - **Other gestures.** Vertical swipes go to the page or sheet
+        (`touch-action: pan-x pan-y`), and a sideways overscroll never goes back
+        a page.
+      - **Mouse.** It keeps a 1:1 drag with the pointer captured: under 8 px it
+        is a click, over that a pan. Sideways wheel and trackpad scroll
+        natively; Shift+wheel, the arrow keys and edge-of-screen panning stay.
+      - **Track and parallax.** The world sits in a track sized to its width
+        plus the town card's inset, so the scroll's end is the pan limit. The
+        far strips follow the scroll for parallax.
+   2. **Music** (§3.11).
+   3. **A building's radial menu** (§2.2a).
+   4. **The working day** (§3.5a).
 10. **Neighbourhood data** (C.2): tables, migration, routes, tests. No visible change yet.
+    **Built 2026-11-16** (server: `lib/neighbourhoods.js`, `lib/house_styles.js`,
+    `routes/neighbourhoods.js`, `migrations/0NN_neighbourhoods.sql`; tests
+    `scripts/neighbourhood_test.js`).
+    - **Data.** `neighbourhoods` (one per town, "The Old Quarter"); `houses`
+      gains `neighbourhood_id`, `plot`, `style`, `state` and `custom_name`.
+      `seat()` runs at boot and whenever a house without a plot is found: old
+      houses take plots in the order they were built, with a mix of the three
+      styles that have daytime art. More than 36 old houses spill into a second
+      neighbourhood.
+    - **Plots.** 0–35; row = plot ÷ 18 (0 is the back row). The tier opens 6,
+      12, 24 or 36 of them, as whole columns from the middle
+      (`BUILDINGS.starter_house.tierCaps`, which replaces the old hut caps of
+      5, 15, 30 and 60). A town over its tier's number keeps its homes.
+    - **Routes.** `GET /api/neighbourhoods`; `POST /:nid/houses` (place, pays
+      the cost); `POST /houses/:id/move` (free; onto a home, the two swap);
+      `…/style`; `…/demolish` (that house). The old Buildings routes still
+      work for homes: Build takes the first free open plot, and Demolish takes
+      the newest home.
+    - **Found and fixed on the way:**
+      - Demolishing a Willow Hut deleted every housing row in `buildings` but
+        only one house, so the count reset and the tier cap could be dodged.
+        Now one house and one row go, and `seat()` repairs old mismatches.
+      - Moving someone between two houses gave +10 happiness every time,
+        without limit. The bonus is now only for someone who had no home.
+      - Tier upgrades counted every hut as a building. They now count kinds of
+        building, so the Neighbourhood counts once (owner, 2026-11-16).
+    - **Names.** A house shows as "The Brightburrow home" when one family lives
+      in it, "Empty home" when nobody does, and its given name when families
+      share it or the player has named it.
 11. **Neighbourhood scene** (C.3 to C.5): plots, styles, the house panel; retire the housing window.
+    **Built 2026-11-16** (`js/neighbourhood.js`, `KWHood`; proofs
+    `verify/scene_proofs.js` §24).
+    - **A third area.** The Neighbourhood is a layer beside Town and the
+      Outskirts. Houses are ordinary scene buttons, so the villagers, the dirt
+      paths, the night glow and the building menu treat them like any building.
+      The world is only as wide as the plots in use (a camp is a short street)
+      and grows with the town.
+    - **Getting there and back.** The Neighbourhood's door in Town (its menu's
+      Enter; in Build mode it goes straight there, still building), a villager's
+      House button, and the citizen profile's home line. A signpost and a
+      "To town" chip lead back.
+    - **A house.** Its radial menu has Enter, Minimise, Demolish and Who's
+      here. Enter opens the house's window: who lives there (each opens their
+      profile), move people in and out, rename, and change its look. An empty
+      house is dark at night. The nameplate's second line lists who lives
+      there.
+    - **Build mode.** Free plots show as staked ground; a click builds a home
+      there in a chosen style. A house is picked up with a click and put down
+      on a free plot, or on another home to swap, or pulled down. (Picking, not
+      dragging: a finger still pans the scene.)
+    - **The cast** is the people who live there, and anyone with no bed.
+      Someone whose job has a building is away at it during their working hours
+      (§3.5a): they leave past the signpost in the morning and come home that
+      way in the evening. Home is their own door.
+    - **Changed from the spec:**
+      - The house's panel is a `KWWindow`, not the context panel, which can
+        only show the old sidebar.
+      - Chimney smoke waits for art.
+      - A villager with no bed standing by a free plot comes with mood
+        (step 14).
+    - **Retired:** `js/housing.js`, its modal and styles, and the scene's own
+      housing list. `openHousingModal()` now opens this scene.
+    - **Found and fixed on the way:** on phones the moment cards sat on top of
+      the build panel and took its taps, in Town too. They now step aside
+      while Build mode is on.
 12. **Construction on the server** (D.2 to D.7): the builder class, sites, the queue, the tick, the guard rails, Dev Tools, and the test helper. Ship behind the tuning switch `construction.on` so it can be turned on for the owner's town first.
 13. **Construction in the scenes** (D.8): sites, working builders, the queue in the town card.
 14. **Mood** (§3.8).

@@ -107,14 +107,15 @@ const BUILDINGS = {
     desc: 'A simple home for four citizens. Housed citizens are happier and more productive.',
     icon: '🏡',
     cost: { timber: 40, stone: 20 },
-    maxLevel: 60,
+    maxLevel: 36,
     effect: () => ({}),
     citizenSlots: () => 0,
     requires: [],
     capacity: 4,  // citizens per house instance (lib/life.js CONFIG.HOUSE_BEDS)
     isHousing: true,
-    // Soft cap per tier (enforced in route) — camp:5, village:15, town:30, city:60
-    tierCaps: { camp: 5, village: 15, town: 30, city: 60 },
+    // Homes per tier: the plots a neighbourhood opens (lib/neighbourhoods.js,
+    // docs/HOME_SCENE.md C.3). A town with more than its tier allows keeps them.
+    tierCaps: { camp: 6, village: 12, town: 24, city: 36 },
   },
   fishing_post: {
     id: 'fishing_post',

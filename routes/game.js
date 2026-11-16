@@ -1413,8 +1413,9 @@ router.get('/tier-info', requireAuth, async (req, res) => {
     const s = settlementRes.rows[0];
     if (!s) return res.status(404).json({ error: 'No settlement.' });
 
+    // Kinds of building: the Neighbourhood counts once, however many homes it has.
     const buildingsRes = await query(
-      'SELECT COUNT(*) FROM buildings WHERE settlement_id=$1', [s.id]
+      'SELECT COUNT(DISTINCT type) FROM buildings WHERE settlement_id=$1', [s.id]
     );
     const buildingCount = parseInt(buildingsRes.rows[0].count);
 
@@ -1476,8 +1477,9 @@ router.post('/upgrade-tier', requireAuth, async (req, res) => {
     const reqs = TIER_REQUIREMENTS[nextTier];
 
     // Check buildings
+    // Kinds of building: the Neighbourhood counts once, however many homes it has.
     const buildingsRes = await query(
-      'SELECT COUNT(*) FROM buildings WHERE settlement_id=$1', [s.id]
+      'SELECT COUNT(DISTINCT type) FROM buildings WHERE settlement_id=$1', [s.id]
     );
     const buildingCount = parseInt(buildingsRes.rows[0].count);
 
