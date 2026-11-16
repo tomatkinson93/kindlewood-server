@@ -640,9 +640,7 @@ Each step ships on its own and is shown to the owner.
    area is `inert`. Where it differs from the text above, and why:
    - **Smelter** opens Crafting too (it is a crafting station like the three in the table).
    - The phone-only **Town** chip stays beside Build: it is how phones reach the town card.
-   - **Edit** stays in the header until step 4 replaces it with Build mode. Until
-     then, upgrade and demolish for a building with its own screen are in the
-     Build chip's list (and Edit's panel).
+   - **Edit** stayed in the header until step 4 replaced it with Build mode.
    - **Bubbles** that exist now: research done (Library), "<item> ready" (its
      station), back from a quest (Tavern), famine or food low (Granary), no bed
      for N (Neighbourhood), market news (Market, from the place bar's dot), a
@@ -664,6 +662,27 @@ Each step ships on its own and is shown to the owner.
      looks at that.
    - Scaffolding and time left on the nameplate wait for building time (Part D).
 4. **Build mode** (§2.3), replacing Edit.
+   **Built 2026-11-16** (`js/settlement-view.js` `_svToggleBuildMode`; the
+   Build chip in `js/places.js`; proofs `verify/scene_proofs.js` §11). The
+   Build chip turns it on and reads "✓ Done" while on; Done, Esc or leaving
+   Home turn it off (Esc closes an open panel first). While on: empty plots
+   show, a building opens its manage panel (upgrade, demolish), villagers and
+   props step aside (the signposts stay, to reach the other area's plots), and
+   the Neighbourhood opens its window, where huts are built. A town with
+   nothing built opens in Build mode. Notes:
+   - **Dragging moves a building between plots**: onto an empty plot it moves,
+     onto a building the two swap, anywhere else it goes back. Same area only;
+     the Neighbourhood stays put. A press only becomes a drag after 6 px, so a
+     click still opens the panel.
+   - **Free placement and resizing are gone.** Positions and sizes a player
+     saved earlier still apply, and "Reset layout" shows in Build mode while
+     they exist.
+   - The side panel's build list is no longer behind the Build chip. First
+     steps' "Show me" (and the Market's "Build a Market") open Build mode on
+     the right plot with its panel open; the server's hint now says "On Home,
+     press Build and choose an empty plot".
+   - **No keyboard way to move a building yet** (drag only). A "Move to…" in
+     the manage panel would cover it; worth adding with the phone pass (step 8).
 5. **Villager engine** (§3.2 to §3.4): the cast, walking, depth, idle.
 6. **Behaviour** (§3.5): errands, indoors, chat, children, night.
 7. **Selection and the radial menu** (§3.6).
