@@ -461,7 +461,7 @@ Priority when several apply: raid, then death, then festival, then the rest.
 Clicking the Neighbourhood in Town no longer opens the housing window. It opens a
 third scene, beside Town and Outskirts, that holds **only houses**. Villagers
 walk here too. The old housing window (`js/housing.js`) is retired; what it did
-moves into this scene.
+moves into this scene. (Built: steps 10 and 11 in §4.)
 
 In Town, the Neighbourhood stays as one building: a cluster of roofs that is the
 door to the scene. Its nameplate shows beds ("Homes · 18 of 20 beds") and its
@@ -527,9 +527,11 @@ one for now.
 - Nameplate on hover: the house's name and who lives there. Houses are named for
   the family in them ("The Brightburrow home") unless the player has renamed it;
   a mixed house keeps its given name. This replaces "Willow Hut #3".
-- Clicking a house opens its panel in the context panel: residents (each one
-  clickable), free beds, move someone in or out, rename, change style.
-- Build mode here: place a house, drag one to another plot, demolish.
+- Clicking a house opens its radial menu (§2.2a); Enter opens its window:
+  residents (each one clickable), free beds, move someone in or out, rename,
+  change style.
+- Build mode here: place a house, pick one up and put it on another plot
+  (onto a home, they swap), demolish.
 - A villager without a bed (§3.8) stands in the lane by a free plot.
 
 ### C.6 Later (not now)
@@ -995,6 +997,41 @@ Each step ships on its own and is shown to the owner.
       in it, "Empty home" when nobody does, and its given name when families
       share it or the player has named it.
 11. **Neighbourhood scene** (C.3 to C.5): plots, styles, the house panel; retire the housing window.
+    **Built 2026-11-16** (`js/neighbourhood.js`, `KWHood`; proofs
+    `verify/scene_proofs.js` §24).
+    - **A third area.** The Neighbourhood is a layer beside Town and the
+      Outskirts. Houses are ordinary scene buttons, so the villagers, the dirt
+      paths, the night glow and the building menu treat them like any building.
+      The world is only as wide as the plots in use (a camp is a short street)
+      and grows with the town.
+    - **Getting there and back.** The Neighbourhood's door in Town (its menu's
+      Enter; in Build mode it goes straight there, still building), a villager's
+      House button, and the citizen profile's home line. A signpost and a
+      "To town" chip lead back.
+    - **A house.** Its radial menu has Enter, Minimise, Demolish and Who's
+      here. Enter opens the house's window: who lives there (each opens their
+      profile), move people in and out, rename, and change its look. An empty
+      house is dark at night. The nameplate's second line lists who lives
+      there.
+    - **Build mode.** Free plots show as staked ground; a click builds a home
+      there in a chosen style. A house is picked up with a click and put down
+      on a free plot, or on another home to swap, or pulled down. (Picking, not
+      dragging: a finger still pans the scene.)
+    - **The cast** is the people who live there, and anyone with no bed.
+      Someone whose job has a building is away at it during their working hours
+      (§3.5a): they leave past the signpost in the morning and come home that
+      way in the evening. Home is their own door.
+    - **Changed from the spec:**
+      - The house's panel is a `KWWindow`, not the context panel, which can
+        only show the old sidebar.
+      - Chimney smoke waits for art.
+      - A villager with no bed standing by a free plot comes with mood
+        (step 14).
+    - **Retired:** `js/housing.js`, its modal and styles, and the scene's own
+      housing list. `openHousingModal()` now opens this scene.
+    - **Found and fixed on the way:** on phones the moment cards sat on top of
+      the build panel and took its taps, in Town too. They now step aside
+      while Build mode is on.
 12. **Construction on the server** (D.2 to D.7): the builder class, sites, the queue, the tick, the guard rails, Dev Tools, and the test helper. Ship behind the tuning switch `construction.on` so it can be turned on for the owner's town first.
 13. **Construction in the scenes** (D.8): sites, working builders, the queue in the town card.
 14. **Mood** (§3.8).
