@@ -779,6 +779,12 @@ Each step ships on its own and is shown to the owner.
      before). The hold after a menu button now tracks the window it opened.
    - **A Names chip** beside Build toggles every nameplate (pressed while on);
      N does the same; it is the profile menu's Show names setting.
+   - **Villagers' name plates** (first names, under their feet) show with
+     Names on, during the touch peek, or on hover and focus.
+   - **Nobody unclickable**: someone walking into a building (the cast
+     changing every minute) used to ignore clicks until they were gone; now
+     they stop and stay when picked. Someone leaving town who is picked goes
+     on after the menu closes.
    - **Faces in the family tree**: each person's box shows their face, cut from
      the idle sheet facing the camera (44 px at 1×, 33 for a child, grey for
      the dead); `KWVillagers.faceHtml(species, size)`.
