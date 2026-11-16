@@ -362,6 +362,135 @@ Reject a result if the door is a different size or shape from the cottage's, if
 the outline is thinner or the colour more textured than the Library's, if a side
 wall shows, or if the special feature is not obvious at thumbnail size.
 
+### Props, the calmer meadow and the path
+
+These are for the props layer and backdrop in §4b:
+- **Same setup as above:** a new chat per batch, with the same two reference
+  images (the unlit Library and the unlit thatched cottage).
+- **Exact sizes don't matter:** the files are cut, sized and given their
+  manifest entries when they go in.
+- **Where they go:** put the PNGs in `art/props/` with the file names given.
+
+Paste this first, unchanged (it replaces the building opener):
+
+> Match the attached library image exactly in art style: the same outline
+> thickness and deep-brown outline colour, the same flat cel-style shading with
+> 3–4 tones per colour, the same level of detail, the same warm palette, the same
+> chunky rounded shapes. Do not add texture, gradients, realism or finer detail
+> than the reference has. The same view as both attached images: straight on,
+> from slightly above. Light from the top left. Use the attached cottage only to
+> judge size: its door is about as tall as a villager. No text or lettering
+> anywhere.
+
+Then this, unchanged (not for batches 6 and 7):
+
+> Output a PNG with a fully transparent background (real alpha transparency, not
+> a white, black or checkerboard fill). Leave a wide margin of empty space around
+> every object; nothing may touch the edge of the image. No ground patch, no
+> grass under the objects, no cast shadow, no glow or halo, no characters.
+
+Then one batch:
+
+1. **Trees and bushes**
+   - Files: `tree_oak.png`, `tree_pine.png`, `tree_apple.png`,
+     `bush_round.png`, `bush_flowers.png`. One combined image is fine; it gets cut.
+   - Prompt:
+     > Draw five separate scenery objects in one image, in a single row with
+     > wide empty gaps between them so each can be cut out on its own: 1. A
+     > round leafy oak tree, about one and a half times as tall as the attached
+     > cottage, with a short visible trunk. 2. A tall slim pine tree, the same
+     > height as the oak. 3. A smaller fruit tree with a few red apples, about
+     > as tall as the cottage. 4. A round leafy bush, about as tall as the
+     > cottage's door. 5. A wider, lower bush with a few small white flowers.
+     > Greens should sit well next to the bushes at the base of the attached
+     > buildings, a little darker so they read as scenery behind the town.
+2. **Little ground things**
+   - Files: `flowers_white.png`, `flowers_yellow.png`, `flowers_pink.png`,
+     `tuft_1.png` to `tuft_3.png`, `rock_boulder.png`, `rock_stones.png`,
+     `mushrooms.png`, `log.png`.
+   - Prompt:
+     > Draw ten small separate objects in one image, in two rows with wide
+     > empty gaps between them so each can be cut out on its own. Each is
+     > small: about a quarter to a half of the height of the attached
+     > cottage's door. 1–3. Three small flower clumps: one white, one yellow,
+     > one pink-red, each a few flowers on short stems with a couple of leaves.
+     > 4–6. Three grass tufts of slightly different shapes, a few chunky blades
+     > each, in a calm mid green. 7–8. Two rocks: one rounded grey boulder, one
+     > flat cluster of two or three small stones. 9–10. A small mushroom pair
+     > and a fallen log with a little moss. Keep them simple and low-contrast:
+     > they are scattered thinly across a meadow and must not draw the eye
+     > away from the buildings.
+3. **Village pieces**
+   - Files: `well.png`, `bench.png`, `lantern.png`, `lantern_lit.png`,
+     `fence.png`.
+   - Prompt:
+     > Draw four separate village objects in one image, in a single row with
+     > wide empty gaps between them so each can be cut out on its own: 1. A
+     > round stone well with a little wooden roof, a crank and a bucket, about
+     > as tall as the attached cottage's door frame plus its roof. 2. A wooden
+     > bench with a back, seen from the front, sized for two villagers (a
+     > villager is about as tall as the cottage's door). 3. A wooden lantern
+     > post, about one and a half times as tall as the cottage's door, with a
+     > small iron lantern hanging from the top. The lantern is unlit: dark
+     > glass. 4. A short section of wooden rail fence, two posts and two rails,
+     > about as wide as the cottage's door is tall. Windows dark, lanterns
+     > unlit.
+   - Then, in the same chat:
+     > The exact same image with the lantern lit: warm yellow glass and a soft
+     > warm glow just around the glass. Change nothing else. Keep the
+     > transparent background.
+4. **The pond**
+   - File: `pond.png`.
+   - Prompt:
+     > Draw a small village pond seen from slightly above, as one separate
+     > object: an irregular rounded shape about twice as wide as the attached
+     > cottage and much flatter than it is wide. Calm blue-green water with two
+     > or three lily pads, a few reeds and cattails at one end, and a thin edge
+     > of earth and small stones around the rim. It lies flat on the ground, so
+     > nothing on it stands much taller than the reeds.
+5. **A fence end and a signpost** (optional)
+   - Files: `fence_end.png`, `signpost.png`.
+   - Prompt:
+     > Draw two separate objects with a wide gap between them: 1. A single
+     > wooden fence end post with one rail stub, matching a simple two-rail
+     > wooden fence. 2. A small wooden crossroads signpost with two blank arrow
+     > boards (no text) on one post, about as tall as the attached cottage's
+     > door.
+6. **The calmer meadow** (no transparency opener)
+   - File: `meadow_calm.png`. Tile it 3×3 in an image viewer to check; if the
+     tile shows, ask for "softer, with less variation".
+   - Prompt:
+     > A seamless tiling grass texture, square, 1024 × 1024, that repeats in
+     > both directions with no visible seam. It is the ground of a flat village
+     > meadow seen from slightly above, in the same flat cel-style as the
+     > attached images. A calm, even mid green with very gentle variation: soft
+     > darker patches, a few faint short strokes. No flowers, no tufts, no
+     > yellow patches, no stones, no paths, nothing that would show as a
+     > repeating pattern. Fully opaque, no transparency. Keep the contrast low:
+     > buildings and villagers stand on it and must stand out.
+7. **Dirt path texture** (no transparency opener)
+   - File: `path_dirt.png`.
+   - Prompt:
+     > A seamless tiling texture, square, 512 × 512, that repeats in both
+     > directions with no visible seam: a packed dirt footpath seen from
+     > slightly above, in the same flat cel-style as the attached images. Warm
+     > light brown with a few small pebbles and faint wheel or foot marks. Low
+     > contrast and even, so it can be repeated along a long winding path.
+     > Fully opaque, no transparency, no grass edges.
+
+Reject a result if:
+- the outline is thinner than the Library's, or the colours are textured,
+  glossy or have gradients;
+- something is drawn from the side or from straight above (the pond is the
+  only flat one);
+- there is a ground patch, grass base or shadow under a transparent object, or
+  anything touches the image edge;
+- the objects in a combined image touch (ask for "wider gaps");
+- the lit lantern changes anything besides the glass and its glow;
+- the meadow or path shows a seam or an obvious repeat when tiled.
+
+Batches 1 and 2 matter most: they fill the meadow straight away.
+
 Still to make, in a sensible order: the four missing night images and the unlit
 burrow; a calmer meadow and scenery props; the Outskirts set (farm, lumber camp,
 mine, fishing post, forager hut, smelter, scout post, watchtower, walls); the
