@@ -708,6 +708,24 @@ Each step ships on its own and is shown to the owner.
    - Villagers are not clickable yet (step 7 makes them buttons); they let
      clicks through to buildings.
 6. **Behaviour** (§3.5): errands, indoors, chat, children, night.
+   **Built 2026-11-16** (`js/villager-engine.js`; proofs `verify/scene_proofs.js`
+   §13). Grown-ups pick errands by the game clock (`KWClock`, so Dev Tools time
+   counts): morning sends workers to their buildings, by day mostly spots and
+   open ground with the odd door, the evening the tavern or home, and at night
+   home, with the same two or three (lowest ids) staying out. At a door they
+   fade, stay 20–60 s (at night until morning) and the building gives a little
+   bounce. Two free grown-ups within 200 px may stop for a chat: they meet a
+   step apart, face each other and pass a bubble (dots, a fish, a heart, an
+   acorn, a note) for 4–7 s; a pair waits 2 minutes before the next. Children
+   walk a little behind a parent, go indoors with them, now and then run ahead
+   or chase each other. In the evening and at night the tavern glows. Notes:
+   - **How often people go indoors** is tuned so about a third of the cast is
+     inside by day (measured 36 %); the spec's 20–60 s indoors against ~15 s
+     outside made it half with more doors. Night settles to 2–3 outside within
+     about a minute.
+   - No chats at night, and the cast stops rotating at night.
+   - `KWCast._setPhase('night')` in the console shows the night (or `'dusk'`)
+     until the next clock check, for a quick look.
 7. **Selection and the radial menu** (§3.6).
 8. **Phone and comfort pass**: touch sizes, cast of 8, reduced motion, frame
    time on a mid-range phone (target: under 2 ms a frame for the loop).
