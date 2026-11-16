@@ -14,6 +14,8 @@ Part C (the Neighbourhood) adds a little server data. **Parts D and E (builders,
 building time and upkeep) are real changes to play** and have the server work; treat them with
 the same care as Phase 1.
 
+> **The look changed on 2026-11-16.** `docs/ART_GUIDE.md` has the new art direction (a flat meadow, cartoon buildings, WebP at twice size, day and lit pairs), the art that already exists in `assets/images/scene_v2/`, and the steps to put it in. Where it differs from this document, the art guide wins.
+
 ---
 
 ## 0. Before this: two fixes from the review
@@ -727,6 +729,31 @@ Each step ships on its own and is shown to the owner.
    - `KWCast._setPhase('night')` in the console shows the night (or `'dusk'`)
      until the next clock check, for a quick look.
 7. **Selection and the radial menu** (§3.6).
+   **Built 2026-11-16** (`js/villager-engine.js`, `css/home-scene.css`; proofs
+   `verify/scene_proofs.js` §15). Each villager is a real button (Tab reaches
+   them after the buildings); only a small box round the figure takes clicks,
+   so the frame's empty corners never cover a building. Selecting stops them
+   facing the camera with a bright outline, a ring on the ground and "Name ·
+   job, age" under them; four round buttons fan out above in 150 ms (turned and
+   narrowed near an edge of the view so they stay on screen; 48 px on touch).
+   Notes:
+   - **Sounds** (the owner's): `assets/audio/ui/pop_on.mp3` as the menu opens,
+     `pop_off.mp3` as it closes, however it closes (click away, Esc, or a
+     button). They play at the effects volume. The WAV was made an MP3 (4 KB).
+   - **Change work** and **Apprenticeship** open the citizen's profile scrolled
+     to and focused on its job picker (or the youth's trade picker): that is
+     where the existing picker lives. **House** opens the Homes window scrolled
+     to their house (houses there now carry `data-house`). **Family** opens their
+     family line.
+   - After a button, the villager stands until the window it opened closes,
+     then walks on.
+   - Enter on a focused villager opens the menu with the first button focused;
+     arrow keys move between buttons; Esc closes it and puts focus back on the
+     villager. Arrows inside the menu don't pan the scene.
+   - People kept indoors overnight now come out over 20 s in the morning, not
+     all at once.
+   - Clicking someone with an open moment still opens this menu; step 9 makes
+     it open the moment instead.
 8. **Phone and comfort pass**: touch sizes, cast of 8, reduced motion, frame
    time on a mid-range phone (target: under 2 ms a frame for the loop).
 9. **Moment markers** (§3.7).
