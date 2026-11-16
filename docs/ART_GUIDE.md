@@ -166,7 +166,9 @@ Proofs: `verify/scene_proofs.js` §14 (and §8, §12 updated).
   wheel or Shift+wheel, the arrow keys (the map no longer takes them while
   Home shows), or rest the mouse at the left or right edge. Each area opens
   centred and remembers where it was; a signpost lands you at the matching
-  end. Phones pan by touch instead of scrolling an 860 px page.
+  end. Phones pan by touch instead of scrolling an 860 px page. Since
+  2026-11-16 the scene is a native horizontal scroller (momentum on phones;
+  the mouse still drags; `HOME_SCENE.md` §4 step 8a).
 - **Shadows** by code under buildings (92 % wide) and villagers.
 - **Night**: first built as SVG colour matrices on each element (×0.42,
   ×0.48, ×0.78; lit ×0.72, ×0.72, ×0.92). The polish pass replaced them with

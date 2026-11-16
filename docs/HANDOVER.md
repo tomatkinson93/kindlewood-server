@@ -373,6 +373,19 @@ Frozen until after 1.0:
 - **Map layers** (`js/kwmap-*.js`) must not fetch or use randomness, and must leave the canvas untouched when there's nothing to draw (the proofs check this).
 - **Dev Tools** is `#cheat-modal` in `index.html`; its buttons call `KW*.dev*()` helpers.
 - **Animation loops pause when nothing shows them.** The Home scene covers the map without hiding it, so the map's IntersectionObservers still see it on screen. The map (`kwmap-core.js`), tile actions, the season particles and the welcome screen's embers also stop under Home (`window._svIsOpen()`, and the `kw:home` event on open and close). A new rAF loop needs the same gate. In a per-frame loop, read sizes once at the top, before any style write (`villager-engine.js` `S.size`), and write only values that changed (`villagers.js` `paint`).
+- **Music and when it stays silent** (`js/music.js`, `HOME_SCENE.md` §3.11). Browsers block sound until the player has pressed or typed something on the page. The loading and Home music never show an error: they wait silently and start on the first press or key.
+
+  | Case | What you hear |
+  |---|---|
+  | Fresh login (the player pressed Log in) | The loading music plays straight away. |
+  | Reload with a saved login | The loading music stays silent, unless the player taps the loading screen. Pressing Start playing counts as the first press, so Home's music starts with its 2 s fade. |
+  | First visit straight onto Home without a press (not reachable today: Start playing is always pressed first) | Silent until the first press. |
+  | Tab in the background | Paused. It resumes when the tab comes back. |
+  | Battle, tavern game or menu music playing | Home's music fades out until it stops. |
+  | Music volume 0 or muted | Silent. |
+  | A file not uploaded yet | Silent; one console note per file. |
+
+  The ambient beds (`assets/audio/ambient/*.mp3`, not uploaded yet) duck to 20 % under Home's music rather than being turned off.
 - **Home scene cost, measured 2026-11-16** (the polish pass, item 6). Setup: Playwright Chromium emulating a mid-range phone (390×844, DPR 2.5, CPU throttled 4×), 7–8 villagers out, 8 s windows, Chrome's Performance metrics. Headless Chromium rasterises in software, so treat the absolute frame rates as relative.
 
   | Phase | Measure | Before | After |

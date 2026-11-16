@@ -90,7 +90,9 @@ The Town / Outskirts / Edit toggles in the scene's own header go too.
 
 ### 2.2 What each thing opens
 
-A click (or Enter) on a built building opens its main screen:
+A click (or Enter) on a built building opens its radial menu (§2.2a), whose
+**Enter** opens its main screen; a double click, or Enter twice, goes straight
+there:
 
 | Building | Opens | Today's call |
 |---|---|---|
@@ -111,14 +113,41 @@ Things that are not buildings get a **prop** in the scene:
 - **Town ↔ Outskirts**: a wooden signpost at the right edge of Town ("To the
   Outskirts →") and at the left edge of the Outskirts ("← To town").
 
+Props keep their single click; only built buildings have the menu.
+
+### 2.2a A building's radial menu (built 2026-11-16)
+
+`js/building-menu.js`, in the villager menu's style:
+- **Enter** sits in the middle and is the largest button. It does what a click
+  did before. A double click, or Enter pressed twice on the keyboard, goes
+  straight in; opening the menu from the keyboard focuses Enter.
+- **The others** sit evenly round Enter:
+  - **Minimise** makes the building see-through (30 %) and click-through, so
+    villagers behind it can be picked. Its nameplate stays, and a click on the
+    nameplate restores it. `assets/audio/ui/minimize.wav` plays both ways. It
+    lasts until the player leaves Home, and a see-through building's windows
+    don't glow over it.
+  - **Upgrade** opens the existing upgrade panel. It is hidden at the top level.
+  - **Demolish** runs the existing flow, always with its confirmation. The
+    Neighbourhood doesn't have it (its huts go in its own window).
+  - **Who's here** lists the villagers the scene has inside right now
+    (working, visiting, or at home in the Neighbourhood). Clicking a name brings
+    them out of the door with their own menu open.
+- **Buttons that don't apply** are left out, not greyed.
+- **One menu at a time:** opening a building's menu closes a villager's, and
+  the other way round. A press elsewhere or Esc closes it.
+- **See through** is a chip beside Names that minimises, or restores, every
+  building at once.
+
 ### 2.3 Build mode
 
 One **Build** button remains, top left. It replaces both Build and Edit:
 
 - Off (normal): empty plots are hidden. Buildings open their screens.
 - On: empty plots show ("Build here"), buildings can be dragged to another
-  plot, and a click on a building opens the manage panel (upgrade, demolish).
-  Villagers are hidden. A "Done" button and Esc leave the mode.
+  plot, and a click on a building opens its panel for moving it ("Move to…").
+  Upgrade and Demolish are in the building's radial menu (§2.2a) since
+  2026-11-16. Villagers are hidden. A "Done" button and Esc leave the mode.
 
 A town with nothing built yet starts with Build mode's plots showing, so a new
 player is never looking at an empty meadow with no way forward.
@@ -279,6 +308,34 @@ Time of day (the game clock the top bar already shows): by night most of the
 cast is indoors and two or three are out; the tavern's windows glow. Morning
 sends workers toward their buildings.
 
+### 3.5a The working day (built 2026-11-16)
+
+Errands follow a daily routine per villager, driven by the game clock
+(`js/villager-engine.js` `routine`, `atWork`, `callOut`). It is cosmetic only:
+nothing changes output, happiness or any server state.
+
+- **Workers.** A grown-up whose job has a building in this area works inside
+  it. They walk there in the morning (10:00–11:00 game time, UTC) and come out
+  in the evening (22:24–23:00). In between come two or three breaks, adding up
+  to about a quarter of the day; each falls in its own part of the day, so
+  different villagers break at different times. On a break they wander, visit
+  other buildings, chat and sit at named spots.
+- **Everyone else.** Children, elders, the idle, and anyone whose job has no
+  building here behave as before, all day. Outskirts workers keep their day
+  in the Outskirts.
+- **Stable.** The routine comes from a seed fixed to the villager and the game
+  day, so a reload shows the same day. Workers on shift start inside when Home
+  opens, and Who's here (§2.2a) always matches the scene.
+- **Never empty.** By day at least 4 villagers stay out (3 on a phone)
+  whenever that many are present. Those inside on an errand come out first,
+  then the worker who has been inside longest takes an extra 4–8 minute break.
+  Nobody goes in if that would drop below the minimum.
+- **Evening and night.** In the evening half of errands go to the tavern, and
+  a visit there lasts 1.5–4 minutes. At night most go home and a few stay out.
+- Entering and leaving is always by walking to the door.
+
+Proofs: `verify/scene_proofs.js` §23.
+
 ### 3.6 Selecting a villager: the radial menu
 
 - Click, tap or Enter on a villager selects them. They stop, switch to idle
@@ -368,6 +425,33 @@ even if the cast is full.
 
 Priority when several apply: raid, then death, then festival, then the rest.
 
+### 3.11 Music (built 2026-11-16)
+
+`js/music.js`; the files go in these places:
+
+| What | Path |
+|---|---|
+| Loading screen | `assets/audio/music/loading.mp3` |
+| Home, dawn and day | `assets/audio/music/home_day.mp3` |
+| Home, dusk and night (optional) | `assets/audio/music/home_night.mp3` |
+
+- **Loading screen.** The loading music loops. Pressing Start playing fades it
+  out over 1.5 s while Home's fades in over 2 s.
+- **Home.** Home's music loops while Home shows, and cross-fades between day
+  and night (4 s) with the scene's time of day. Without a night file, the day
+  one plays at night too.
+- **When it stops.** It fades out when Home closes or other music takes over
+  (a battle, a tavern game, the menu's `welcome.mp3`), and pauses while the
+  tab is hidden.
+- **Volume.** It follows the music volume and mute. The ambient beds duck to
+  20 % under it.
+- **Blocked sound.** Browsers block sound until the player has pressed
+  something. Until then nothing plays and nothing is said; the first press or
+  key starts what should be playing. A missing file is silent. Which cases stay
+  silent is in `HANDOVER.md`.
+- **welcome.mp3** (login screen, `js/welcome-music-guard.js`) never overlaps:
+  the loading music pauses it.
+
 ---
 
 ## 3C. Part C: the Neighbourhood
@@ -402,6 +486,8 @@ one for now.
 ### C.3 Plots
 
 - Each neighbourhood is a grid: **3 rows of 12 plots, 36 in all**, along lanes.
+  (Since 2026-11-16 the scene is a native horizontal scroller: a finger flings
+  it with the browser's momentum, and the mouse drags it, see §4 step 8a.)
   The scene is about three screens wide and pans sideways (drag, arrow keys, or
   the mouse at the edge). It opens centred on the newest house.
 - Plots open with the town's tier: Camp 6, Village 12, Town 24, City 36. (36
@@ -853,6 +939,26 @@ Each step ships on its own and is shown to the owner.
    7. **First steps:** "Make someone a builder" comes first, shown only while
       `construction.on` is switched on (server `lib/first_steps.js`,
       `lib/tuning.js` `SWITCHES`).
+
+   **Five Home changes (2026-11-16)**, one commit each:
+   1. **Panning on phones (8a).**
+      - **Native scroll.** The scene is a native horizontal scroll container
+        (`overflow-x`). A finger flings it with the browser's own momentum, and
+        it scrolls on the compositor, not in script.
+      - **Tap or pan.** The browser tells a tap from a pan, so a swipe that
+        starts on a building or a villager pans and opens or selects nothing.
+      - **Other gestures.** Vertical swipes go to the page or sheet
+        (`touch-action: pan-x pan-y`), and a sideways overscroll never goes back
+        a page.
+      - **Mouse.** It keeps a 1:1 drag with the pointer captured: under 8 px it
+        is a click, over that a pan. Sideways wheel and trackpad scroll
+        natively; Shift+wheel, the arrow keys and edge-of-screen panning stay.
+      - **Track and parallax.** The world sits in a track sized to its width
+        plus the town card's inset, so the scroll's end is the pan limit. The
+        far strips follow the scroll for parallax.
+   2. **Music** (§3.11).
+   3. **A building's radial menu** (§2.2a).
+   4. **The working day** (§3.5a).
 10. **Neighbourhood data** (C.2): tables, migration, routes, tests. No visible change yet.
 11. **Neighbourhood scene** (C.3 to C.5): plots, styles, the house panel; retire the housing window.
 12. **Construction on the server** (D.2 to D.7): the builder class, sites, the queue, the tick, the guard rails, Dev Tools, and the test helper. Ship behind the tuning switch `construction.on` so it can be turned on for the owner's town first.
