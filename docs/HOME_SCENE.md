@@ -789,6 +789,26 @@ Each step ships on its own and is shown to the owner.
      the idle sheet facing the camera (44 px at 1×, 33 for a child, grey for
      the dead); `KWVillagers.faceHtml(species, size)`.
 9. **Moment markers** (§3.7).
+   **Built 2026-11-16** (`js/villager-engine.js`; proofs `verify/scene_proofs.js`
+   §18). Each open moment is carried by one villager: its first citizen who is
+   out (in the moment's own order, its main person first). A town-wide
+   question (the season's choices, which name nobody) goes to a messenger: an
+   elder if one is out, else the oldest grown-up. They come outdoors (even at
+   night), walk to a clear spot near the middle of the view (on the lane
+   between the rows where nothing stands in front, else the open meadow at
+   the front; others waiting keep 60 px apart) and stand facing the camera
+   with a bobbing "!". Clicking (or Enter) opens the moment in the dialogue box
+   instead of the menu, with the pop sound; answered, the "!" goes within a
+   second and they walk on. Notes:
+   - **No server change was needed.** Every moment about townsfolk already
+     names them in `subject.citizen_ids`. The season's moments name nobody on
+     purpose (they are the town's), hence the messenger. Moments about an
+     outpost, a village's envoy or a settler on the road have nobody in town
+     and stay in the moment cards only (an envoy walking in is in §7's ideas).
+   - A press on a window, panel or card over the scene never picks a villager
+     underneath it (found while testing).
+
+   **Steps 1 to 9, the core, are built.**
 10. **Neighbourhood data** (C.2): tables, migration, routes, tests. No visible change yet.
 11. **Neighbourhood scene** (C.3 to C.5): plots, styles, the house panel; retire the housing window.
 12. **Construction on the server** (D.2 to D.7): the builder class, sites, the queue, the tick, the guard rails, Dev Tools, and the test helper. Ship behind the tuning switch `construction.on` so it can be turned on for the owner's town first.
