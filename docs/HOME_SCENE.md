@@ -640,9 +640,7 @@ Each step ships on its own and is shown to the owner.
    area is `inert`. Where it differs from the text above, and why:
    - **Smelter** opens Crafting too (it is a crafting station like the three in the table).
    - The phone-only **Town** chip stays beside Build: it is how phones reach the town card.
-   - **Edit** stays in the header until step 4 replaces it with Build mode. Until
-     then, upgrade and demolish for a building with its own screen are in the
-     Build chip's list (and Edit's panel).
+   - **Edit** stayed in the header until step 4 replaced it with Build mode.
    - **Bubbles** that exist now: research done (Library), "<item> ready" (its
      station), back from a quest (Tavern), famine or food low (Granary), no bed
      for N (Neighbourhood), market news (Market, from the place bar's dot), a
@@ -664,7 +662,51 @@ Each step ships on its own and is shown to the owner.
      looks at that.
    - Scaffolding and time left on the nameplate wait for building time (Part D).
 4. **Build mode** (§2.3), replacing Edit.
+   **Built 2026-11-16** (`js/settlement-view.js` `_svToggleBuildMode`; the
+   Build chip in `js/places.js`; proofs `verify/scene_proofs.js` §11). The
+   Build chip turns it on and reads "✓ Done" while on; Done, Esc or leaving
+   Home turn it off (Esc closes an open panel first). While on: empty plots
+   show, a building opens its manage panel (upgrade, demolish), villagers and
+   props step aside (the signposts stay, to reach the other area's plots), and
+   the Neighbourhood opens its window, where huts are built. A town with
+   nothing built opens in Build mode. Notes:
+   - **Dragging moves a building between plots**: onto an empty plot it moves,
+     onto a building the two swap, anywhere else it goes back. Same area only;
+     the Neighbourhood stays put. A press only becomes a drag after 6 px, so a
+     click still opens the panel.
+   - **Free placement and resizing are gone.** Positions and sizes a player
+     saved earlier still apply, and "Reset layout" shows in Build mode while
+     they exist.
+   - The side panel's build list is no longer behind the Build chip. First
+     steps' "Show me" (and the Market's "Build a Market") open Build mode on
+     the right plot with its panel open; the server's hint now says "On Home,
+     press Build and choose an empty plot".
+   - **No keyboard way to move a building yet** (drag only). A "Move to…" in
+     the manage panel would cover it; worth adding with the phone pass (step 8).
 5. **Villager engine** (§3.2 to §3.4): the cast, walking, depth, idle.
+   **Built 2026-11-16** (`js/villager-engine.js` `KWCast`; drawing from
+   `js/villagers.js`; proofs `verify/scene_proofs.js` §12). Real citizens walk
+   Home for every player now (the `?villagers=test` loop is still there). The
+   cast follows §3.3: up to 14 (8 on phones) from the area showing; moment
+   subjects first, then an elder, then one grown-up per family in turn, then
+   children only with a parent. They walk straight lines between doors (the
+   manifest's door, or the placeholder hut's), named spots and open ground,
+   idle 3–10 s, and take depth from their feet (slots too, on one 1–1000
+   scale; a hovered building rises above them so its nameplate shows). Every
+   minute one walks into a building and someone else comes out; anyone who
+   leaves town walks to the nearest door and fades. The loop's own cost
+   measured 0.36 ms a frame on desktop and 0.22 ms on a phone-sized screen
+   (`KWCast.frameMs`). Notes:
+   - **The ground** is one meadow shape for both areas, fitted to today's
+     backdrop so nobody walks in the river (`GROUND`, `SPOTS`). Redraw it with
+     the new backdrops.
+   - **Family looks** are gentle filters (a slight hue turn, saturation or
+     brightness). A real hue turn of 20°+ moved the whole sprite and made fur
+     pink or green, so it is not used.
+   - Species: a citizen's own `species` when the server sends one, else the
+     town's (citizens carry none today).
+   - Villagers are not clickable yet (step 7 makes them buttons); they let
+     clicks through to buildings.
 6. **Behaviour** (§3.5): errands, indoors, chat, children, night.
 7. **Selection and the radial menu** (§3.6).
 8. **Phone and comfort pass**: touch sizes, cast of 8, reduced motion, frame
