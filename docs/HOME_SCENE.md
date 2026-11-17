@@ -1257,6 +1257,34 @@ Each step ships on its own and is shown to the owner.
       routes, and everything the player sees. Until then do not turn it on for a town: the screens do not yet
       show a site.
 13. **Construction in the scenes** (D.8): sites, working builders, the queue in the town card.
+    **Built** (2026-11-17), behind the same switches. `js/construction.js`
+    (KWBuild), proofs in `verify/construction_proofs.js`.
+    - **Ordering.** A toast says how much work it is and with how many
+      builders. With no builder it says so and offers "Choose a builder"
+      (the citizens list). Build panels say the same before paying, and say
+      when the builders' list is full.
+    - **Going up.** A chip by the town card (and in the phone's town sheet)
+      opens the list: Sooner and Later buttons rather than dragging (they work
+      with a keyboard and on a small touch screen), and Cancel, which says
+      what comes back before it is confirmed.
+    - **Sites.** Drawn on the plot in three stages by the work done, with a
+      plate above: name, a bar, and the estimate ("about 12 minutes with 2
+      builders", or "Waiting for a builder"). A click opens the list. A
+      building being upgraded keeps its picture and its menu and carries a
+      small sign. A home being built stands on its plot in the Neighbourhood.
+      The site drawing is generic until the owner's site art arrives
+      (`ART_GUIDE.md` §8, batch E).
+    - **Builders.** While something is being built and someone is building,
+      every builder (up to four shown) is in the part of town where the first
+      site is. They walk to it, each to their own place in front, and hammer
+      in a steady beat (a hammer bubble and dust at the site, until the work
+      animation arrives), with short rests and the odd walk to the stores,
+      around the clock. When it is finished they cheer.
+    - **Dev Tools** (Life tab): on for this town, on for every town (asked
+      twice), finish the first site now, set the number of builders.
+    - **Before turning it on for everyone:** move the server suites that
+      build things onto `scripts/_build.js` (step 12), and play a new town
+      through the first ten minutes with it on.
 14. **Mood** (§3.8).
 15. **Life events** (§3.9).
 16. **Town-wide events** (§3.10).
