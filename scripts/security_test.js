@@ -79,6 +79,11 @@ async function main() {
   const token = r.body.token;
   const lr = await post('/api/auth/login', { email: `sec${RUN}@t.l`, password: 'password123' });
   check(lr.status === 200 && lr.body.token && !lr.cookie, 'login answers a token and no cookie');
+  // "Keep me signed in": a week by default, twelve hours without it.
+  const life = t => { const c = JSON.parse(Buffer.from(t.split('.')[1], 'base64url').toString()); return (c.exp - c.iat) / 3600; };
+  const shared = await post('/api/auth/login', { email: `sec${RUN}@t.l`, password: 'password123', remember: false });
+  check(life(lr.body.token) === 168 && life(token) === 168, 'a sign-in lasts a week');
+  check(shared.status === 200 && life(shared.body.token) === 12, 'without "Keep me signed in" (remember: false) it lasts twelve hours');
   const lo = await post('/api/auth/login', { email: { $ne: 1 }, password: 'x' });
   check(lo.status === 400, 'login refuses a non-string email');
 

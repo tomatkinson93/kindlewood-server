@@ -204,6 +204,28 @@ async function main() {
     check(x.status === 200 && (await houses(t.id)).length === 4 && await rows(t.id) === 4, 'the old Demolish removes one home (the newest), not the count of them all');
   }
 
+  console.log('Where buildings stand is kept on the server');
+  {
+    const B = require('../routes/buildings');
+    check(JSON.stringify(B.cleanLayout({ 'town-1': 'tavern', 'outskirts-2': 'farm', 'town-neighbourhood': 'neighbourhood' })) === '{"town-1":"tavern","outskirts-2":"farm","town-neighbourhood":"neighbourhood"}', 'a layout is a map of plot to building');
+    check(B.cleanLayout({ 'town-1': 'tavern', 'town-2': 'tavern' }) === null && B.cleanLayout({ 'town-1': 'castle' }) === null && B.cleanLayout({ 'town 1!': 'farm' }) === null
+      && B.cleanLayout([]) === null && B.cleanLayout(null) === null && B.cleanLayout({ a: 5 }) === null && B.cleanLayout(Object.fromEntries(Array.from({ length: 81 }, (_, i) => ['p' + i, 'farm']))) === null,
+      'a building stands in one place; unknown buildings, odd plot names and oversized maps are refused');
+    const a = await mkTown('camp');
+    x = await a.api('GET', '/api/buildings/layout');
+    check(x.status === 200 && x.body.layout === null, 'a town that never saved one has none (the first device sends its own)');
+    x = await a.api('PUT', '/api/buildings/layout', { layout: { 'town-3': 'tavern', 'town-5': 'market' } });
+    check(x.status === 200 && x.body.layout['town-3'] === 'tavern', 'PUT saves it');
+    x = await a.api('GET', '/api/buildings/layout');
+    check(x.body.layout && x.body.layout['town-5'] === 'market' && Object.keys(x.body.layout).length === 2, 'and every device reads the same');
+    x = await a.api('PUT', '/api/buildings/layout', { layout: { 'town-3': 'tavern', 'town-4': 'tavern' } });
+    check(x.status === 400 && (await a.api('GET', '/api/buildings/layout')).body.layout['town-5'] === 'market', 'a bad one is refused and the saved one stays');
+    x = await a.api('PUT', '/api/buildings/layout', { layout: {} });
+    check(x.status === 200 && JSON.stringify((await a.api('GET', '/api/buildings/layout')).body.layout) === '{}', 'an empty layout is a layout (everything put back)');
+    const b = await mkTown('camp');
+    check((await b.api('GET', '/api/buildings/layout')).body.layout === null, 'each town has its own');
+  }
+
   console.log('Tier upgrades count kinds of building');
   {
     const v = await mkTown('camp');

@@ -152,6 +152,16 @@ One **Build** button remains, top left. It replaces both Build and Edit:
 A town with nothing built yet starts with Build mode's plots showing, so a new
 player is never looking at an empty meadow with no way forward.
 
+**Where buildings stand is kept on the server** (2026-11-17), so the town looks
+the same on a phone and a desktop. It is one small map, plot to building
+(`settlements.scene_layout`; `GET` and `PUT /api/buildings/layout`). The browser
+keeps a working copy so the scene draws at once. The first time a device loads
+it: if the server has a map, the device takes it; if not, the device sends its
+own (so nobody's arrangement is lost by this change). After that each move is
+sent a moment later and other open devices follow on the live stream. The last
+change wins. A working copy left on a shared browser by another town is never
+sent as this town's.
+
 ### 2.4 Labels and bubbles
 
 - Name labels are **not** shown all the time. Hover or keyboard focus lifts the
@@ -563,6 +573,13 @@ finished when the work is done.
   Stonemason keeps the cost discount; builders are about speed, not price.
 - With nothing to build, builders **look after the town** (Part E). They do not
   gather resources.
+- *As built (step 12):* a builder's pace is the same multiplier every job
+  uses (their strength and endurance, their perks, 60 % for an elder), so an
+  ordinary builder does about one unit a minute. They earn the ordinary hourly
+  job XP rather than XP per unit of work: it is the same amount over time, it
+  needs no second XP path, and it keeps paying when Part E gives idle builders
+  the town to look after. The job is offered only in a town where building
+  time is on, and is never picked at random (a moment, an aptitude) elsewhere.
 
 ### D.3 Work and time
 
@@ -578,6 +595,14 @@ finished when the work is done.
   to)` that tests can call. It runs while the player is offline. Work left over
   when one site finishes carries on into the next.
 - Compare-and-swap the write, as the other ticks do.
+- *As built (step 12):* `lib/construction.js`. The sizes are in its `CONFIG`
+  (each building has its own; the first four a camp builds are 3), and the
+  live multiplier is the tuning key `build_work` (Dev Tools, 0 to 5; a site is
+  never less than 1). The work is done under the settlement's row lock (the
+  way moments and the Neighbourhood do it), with `construction_at` marking how
+  far it has been done, so the worker, a second device and a page asking for
+  the queue never count the same minute twice. The worker looks at towns with
+  an open site every 15 seconds; reading the queue does the work up to now.
 
 ### D.4 The queue
 
@@ -585,6 +610,10 @@ finished when the work is done.
 - Cost is paid when the site is ordered. Cancel before any work is done: full
   refund. After: half.
 - All present builders work on the first site.
+- *As built (step 12):* one open site per building (an upgrade to level 3
+  cannot be queued behind the upgrade to level 2), any number of houses up to
+  the five. What a building needs must be standing: a site does not count.
+  Demolishing a building cancels its upgrade as a cancel would.
 
 ### D.5 No builders means no progress (and the guard rails for that)
 
@@ -731,6 +760,174 @@ game nibbling at you.
 - A builder perk for looking after more buildings.
 
 ---
+
+## 3F. Part F: the town alive (agreed with the owner, 2026-11-17)
+
+Features that make Home the place the player wants to leave open. One rule
+covers all of them: **anything that changes the game is decided and counted on
+the server; the scene only shows it.** A second device or tab therefore shows
+the same town and gains nothing.
+
+No birds, cats or other pets anywhere: the settlers are animals themselves.
+
+### F.1 Talk to… (the player's hand in relationships)
+
+The player can tell one villager to go and talk to another. It is a small,
+daily way to push a bond up, beside the big levers the game already has
+(living together, working the same job, questing together).
+
+- **Interests.** Every citizen has three topics they like and one they find
+  dull, from a list of sixteen (fishing, gardening, cooking, music, old
+  stories, the stars, woodcarving, foraging, the weather, gossip, games,
+  dancing, herbs, building, far places, the harvest).
+  - A child takes one liked topic from each parent and one of their own, so
+    interests run in families.
+  - Existing citizens get theirs from their id, so they never change.
+- **The action.** A villager's radial menu gains **Talk to…**. The player
+  picks who (anyone in town who is not away; children too) and what about: one
+  of the topics, or **Anything**, which lets the server pick a topic at random.
+  The same button is in the villager's profile (Relationships), which reaches
+  villagers who are indoors or not in the scene.
+  - The list of who shows each villager's bond with the speaker, the closest
+    first, and marks their partner and their family (family can grow close but
+    never become partners).
+- **Getting along.** The server rolls once. The chance starts at 50 % and
+  moves with the topic: the listener likes it +20, the speaker likes it too
+  +10, the listener finds it dull −30, the speaker finds it dull −15, a
+  Charming speaker +10; never under 10 % or over 90 %.
+  - Got along: their bond +3 (the same as a shared quest) and both a little
+    happier (+1).
+  - Did not: their bond −2.
+- **Once a day each.** A villager can be sent to talk once per game day (it
+  resets at dawn). Until then **Talk to…** is greyed out on them and says
+  when it returns. Being talked to does not use a villager's own turn.
+- **Learning interests.** Interests start hidden. Each is learned the first
+  time a chat touches it, for both villagers: the result says "Hazel likes
+  fishing" or "Poppy finds gossip dull", and from then on the topic is marked
+  on the topic buttons and listed in the profile ("2 of 3 likes found"). A
+  topic that was tried and is neither liked nor dull is shown faded, so the
+  player need not try it again. Choosing **Anything** is the cheap way to
+  explore. Interests are never sent with the citizens: the server sends only
+  the topics that chats have touched.
+- **Partners.** A chat never makes or parts partners by itself. A good chat
+  can lift a bond past 90, and the town's own hourly life then decides (as it
+  always has) whether the two become partners.
+- **In the scene.** The speaker hurries over to the listener (who steps out
+  if they were indoors, and comes into the open if they stood behind a
+  building), the topic's picture goes up in the speaker's bubble, the listener
+  answers with a face, and a heart and "+3", or a storm cloud and "−2", floats
+  up between them. Then a toast says it in words, with anything learned. If
+  the listener is in another part of town the speaker says it where they
+  stand; if the scene is not showing, only the toast. The citizen's profile
+  shows today's chats.
+- **Size of the effect.** Two villagers in different houses and jobs gain
+  about 1 bond a day on their own, so partners (90) take months; a good chat
+  a day each way makes that a couple of weeks. Moving them into one house
+  stays the stronger lever (about 15 a day).
+- The villagers' own chats in the scene stay decoration; the hourly simulation
+  already grows bonds by itself.
+
+### F.2 Praise
+
+**Praise** on a villager's menu (and in their profile): +2 happiness for them,
+three times a day per town (not per villager), and each villager at most once a
+day. Counted on the server. The button shows how many are left, and is greyed
+out on a villager already praised and on everyone once the day's three are
+used. A greyed button, pressed, says why and when it comes back.
+
+### F.3 Thought bubbles
+
+Selecting a villager shows one line of what is on their mind, from data the
+game already has, most pressing first: no bed, hungry (food short), a moment
+waiting, grieving (a recent death in the family), newly partnered or a new
+parent, proud of a finished building, liking or disliking their work (an
+aptitude), else something from their interests. One line, under their name.
+
+### F.4 Follow
+
+**Follow** on a villager's menu: the view pans to keep them centred as they
+walk and switches area with them. A small card lists what they have done today
+(left home, worked at the Smithy, a break by the well, a chat with Fenn about
+fishing). Any pan by the player, Esc or the card's close button ends it.
+
+### F.5 Weather and seasons
+
+The scene follows the game's season and a per-day weather roll from the
+server (so every device agrees): clear, cloudy, rain, or snow in winter.
+- Drawn by code and a few small images: drifting clouds, rain streaks, snow
+  falling and lying on roofs (a white cap drawn over each building), falling
+  leaves in autumn, blossom in spring, puddles after rain.
+- Looks only. Villagers hurry and idle less in rain.
+- Reduced motion: a still tint and no falling particles.
+
+### F.6 The lamplighter and small life
+
+- **The lamplighter.** At dusk one villager (an elder if there is one) walks
+  the lanes and lights each lantern post in turn; at dawn they are put out
+  together. Needs the lantern props (ART_GUIDE §8).
+- **Small life.** Chimney smoke from homes and workplaces with someone in,
+  fireflies at night, butterflies over the flower props by day, leaves and
+  seeds on the wind. No birds, cats or pets.
+
+### F.7 Working buildings
+
+A building with someone at work inside shows it: the forge mouth glows and
+sparks, the Tavern's windows flicker in the evening, the Market has a few more
+figures at midday, the Workshop puffs sawdust. Each has a quiet sound that
+grows as the view pans near it and follows the sound-effects volume.
+
+### F.8 A lost thing each day
+
+Once per game day the server hides one small thing in the town (a dropped
+basket, a ribbon, a coin purse, a toy) at a seeded place and names its owner.
+Clicking it returns it: the owner +3 happiness, a few wealth or a little food
+for the town, and a chronicle line. One per town per day, whichever device
+finds it.
+
+### F.9 Decorating and charm
+
+- **Decorating.** In Build mode the player places props themselves: benches,
+  lantern posts, flower beds, fence pieces, a well, a pond. Each costs a little
+  timber or stone. Placed props are stored on the server (per area, position,
+  kind) and replace the automatic scatter of that kind.
+- **Charm.** The town has a charm score from its decorations (each kind
+  counts, with less for every repeat) and, once upkeep is on, from buildings
+  kept sound. Charm gives town-wide happiness of 0 to +5. The town card shows
+  it in one line.
+- Decorations are the natural home for festival and paid cosmetics later;
+  those must never be worth more charm than the base ones.
+
+### F.10 Photo mode
+
+A camera chip on Home hides the interface, lets the player choose the time of
+day and weather for the picture, and saves the view as an image with the
+town's name in a corner. Nothing in the game changes.
+
+### F.11 The town crier
+
+A villager stands by the Guild Hall with a bell at dawn and dusk. Clicking
+them opens today's news: the last day's chronicle lines, what is being built,
+who was born or died, the weather. A bubble over them shows when there is
+something new since the player last looked.
+
+### F.12 Events in the scene
+
+Some moments happen in the town and are answered there. Each is an ordinary
+moment (a timer, options, a default), with a place in the scene:
+- **A fire**: smoke rises from one building; the choices are a bucket chain
+  (villagers form a line from the well or pond) or pulling down the roof.
+- **A lost child**: a child from the town hides somewhere in the scene;
+  finding them in time is the good outcome.
+- **A runaway cart**: it rolls along a lane; stop it or let it go.
+The server decides when they start, how long they last and what each outcome
+does. They respect the moments budget and cap.
+
+### F.13 A visiting merchant
+
+About once every few days a merchant's cart stands in Town for one game day,
+with three or four trades (goods for goods, or goods for wealth) rolled by the
+server for that visit. Clicking the cart opens them; each can be taken once.
+A news line says when the merchant arrives.
 
 ## 4. Build order
 
@@ -1033,11 +1230,141 @@ Each step ships on its own and is shown to the owner.
       the build panel and took its taps, in Town too. They now step aside
       while Build mode is on.
 12. **Construction on the server** (D.2 to D.7): the builder class, sites, the queue, the tick, the guard rails, Dev Tools, and the test helper. Ship behind the tuning switch `construction.on` so it can be turned on for the owner's town first.
+    **Built** (2026-11-17), off everywhere. `lib/construction.js`, table
+    `construction_sites`, `/api/construction` (`GET /`, `POST /reorder`, `POST
+    /sites/:id/cancel`, and for admins `/admin/town`, `/admin/switch`,
+    `/admin/finish`, `/admin/builders`); tests in `scripts/construction_test.js`.
+    - **Two switches.** `settlements.construction_on` turns it on for one town
+      (the owner's first); the tuning switch `construction.on` turns it on for
+      every town. `GET /api/game/settlement` says `building_time`.
+    - **Ordering.** `POST /api/buildings/build` and the Neighbourhood's place
+      route pay, then start a site and answer `queued: true` with
+      `no_builder` (so the screen can say at once that nobody is a builder).
+      A house's site holds its plot. The old instant path is unchanged where
+      building time is off.
+    - **Guard rails.** No builder: nothing moves, one news line, and the
+      queue says `waiting`. The funnel has "A building was finished". "Make
+      someone a builder" is the first of the first steps for such a town.
+    - **Tests.** `scripts/_build.js` is the one way through: order as a
+      player, then finish the site with the Dev Tools function. Suites that
+      build things still pass because the switch is off; **before turning the
+      switch on for everyone, move those suites onto the helper.**
+    - **Fixed while here.** The build route was not in a transaction: two
+      presses at once paid twice for one level. It now takes the settlement's
+      row lock (two presses are two honest builds, each at its own price).
+    - **Building positions are on the server** (§2.3), done with this step.
+    - **Still to do in step 13:** the Dev Tools panel's buttons for the admin
+      routes, and everything the player sees. Until then do not turn it on for a town: the screens do not yet
+      show a site.
 13. **Construction in the scenes** (D.8): sites, working builders, the queue in the town card.
-14. **Mood** (§3.8).
-15. **Life events** (§3.9).
-16. **Town-wide events** (§3.10).
+    **Built** (2026-11-17), behind the same switches. `js/construction.js`
+    (KWBuild), proofs in `verify/construction_proofs.js`.
+    - **Ordering.** A toast says how much work it is and with how many
+      builders. With no builder it says so and offers "Choose a builder"
+      (the citizens list). Build panels say the same before paying, and say
+      when the builders' list is full.
+    - **Going up.** A chip by the town card (and in the phone's town sheet)
+      opens the list: Sooner and Later buttons rather than dragging (they work
+      with a keyboard and on a small touch screen), and Cancel, which says
+      what comes back before it is confirmed.
+    - **Sites.** Drawn on the plot in three stages by the work done, with a
+      plate above: name, a bar, and the estimate ("about 12 minutes with 2
+      builders", or "Waiting for a builder"). A click opens the list. A
+      building being upgraded keeps its picture and its menu and carries a
+      small sign. A home being built stands on its plot in the Neighbourhood.
+      The site drawing is generic until the owner's site art arrives
+      (`ART_GUIDE.md` §8, batch E).
+    - **Builders.** While something is being built and someone is building,
+      every builder (up to four shown) is in the part of town where the first
+      site is. They walk to it, each to their own place in front, and hammer
+      in a steady beat (a hammer bubble and dust at the site, until the work
+      animation arrives), with short rests and the odd walk to the stores,
+      around the clock. When it is finished they cheer.
+    - **Dev Tools** (Life tab): on for this town, on for every town (asked
+      twice), finish the first site now, set the number of builders.
+    - **Before turning it on for everyone:** move the server suites that
+      build things onto `scripts/_build.js` (step 12), and play a new town
+      through the first ten minutes with it on.
+14. **Mood** (§3.8). **Built** (2026-11-17) in `js/villager-engine.js`:
+    emotes from a villager's own happiness (the town's when they have none),
+    with no bed, short food and a festival coming first; at most two at a
+    time, each villager at most once a minute, 2 to 3 seconds. Happy
+    villagers sometimes hop. Unhappy ones walk slower and stand about longer,
+    and an unhappy town chats less. With food short some stand by the
+    granary; someone with no bed stands near the Neighbourhood. Emoji stand
+    in until the emote sheet arrives. Not built: the two-villager dance (it
+    comes with the festival ring in step 16).
+    - **Found and fixed while here:** the Home scene read the town from
+      `window.gameData`, which was never set (the game keeps it in a
+      top-level `let`). So the scene always believed the town was a Camp with
+      no famine and no festival: the granary's "Famine!" sign, the green's
+      "Festival on!", the Neighbourhood's bed count and the City's Wonder site
+      never showed, and a dozen other modules read `undefined` the same way
+      (the town's species, the raid on its way). `js/main.js` now makes
+      `window.gameData` the same value.
+15. **Life events** (§3.9). **Built** (2026-11-17). `js/life-scenes.js`
+    reads the chronicle while Home shows (on opening, then every 45 seconds)
+    and hands its lines to the engine, which plays the six scenes: one at a
+    time, up to three waiting, each under a minute, only lines under ten
+    minutes old, each once per browser session. People in a scene join the
+    cast for its length. Nobody busy with the player (picked, a window open
+    on them, a moment waiting, a chat the player set up) is pulled in; a
+    partnership plays with both or not at all. A death hushes happy emotes
+    for four minutes. Scenes play in Town and the Neighbourhood (where the
+    homes are), not the Outskirts. Emoji stand in for the bubble icons.
+16. **Town-wide events** (§3.10). **Built** (2026-11-17) in the engine.
+    - **Festival:** most of the cast sets off for the village green as it
+      starts and dances in a loose ring (turning, a note or a lantern, a hop);
+      a few still wander.
+    - **Raid:** in its last ten minutes, and while it is under way, everyone
+      runs for the nearest door and stays in; guards stand by the way out
+      with a shield. When it ends people come out, relieved or sad by how it
+      went. *Changed from the first design:* a raid still hours off changes
+      nothing. The warning lasts hours, and a town standing empty all that
+      time would be bleak and would hide every other part of the scene.
+    - **A tier gained:** everyone out cheers once.
+    - **Priority:** raid, then a death (its hush stops the festival ring),
+      then a festival. No life scenes, emotes or chats while raiders are near.
+    - Famine and night were built with mood and the working day.
+    - **Open question for the owner (found while testing, 2026-11-17).** §3.3
+      puts everyone with an Outskirts job in the Outskirts all day. In an
+      early town every job is an Outskirts job (forager, farmer, woodcutter),
+      so the Town scene, where the player lands, has only the idle, children
+      and elders. It looks full when Home first opens only because the first
+      cast is made before the Outskirts' buildings are known; the next time
+      the cast is looked at (a new moment, a job change) they all walk off to
+      the Outskirts together. Suggested rule: at their workplace during their
+      working hours, in Town the rest of the day. Not changed: it is the
+      owner's design.
 17. **Upkeep** (Part E), server and scene, behind `upkeep.on`. Last on purpose: turn it on only after building time has been live long enough to know that players keep builders.
+
+**Part F, the town alive** (agreed 2026-11-17). These do not depend on building
+time and can be built in between; the order below is by how much each adds for
+its size.
+
+18. **Talk to… and Praise** (F.1, F.2): interests on citizens, the two menu
+    actions, the server's rolls and daily counts, the chat played in the scene.
+    **Built.** Server: `lib/social.js`, `/api/social` (`GET /`, `GET
+    /bonds/:id`, `POST /talk`, `POST /praise`), tables `citizen_interests`,
+    `citizen_chats`, `citizen_praise` (chats and praise are cleared after 30
+    days; what was learned is kept on `citizen_interests.known`); tests in
+    `scripts/social_test.js`. Screen: `js/social.js` (KWSocial), the menu
+    buttons and `KWCast.playTalk` / `playPraise` in `js/villager-engine.js`;
+    proofs in `verify/social_proofs.js`. The villager menu now has up to six
+    buttons, on a wider arc that fits itself to the room at a screen edge.
+    Also fixed while here: the hourly simulation wrote relationship scores
+    over whatever was there, so a change made while it ran could be lost; it
+    now adds its gain to the current score.
+19. **Thought bubbles and Follow** (F.3, F.4).
+20. **Small life and working buildings** (F.6, F.7), then **the lamplighter**
+    once the lantern art is in.
+21. **Weather and seasons** (F.5).
+22. **A lost thing each day** (F.8).
+23. **Decorating and charm** (F.9). Needs the scenery props' art.
+24. **The town crier** (F.11) and **photo mode** (F.10).
+25. **A visiting merchant** (F.13).
+26. **Events in the scene** (F.12). Last: it builds on mood, life events and
+    town events (steps 14 to 16).
 
 Steps 1 to 9 are the core. Steps 10 to 13 are the Neighbourhood and building
 time; step 12 is the only one that changes how the game plays, so it gets its own

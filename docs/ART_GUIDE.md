@@ -51,23 +51,29 @@ backdrop/mountains.webp       mountains, tiles sideways
 |---|---|---|---|
 | `tavern` | yes | yes | 331 × 320 |
 | `granary` | yes | not needed (a storehouse) | 346 × 342 |
-| `market` | yes | **missing** | 392 × 327 |
+| `market` | yes | yes | 392 × 327 |
 | `library` | yes | yes | 333 × 349 |
-| `smithy` | yes | **missing** | 388 × 264 |
+| `smithy` | yes | yes | 388 × 264 |
 | `workshop` | yes | **missing** | 392 × 240 |
-| `guild_hall` | yes | **missing** | 452 × 415 |
+| `guild_hall` | yes | yes | 452 × 415 |
 | `house_thatch` | yes | yes | 212 × 196 |
 | `house_timber` | yes | yes | 219 × 209 |
 | `house_stone` | yes | yes | 216 × 208 |
-| `house_burrow` | **missing** (the lit one stands in) | yes | 239 × 159 |
+| `house_burrow` | yes | yes | 239 × 159 |
+| `jeweller` | yes | yes | 286 × 305 |
+| `neighbourhood` (its door in Town) | yes | yes | 440 × 227 |
+| `village_green` (a prop, flat, no shadow) | yes | not needed | 320 × 159 |
 
 The four `house_*` images are the four starting house styles (`HOME_SCENE.md`
 C.4). Their keys replace the stand-in names there: `thatch`, `timber`, `stone`,
 `burrow`.
 
-Not yet drawn: `jeweller`, `farm`, `lumber_camp`, `fishing_post`, `forager_hut`,
-`mine`, `smelter`, `scout_post`, `watchtower`, `walls`, the Neighbourhood's
-"cluster of roofs" door in Town, the props (`village_green`, `wonder_site`,
+(Added 2026-11-17: the night images for the Market, Smithy and Guild Hall, the
+burrow by day, the Jeweller, the Neighbourhood's door and the village green.
+The Workshop's night image is still missing.)
+
+Not yet drawn: `farm`, `lumber_camp`, `fishing_post`, `forager_hut`,
+`mine`, `smelter`, `scout_post`, `watchtower`, `walls`, the props (`wonder_site`,
 `signpost`), scenery props (trees, rocks, bushes, flowers, a well, fence pieces,
 a pond), clouds, construction-site stages, and the other six species of
 villager. Keep the placeholders for these.
@@ -287,12 +293,23 @@ manifest above.
 3. Add the manifest entry: on-screen `w` and `h` are half the file's size.
 4. Place the door point and check a villager walks to it.
 
-A small script that does 2 and 3 from a folder of source images would be worth
-having: `scripts/pack_buildings.js`, beside `pack_sprites.js`. It needs to cope
-with three kinds of source, because the generator returns all three: real
-transparency, a white background, and a black background. For the last two,
-flood in from the edges so white flowers and dark outlines inside the drawing
-survive, then pull the edge in by one pixel.
+`scripts/pack_buildings.py` does 2 and 3 from a folder of source images
+(`python3 scripts/pack_buildings.py SRC_DIR`; it needs Pillow and numpy):
+- **Background.** The generator returns four kinds of source: real
+  transparency, a white fill, a black fill, and a baked-in grey and white
+  checkerboard (most night images arrive this way). For the last three the
+  script floods in from the edges, so white flowers and dark outlines inside
+  the drawing survive, then pulls the edge in by two pixels. Background seen
+  through a hole in a night image (the Guild Hall's belfry) is cleared wherever
+  the day image is clear.
+- **Size.** A night image is made the same size as its day image; both are
+  cropped tight first, so they line up (the script reports how well). A new
+  drawing takes its on-screen width from `SIZES` at the top of the script.
+- **Output.** Lossless WebP in `assets/images/scene_v2/buildings/`, named
+  `<key>.webp` and `<key>_lit.webp`. It prints the manifest's `w` and `h`; the
+  door point is still set by eye.
+- **Sources** are not kept in the repository (the host serves every file in
+  it); keep the PNGs you were sent.
 
 ## 6. Known rough edges
 
@@ -493,8 +510,107 @@ Reject a result if:
 
 Batches 1 and 2 matter most: they fill the meadow straight away.
 
-Still to make, in a sensible order: the four missing night images and the unlit
-burrow; a calmer meadow and scenery props; the Outskirts set (farm, lumber camp,
-mine, fishing post, forager hut, smelter, scout post, watchtower, walls); the
-jeweller; the three scene props; construction-site stages; then the other
-species.
+### The rest of the Home scene (written 2026-11-16)
+
+Buildings use the two building openers at the top of this section, with the
+same two reference images, unless a batch says otherwise. Put the PNGs in
+`art/buildings/` (buildings and their night images), `art/sites/` and
+`art/backdrop/`, with the file names given.
+
+**A. Night images for buildings that have none.** New chat each; attach **that
+building's own image** only.
+- Files: `market_lit.png`, `smithy_lit.png`, `workshop_lit.png`,
+  `guild_hall_lit.png`.
+- Prompt:
+  > The exact same image, pixel for pixel, with every window glowing warm
+  > yellow from inside and every lantern lit. Change nothing else: the same
+  > outline, colours, size and position. Keep the fully transparent
+  > background. No glow or halo outside the windows and lanterns.
+- For the Smithy add: "The forge mouth glows orange as well."
+- **The burrow by day** (`house_burrow.png`): attach the lit burrow and ask:
+  > The exact same image, pixel for pixel, by day: the windows dark and the
+  > lantern unlit. Change nothing else. Keep the fully transparent background.
+
+**B. The Jeweller** (`jeweller.png`, then `jeweller_lit.png`).
+> A small, neat jeweller's shop, a little taller than the attached cottage and
+> about as wide. Pale plastered walls with dark timber, and a steep roof of
+> deep teal slate (no other building in town has a teal roof). The feature
+> nobody could mistake: a large faceted gem on a hanging sign over the door,
+> and a bay window showing gems and rings on cushions. A small lantern by the
+> door. Windows dark, lanterns unlit.
+
+**C. The Outskirts** (one new chat per building; then the night line for any
+with windows, a lantern or a fire). Each is about one and a half times as wide
+as the attached cottage unless it says otherwise.
+
+| File | Describe it as |
+|---|---|
+| `farm.png` | A farmhouse barn: red-brown board walls, a big double barn door with a hayloft door above it, hay bales and a pitchfork by the wall, a weathervane. Roof of weathered grey shingles. Unmistakable feature: the hayloft door with hay spilling out. |
+| `lumber_camp.png` | An open-sided log shed with a roof of dark green bark shingles, stacked logs on both sides, a sawhorse with a half-cut log, and an axe stuck in a stump. Unmistakable feature: the big neat log piles. |
+| `fishing_post.png` | A small wooden fishing hut on a low plank deck, nets hung to dry along the wall, a rack of drying fish, a barrel of fish, and a little rowing boat leaning upturned against the side. Roof of pale silver-grey reed. Unmistakable feature: the nets and the boat. |
+| `forager_hut.png` | A small round hut of woven branches with a mossy dome roof, baskets of berries and mushrooms by the door, and bunches of herbs drying under the eaves. Smaller than the cottage. Unmistakable feature: the baskets and hanging herbs. |
+| `mine.png` | A timber-framed mine entrance set into a mound of grey rock: a dark tunnel mouth with heavy beams, a little ore cart on short rails, a pickaxe, a hanging lantern. The rock mound is part of the object. Unmistakable feature: the tunnel mouth and cart. |
+| `smelter.png` | A squat stone furnace house with a very tall brick chimney, a round furnace mouth (dark and cold), big bellows at the side, and a neat stack of metal ingots. Roof of dark iron-grey plates. Unmistakable feature: the furnace mouth and bellows. Night image: the furnace mouth glows orange. |
+| `scout_post.png` | A tall, narrow wooden lookout on four stilts with a ladder, a small roofed platform at the top, a spyglass on a stand and a pennant flag. About two and a half times as tall as the cottage and narrower than it. Unmistakable feature: the height and the ladder. |
+| `watchtower.png` | A stout round stone tower with arrow slits, a wooden roofed fighting platform on top, and an iron beacon basket above it (unlit). About two and a half times as tall as the cottage. Roof of dark red tiles. Unmistakable feature: the beacon basket. Night image: the beacon burns. |
+| `walls.png` | A town gate: a stone gatehouse with heavy wooden double doors (closed), a walkway and battlements above, a lantern each side, and a short stretch of pointed wooden palisade on both sides. About twice as wide as the cottage. Unmistakable feature: the big gate. |
+
+**D. Scene props you can click** (use the props opener, not the building one).
+- `village_green.png`:
+  > A village green as one object: a neat oval of short mown grass with a ring
+  > of small flowers round its edge, a tall maypole in the middle with four
+  > coloured ribbons, and two short poles with bunting. About as wide as the
+  > attached cottage is wide twice over; the maypole about twice as tall as
+  > the cottage's door. The grass oval is part of the object; nothing else on
+  > the ground.
+- `wonder_site.png`:
+  > A grand building site as one object, about as big as two cottages side by
+  > side: pale stone foundations and the first course of a great wall, tall
+  > wooden scaffolding with ladders, a wooden crane with a rope and a hanging
+  > stone block, stacked cut stones, and a table with a rolled plan. No
+  > workers.
+- `neighbourhood.png`, then `neighbourhood_lit.png` (the Neighbourhood's door in
+  Town):
+  > A cosy cluster of four small cottages standing close together as one
+  > object, seen from the same view: one with a yellow thatched roof, one with
+  > red tiles, one with blue slate and one low turf-roofed burrow, overlapping
+  > a little like a tiny village, with a wooden arch and a lantern at the
+  > front where a path would enter. About as wide as the attached cottage is
+  > wide twice over. Windows dark, lanterns unlit.
+
+**E. Construction sites** (building time, `HOME_SCENE.md` D.8; props opener).
+Two images, each a row of three stages with wide gaps:
+- `site_small.png` (each stage about the size of the attached cottage):
+  > Draw three stages of one small building site in a row, left to right,
+  > with wide empty gaps so each can be cut out. Bare timber and grey stone
+  > only, so it suits any building. 1. Staked ground: four corner stakes with
+  > a rope between them, a pile of timber, a small pile of stone and a
+  > wheelbarrow. 2. A bare timber frame of a cottage with no walls or roof,
+  > simple scaffolding and a ladder. 3. Nearly done: plain walls up, the roof
+  > half covered, scaffolding on one side, a bucket and tools by the door.
+- `site_large.png`: the same prompt, replacing "small building site" with
+  "large building site", and "about the size of the attached cottage" with
+  "about twice as wide and half as tall again as the attached cottage".
+
+**F. Clouds** (`clouds.png`; props opener, but ask for a pale outline):
+> Draw four separate clouds in one image with wide empty gaps: one long and
+> flat, one tall and puffy, one small, one made of three lumps. Flat cel
+> shading in white with a pale blue-grey underside, in the same chunky rounded
+> style as the attached images, but with a thin soft outline in pale
+> blue-grey instead of deep brown, because they sit far away in the sky.
+
+**G. Smoke** (`smoke.png`; props opener, pale outline as for clouds):
+> Draw three small separate puffs of chimney smoke in a row with wide gaps:
+> small, medium and large round puffs, soft grey-white with a slightly darker
+> underside. Each no bigger than the attached cottage's chimney is wide twice
+> over.
+
+**H. A villager at work** (PixelLab, not ChatGPT; `art/villagers/mouse/work_e.gif`):
+animate the existing mouse facing east, "hammering: raises a small wooden
+mallet above the head and strikes down in front, then lifts again", 6 frames,
+the same frame size as the walk. West is mirrored.
+
+Still to make, in a sensible order: the Workshop's night image (the rest of
+batch A is in); the scenery props, calmer meadow and path texture above; batch E (building
+time is the next thing built); the Outskirts (C) and the Jeweller (B); the
+scene props (D); clouds and smoke; then the other species.

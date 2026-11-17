@@ -1,5 +1,6 @@
 const express = require('express');
-const { query } = require('../db');
+const { query, withTransaction } = require('../db');
+const CN = require('../lib/construction');
 const RD = require('../lib/resource_defs');
 const RS = require('../lib/research_defs');
 const requireAuth = require('../middleware/auth');
@@ -81,6 +82,10 @@ router.get('/', requireAuth, async (req, res) => {
     // Finished research (a building can need a project: the Smelter).
     const done = await require('../lib/research').doneSet(null, settlement.id);
     const discount = await buildDiscount(settlement.id, done);
+    // Building time (lib/construction.js): what the builders are working on.
+    const queue = await CN.queue(settlement.id).catch(() => ({ on: false, sites: [] }));
+    const siteOf = id => queue.sites.find(x => x.type === id && x.kind !== 'house') || null;
+    const homesGoing = queue.sites.filter(x => x.kind === 'house').length;
 
     // Determine what can be built / upgraded
     const available = Object.values(BUILDINGS).map(def => {
@@ -91,7 +96,9 @@ router.get('/', requireAuth, async (req, res) => {
         : (existing ? existing.level : 0);
       // Homes: as many as the tier's plots (a town with more keeps them).
       const maxLevel = def.isHousing ? Math.max(currentLevel, (def.tierCaps && def.tierCaps[settlement.tier || 'camp']) || def.maxLevel) : def.maxLevel;
-      const canUpgrade = currentLevel < maxLevel;
+      // Being built or upgraded already: nothing more to order until it is done.
+      const site = def.isHousing ? null : siteOf(def.id);
+      const canUpgrade = currentLevel + (def.isHousing ? homesGoing : 0) < maxLevel && !site;
 
       // Check requirements met
       const requiresMet = def.requires.every(req => builtMap[req]);
@@ -100,7 +107,7 @@ router.get('/', requireAuth, async (req, res) => {
       const nextLevelTierMet = !canUpgrade || levelTierMet(def, currentLevel + 1, settlement.tier);
 
       // Scale cost with level, less any discount (Engineering…)
-      const cost = scaledCost(def, currentLevel + 1, discount.mult);
+      const cost = scaledCost(def, currentLevel + (def.isHousing ? homesGoing : 0) + 1, discount.mult);
 
       return {
         id: def.id,
@@ -127,10 +134,14 @@ router.get('/', requireAuth, async (req, res) => {
         effect: def.effect(Math.max(1, currentLevel)),
         nextEffect: canUpgrade ? def.effect(currentLevel + 1) : null,
         citizenSlots: def.citizenSlots(Math.max(1, currentLevel)),
+        site: site ? { id: site.id, kind: site.kind, level: site.level, pct: site.pct, eta_minutes: site.eta_minutes } : null,
+        building: def.isHousing ? homesGoing : 0,
+        work: queue.on && canUpgrade ? CN.workFor(def.isHousing ? 'house' : currentLevel > 0 ? 'upgrade' : 'building', def.id, currentLevel + 1, require('../lib/tuning').T('build_work')) : null,
       };
     });
 
-    res.json({ ok: true, buildings: available, builtIds: Object.keys(builtMap) });
+    res.json({ ok: true, buildings: available, builtIds: Object.keys(builtMap),
+      construction: { on: queue.on, waiting: !!queue.waiting, builders: (queue.builders || []).length, queued: queue.sites.length, max: queue.max } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch buildings.' });
@@ -150,17 +161,6 @@ router.post('/build', requireAuth, async (req, res) => {
     const settlement = settlementRes.rows[0];
     if (!settlement) return res.status(404).json({ error: 'No settlement.' });
 
-    const userRes = await query('SELECT species FROM users WHERE id=$1', [req.user.userId]);
-    const species = userRes.rows[0]?.species || 'Mice';
-
-    // Check existing level
-    const existingRes = await query(
-      'SELECT * FROM buildings WHERE settlement_id=$1 AND type=$2',
-      [settlement.id, buildingId]
-    );
-    const existing = existingRes.rows[0];
-    const currentLevel = existing ? existing.level : 0;
-
     // A home goes on a plot in the Neighbourhood (lib/neighbourhoods.js): the
     // first free one the town's tier has opened. Its own rules, cost and all.
     if (def.isHousing) {
@@ -168,6 +168,7 @@ router.post('/build', requireAuth, async (req, res) => {
       try {
         const out = await N.place(settlement.id, {});
         const count = (await query('SELECT COUNT(*)::int AS n FROM houses WHERE settlement_id=$1 AND building_type=$2', [settlement.id, buildingId])).rows[0].n;
+        if (out.queued) return res.json({ ok: true, building: buildingId, newLevel: count, cost: out.cost, queued: true, site: out.site, ...(await crewNote(settlement.id)) });
         return res.json({ ok: true, building: buildingId, newLevel: count, cost: out.cost, house: out.house });
       } catch (e) {
         if (e instanceof N.HouseError) return res.status(e.status).json({ error: e.message });
@@ -175,78 +176,73 @@ router.post('/build', requireAuth, async (req, res) => {
       }
     }
 
-    if (!tierMetFor(def, settlement.tier))
-      return res.status(400).json({ error: `Requires a ${tierLabel(def.minTier)} settlement.` });
+    const doneSet = await require('../lib/research').doneSet(null, settlement.id);
+    const discount = (await buildDiscount(settlement.id, doneSet)).mult;
+    const fail = (msg, status = 400) => Object.assign(new Error(msg), { status, said: true });
 
-    if (currentLevel >= def.maxLevel)
-      return res.status(400).json({ error: 'Already at max level.' });
+    // One transaction under the settlement's row lock: two presses (or two
+    // devices) cannot both pay, and the level cannot be raised twice.
+    const out = await withTransaction(async c => {
+      const q = (t, p) => c.query(t, p);
+      const st = (await q('SELECT * FROM settlements WHERE id=$1 FOR UPDATE', [settlement.id])).rows[0];
+      const existing = (await q('SELECT * FROM buildings WHERE settlement_id=$1 AND type=$2', [st.id, buildingId])).rows[0];
+      const currentLevel = existing ? existing.level : 0;
 
-    if (!levelTierMet(def, currentLevel + 1, settlement.tier))
-      return res.status(400).json({ error: `Level ${currentLevel + 1} ${def.label} requires a ${tierLabel(levelTierFor(def, currentLevel + 1))} settlement.` });
-
-    if (def.research && !(await require('../lib/research').doneSet(null, settlement.id)).has(def.research))
-      return res.status(400).json({ error: `Study ${RS.labelFor(def.research, await require('../lib/research').doneSet(null, settlement.id))} at a Library first.` });
-    // Some levels need more research than the building itself (Walls 3+).
-    const lvlRes = def.levelResearch && def.levelResearch[currentLevel + 1];
-    if (lvlRes) {
-      const doneL = await require('../lib/research').doneSet(null, settlement.id);
-      if (!doneL.has(lvlRes)) return res.status(400).json({ error: `Level ${currentLevel + 1} ${def.label} needs ${RS.labelFor(lvlRes, doneL)} — study it at a Library first.` });
-    }
-
-    // Check requirements
-    for (const req of def.requires) {
-      const reqCheck = await query(
-        'SELECT id FROM buildings WHERE settlement_id=$1 AND type=$2',
-        [settlement.id, req]
-      );
-      if (!reqCheck.rows.length)
-        return res.status(400).json({ error: `Requires ${BUILDINGS[req]?.label || req} first.` });
-    }
-
-    // Scale cost by level, less any discount (Engineering…)
-    const cost = scaledCost(def, currentLevel + 1, (await buildDiscount(settlement.id)).mult);
-
-    // Check resources (any resource in lib/resource_defs.js)
-    for (const [r, v] of Object.entries(cost)) {
-      if (!RD.isResource(r)) continue;
-      if (v > (Number(settlement[r]) || 0)) return res.status(400).json({ error: `Not enough ${RD.label(r).toLowerCase()}. Need ${v}.` });
-    }
-
-    // Deduct resources
-    const costKeys = Object.keys(cost).filter(r => RD.isResource(r) && cost[r] > 0);
-    if (costKeys.length) await query(
-      `UPDATE settlements SET ${costKeys.map((r, i) => `${r} = ${r} - $${i + 1}`).join(', ')} WHERE id = $${costKeys.length + 1}`,
-      [...costKeys.map(r => cost[r]), settlement.id]);
-
-    // Build or upgrade
-    if (existing) {
-      await query('UPDATE buildings SET level=$1 WHERE id=$2', [currentLevel + 1, existing.id]);
-    } else {
-      await query(
-        'INSERT INTO buildings (settlement_id, type, level) VALUES ($1,$2,1)',
-        [settlement.id, buildingId]
-      );
-    }
-
-    // Apply scout post fog reveal (hex disk)
-    if (buildingId === 'scout_post') {
-      const { hexDisk } = require('../mapgen');
-      const newRadius = 5 + (def.effect(currentLevel + 1).reveal_radius || 0);
-      const disk = hexDisk(settlement.tile_q, settlement.tile_r, newRadius);
-      for (const { q, r } of disk) {
-        await query(
-          'INSERT INTO fog_of_war (user_id, tile_q, tile_r) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING',
-          [req.user.userId, q, r]
-        );
+      if (!tierMetFor(def, st.tier)) throw fail(`Requires a ${tierLabel(def.minTier)} settlement.`);
+      if (currentLevel >= def.maxLevel) throw fail('Already at max level.');
+      if (!levelTierMet(def, currentLevel + 1, st.tier))
+        throw fail(`Level ${currentLevel + 1} ${def.label} requires a ${tierLabel(levelTierFor(def, currentLevel + 1))} settlement.`);
+      if (def.research && !doneSet.has(def.research)) throw fail(`Study ${RS.labelFor(def.research, doneSet)} at a Library first.`);
+      // Some levels need more research than the building itself (Walls 3+).
+      const lvlRes = def.levelResearch && def.levelResearch[currentLevel + 1];
+      if (lvlRes && !doneSet.has(lvlRes)) throw fail(`Level ${currentLevel + 1} ${def.label} needs ${RS.labelFor(lvlRes, doneSet)} — study it at a Library first.`);
+      // What it needs must be standing (a site does not count).
+      for (const need of def.requires) {
+        if (!(await q('SELECT id FROM buildings WHERE settlement_id=$1 AND type=$2', [st.id, need])).rows.length)
+          throw fail(`Requires ${BUILDINGS[need]?.label || need} first.`);
       }
-    }
 
-    res.json({ ok: true, building: buildingId, newLevel: currentLevel + 1, cost });
+      // Scale cost by level, less any discount (Engineering…)
+      const cost = scaledCost(def, currentLevel + 1, discount);
+      for (const [r, v] of Object.entries(cost)) {
+        if (!RD.isResource(r)) continue;
+        if (v > (Number(st[r]) || 0)) throw fail(`Not enough ${RD.label(r).toLowerCase()}. Need ${v}.`);
+      }
+      const costKeys = Object.keys(cost).filter(r => RD.isResource(r) && cost[r] > 0);
+      if (costKeys.length) await q(
+        `UPDATE settlements SET ${costKeys.map((r, i) => `${r} = ${r} - $${i + 1}`).join(', ')} WHERE id = $${costKeys.length + 1}`,
+        [...costKeys.map(r => cost[r]), st.id]);
+
+      // Building time: paying starts a site, and the builders do the rest.
+      if (await CN.enabled(st)) {
+        const site = await CN.order(q, st, { kind: existing ? 'upgrade' : 'building', type: buildingId, level: currentLevel + 1, cost });
+        return { cost, currentLevel, site };
+      }
+      if (existing) await q('UPDATE buildings SET level=$1 WHERE id=$2', [currentLevel + 1, existing.id]);
+      else await q('INSERT INTO buildings (settlement_id, type, level) VALUES ($1,$2,1)', [st.id, buildingId]);
+      await CN.built(q, st, buildingId, currentLevel + 1);   // a Scout Post lifts the fog
+      return { cost, currentLevel };
+    });
+
+    if (out.site) {
+      try { require('../lib/event_bus').publish(settlement.id, { type: 'construction', what: 'queue' }); } catch (_) { /* no stream */ }
+      return res.json({ ok: true, building: buildingId, newLevel: out.currentLevel, cost: out.cost, queued: true,
+        site: { id: out.site.id, kind: out.site.kind, level: out.site.level, work_needed: Number(out.site.work_needed) }, ...(await crewNote(settlement.id)) });
+    }
+    res.json({ ok: true, building: buildingId, newLevel: out.currentLevel + 1, cost: out.cost });
   } catch (err) {
+    if (err && err.said) return res.status(err.status || 400).json({ error: err.message });
+    if (err instanceof CN.SiteError) return res.status(err.status).json({ error: err.message });
     console.error(err);
     res.status(500).json({ error: 'Construction failed.' });
   }
 });
+// With a site ordered: is anyone there to build it? (The client says so at
+// once when nobody is: docs/HOME_SCENE.md D.5.)
+async function crewNote(sid) {
+  const crew = await CN.builders(sid).catch(() => []);
+  return { builders: crew.length, no_builder: crew.length === 0 };
+}
 
 // Remove (demolish) a building
 router.post('/remove', requireAuth, async (req, res) => {
@@ -294,6 +290,13 @@ router.post('/remove', requireAuth, async (req, res) => {
 
     // Remove from DB
     await query('DELETE FROM buildings WHERE settlement_id=$1 AND type=$2', [settlement.id, buildingId]);
+    // Work on its upgrade stops, refunded as a cancelled site.
+    const stopped = await withTransaction(async c => {
+      const q = (t, p) => c.query(t, p);
+      await q('SELECT id FROM settlements WHERE id=$1 FOR UPDATE', [settlement.id]);
+      return CN.cancelFor(q, settlement.id, buildingId);
+    }).catch(() => null);
+    if (stopped) for (const [r, v] of Object.entries(stopped.refund)) refund[r] = (refund[r] || 0) + v;
 
     // Unassign any citizens working this building
     const { ROLE_BUILDING_MAP } = require('../buildings');
@@ -322,6 +325,47 @@ router.get('/definitions', async (req, res) => {
   res.json({ ok: true, buildings: BUILDINGS });
 });
 
+// ── Where each building stands in the Home scene ───────────────────────────
+// { plot id: building id }, the same on every device (docs/HOME_SCENE.md
+// §2.3). The plots themselves are the scene's (the client knows them); the
+// server keeps the map and checks its shape.
+//   GET /api/buildings/layout          { layout } (null: never saved)
+//   PUT /api/buildings/layout { layout }
+const LAYOUT_MAX = 80;
+// A layout as it may be stored, or null when it is not one. Pure.
+function cleanLayout(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const keys = Object.keys(raw);
+  if (keys.length > LAYOUT_MAX) return null;
+  const out = {}, seen = new Set();
+  for (const k of keys) {
+    const v = raw[k];
+    if (!/^[a-z0-9_-]{1,40}$/i.test(k) || typeof v !== 'string') return null;
+    if (!(BUILDINGS[v] || v === 'neighbourhood') || seen.has(v)) return null;   // a known building, standing in one place
+    seen.add(v);
+    out[k] = v;
+  }
+  return out;
+}
+router.get('/layout', requireAuth, async (req, res) => {
+  try {
+    const s = (await query('SELECT scene_layout FROM settlements WHERE user_id=$1', [req.user.userId])).rows[0];
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+    res.json({ ok: true, layout: s.scene_layout || null });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Could not load the layout.' }); }
+});
+router.put('/layout', requireAuth, async (req, res) => {
+  try {
+    const layout = cleanLayout((req.body || {}).layout);
+    if (!layout) return res.status(400).json({ error: 'That is not a layout.' });
+    const s = (await query('UPDATE settlements SET scene_layout = $2 WHERE user_id = $1 RETURNING id', [req.user.userId, JSON.stringify(layout)])).rows[0];
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+    try { require('../lib/event_bus').publish(s.id, { type: 'layout' }); } catch (_) { /* no stream */ }
+    res.json({ ok: true, layout });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Could not save the layout.' }); }
+});
+
 module.exports = router;
 module.exports.buildDiscount = buildDiscount;
 module.exports.scaledCost = scaledCost;
+module.exports.cleanLayout = cleanLayout;

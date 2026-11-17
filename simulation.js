@@ -334,9 +334,11 @@ async function _persistSimState(settlementId, sim) {
         [settlementId, rel.citizen_a_id, rel.citizen_b_id, newScore, newState]
       );
     } else if (newScore !== rel.score || newState !== rel.state) {
+      // Added to the score as it is now, not written over it: a chat or a
+      // moment that changed it while this ran is kept (lib/social.js).
       await query(
-        'UPDATE citizen_relationships SET score = $1, state = $2, last_updated = NOW() WHERE id = $3',
-        [newScore, newState, rel.id]
+        'UPDATE citizen_relationships SET score = LEAST(100, GREATEST(0, score + $1)), state = $2, last_updated = NOW() WHERE id = $3',
+        [newScore - rel.score, newState, rel.id]
       );
     }
   }

@@ -119,8 +119,15 @@ async function main() {
     const m = await M.start(sid, 't_pick');
     check(m && m.options.length === 2 && m.options.every(o => o.hint) && m.fallback === 'a', 'a moment shows its options with hints and its default');
     check((await M.choose(sid, m.id, 'zzz')).status === 400, 'only one of its options');
-    const r = await M.choose(sid, m.id, 'b');
-    check(r.ok && r.outcome === 'Chose b.' && !r.auto, 'answered: the outcome comes back');
+    // Two devices on one town: both hear it is settled; only one answer counts.
+    const heard = [];
+    const off = require('../lib/event_bus').subscribe(sid, ev => { if (ev.type === 'moment_resolved') heard.push(ev); });
+    const both = await Promise.all([M.choose(sid, m.id, 'b'), M.choose(sid, m.id, 'b')]);
+    const r = both.find(x => x.ok);
+    check(r && r.ok && r.outcome === 'Chose b.' && !r.auto, 'answered: the outcome comes back');
+    check(both.filter(x => x.ok).length === 1 && both.filter(x => x.status === 404).length === 1, 'answered from two devices at once: one counts, the other is told it is settled');
+    check(heard.length === 1 && heard[0].id === m.id && heard[0].auto === false && heard[0].outcome === 'Chose b.', 'every device watching the town hears it was answered (not a default)');
+    off();
     check((await M.choose(sid, m.id, 'a')).status === 404, 'answered once');
     const ch = (await q("SELECT text FROM chronicle WHERE settlement_id = $1 AND kind = 'moment'", [sid])).rows;
     check(ch.length === 1 && ch[0].text === 'The test went b.', 'the outcome writes a chronicle line');

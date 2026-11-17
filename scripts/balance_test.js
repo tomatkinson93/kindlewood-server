@@ -94,7 +94,7 @@ async function part2() {
     check(miner && miner.levels.length === 20 && miner.levels[19] >= 1 && miner.forks.stonemason >= 1, 'levels 1–20 and forks per class');
     check(Array.isArray(r.body.crafting.days) && typeof r.body.discoveries.recipes === 'number' && typeof r.body.research.finished_7d === 'number' && r.body.research.finished_7d >= 2,
       'crafts per day, discoveries and research for the last week');
-    check(r.body.tuning.length === 5 && r.body.tuning.every(x => x.value === 1 || typeof x.value === 'number'), 'five tuning multipliers');
+    check(r.body.tuning.length === 6 && r.body.tuning.some(x => x.key === 'build_work') && r.body.tuning.every(x => x.value === 1 || typeof x.value === 'number'), 'six tuning multipliers (building work among them)');
     const lib = await user('tunelib', [['library', 1]]);
     await citizen(lib, 'scholar', 'Ink');
     const base = (await require('../lib/research').scholarsOf(lib.sid, 'prospecting')).perHour;

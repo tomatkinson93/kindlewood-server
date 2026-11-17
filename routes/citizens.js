@@ -372,7 +372,10 @@ router.post('/:id/apprentice', requireAuth, async (req, res) => {
     if (!settlement) return res.status(404).json({ error: 'No settlement.' });
     const body = req.body || {};
     const classKey = typeof body.class === 'string' ? body.class : null;
-    if (!classKey || !C.ASSIGNABLE.includes(classKey)) return res.status(400).json({ error: 'Choose a trade.' });
+    if (!classKey || !(C.ASSIGNABLE.includes(classKey) || C.FEATURED.includes(classKey))) return res.status(400).json({ error: 'Choose a trade.' });
+    // A trade that belongs to a feature not on for this town (Builder: building time).
+    if (C.CLASSES[classKey].feature === 'construction' && !(await require('../lib/construction').enabled((await query('SELECT id, construction_on FROM settlements WHERE id=$1', [settlement.id])).rows[0])))
+      return res.status(400).json({ error: 'There is nothing for a builder to do yet.' });
     const c = (await query('SELECT * FROM citizens WHERE id=$1 AND settlement_id=$2', [req.params.id, settlement.id])).rows[0];
     if (!c) return res.status(404).json({ error: 'Citizen not found.' });
     if (LIFE.stageOf(c) !== 'youth') return res.status(400).json({ error: `Only youths (${LIFE.CONFIG.YOUTH_FROM}–${LIFE.CONFIG.ADULT_FROM - 1}) can take up an apprenticeship.` });
@@ -413,6 +416,11 @@ router.patch('/:id/role', requireAuth, async (req, res) => {
     const cit = cRes.rows[0];
     if (!cit) return res.status(404).json({ error: 'Citizen not found.' });
     if ((cit.life_stage || 'adult') !== 'adult') return res.status(400).json({ error: `${cit.name} can't take a job.` });
+    // A job that belongs to a feature not on for this town (Builder: building time).
+    if (C.CLASSES[role] && C.CLASSES[role].feature === 'construction') {
+      const st = (await query('SELECT id, construction_on FROM settlements WHERE id=$1', [settlement.id])).rows[0];
+      if (!(await require('../lib/construction').enabled(st))) return res.status(400).json({ error: 'There is nothing for a builder to do yet.' });
+    }
 
     // Away on something: can't be reassigned until they're home.
     const away = (await careers.awayMap(null, settlement.id)).get(cit.id);
