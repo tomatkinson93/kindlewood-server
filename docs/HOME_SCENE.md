@@ -1452,7 +1452,37 @@ its size.
     - **Kept small:** at most 28 things in the air; transform and opacity
       only; nothing while Home is closed, the tab is hidden or the player
       asks for reduced motion.
-21. **Weather and seasons** (F.5).
+21. **Weather and seasons** (F.5). **Built** (2026-11-17): `lib/weather.js`
+    on the server (tests `scripts/weather_test.js`), `js/home-weather.js`
+    (`KWWeather`; proofs `verify/weather_proofs.js`).
+    - **The roll:** each game day (09:00 UTC to 09:00 UTC) has a word for the
+      day (clear, cloudy, rain, or snow in winter) and four six-hour spells,
+      seeded by the town and the day. No table and no tick: the same answer
+      whenever it is asked. A clear day may cloud over for a spell; a wet day
+      is wet for at least one spell and cloudy between, so it seldom rains for
+      a whole real day. Chances by season are in `CONFIG.ODDS` (summer 60 %
+      clear and 15 % rain; winter 35 % snow). It comes with the town
+      (`settlement.weather`), so the scene never asks for it.
+    - **Changed from the plan:** F.5 said one roll per day. A game day is a
+      real day, so one roll would mean a player who looks in the evening sees
+      the same rain as at breakfast; the spells fix that and keep "today's
+      weather" as one word for the crier.
+    - **Drawn by code for now:** clouds drifting behind the mountains (more
+      and greyer in the wet), a grey wash over the world, rain or snow over
+      the view, puddles (placed from the day's seed) while it rains and for
+      the spell after, a snow cap along the top outline of every building
+      (worked out from the picture, once) and a dusting on the meadow while
+      snow falls and for the spell after. Blossom in spring and leaves in
+      autumn ride the wind (`js/home-ambient.js`).
+    - **Villagers** walk a quarter faster and stand about half as long in
+      rain or snow. Nothing else in the game reads the weather.
+    - **Reduced motion:** nothing falls and the clouds stand still; the wash,
+      the caps and the puddles stay.
+    - **To check on a real phone:** rain and snow are two large sheets moved
+      by transform (one on a phone). In the test browser, which draws without
+      a graphics card, they cost about 20 ms a frame on a desktop-sized view;
+      on a real device they should cost almost nothing. If a phone stutters
+      in rain, drop to one sheet everywhere.
 22. **A lost thing each day** (F.8).
 23. **Decorating and charm** (F.9). Needs the scenery props' art.
 24. **The town crier** (F.11) and **photo mode** (F.10).

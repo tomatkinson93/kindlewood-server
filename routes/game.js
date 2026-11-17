@@ -305,6 +305,8 @@ router.get('/settlement', requireAuth, async (req, res) => {
         needsResettlement: (settlement.world_version || 0) < 2,
         // Building time with builders (lib/construction.js) is on for this town.
         building_time: await require('../lib/construction').enabled(settlement).catch(() => false),
+        // Today's weather for the Home scene (lib/weather.js): looks only.
+        weather: require('../lib/weather').at(settlement.id),
         resources: resourcesLib.resourcesOf(settlement),
         discovered: discovered,
         new_discoveries: newDiscoveries,

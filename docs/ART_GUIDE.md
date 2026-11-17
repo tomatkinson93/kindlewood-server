@@ -673,6 +673,32 @@ seed). Optional art, `art/props/smalllife.png` (props opener, wide gaps):
 > closed; 5. an orange autumn leaf; 6. a fluffy white dandelion seed.
 No birds, cats or other pets: the villagers are animals themselves.
 
+**L. Weather** (step 21). Everything is drawn by code today. In order of how
+much each would add:
+- **Clouds** (`art/backdrop/clouds.png`): batch F above. Stand-in: white
+  rounded shapes with a blue-grey underside. Code greys them itself on a wet
+  day, so draw them white.
+- **Puddles** (`art/props/puddles.png`; props opener). Stand-in: pale blue
+  ovals.
+  > Draw three separate rain puddles in a row with wide empty gaps, seen from
+  > the same high three-quarter view as the attached cottage's doorstep, so
+  > each is a flat, wide oval lying on the ground: one small, one medium, one
+  > long and irregular. Pale sky-blue water with one or two lighter streaks
+  > of reflection and a thin darker rim, no grass, no splashes, no ripples.
+  > The medium one about as wide as the attached cottage's door.
+- **Snow on roofs.** Stand-in: code finds the top outline of each picture and
+  lays a white band along it, so every building, present and future, gets a
+  cap with no art. It reads well; proper snowy pictures would be one extra
+  image per building (`<key>_snow.png`) and are **not worth making** unless
+  winter becomes a long part of play. If you ever do, the prompt is:
+  > The exact same image, pixel for pixel, with a thick layer of fresh white
+  > snow lying on the roof, the chimney top, the window sills and the sign.
+  > Change nothing else: the same outline, colours, size and position. Keep
+  > the fully transparent background. No falling snow and no snow on the
+  > ground.
+- **Rain and snow falling**: fine as code; no art.
+- **Blossom, leaves and seeds on the wind**: batch K.
+
 Still to make, in a sensible order: the Workshop's night image (the rest of
 batch A is in); the scenery props, calmer meadow and path texture above; batch E (building
 time is the next thing built); the Outskirts (C) and the Jeweller (B); the
