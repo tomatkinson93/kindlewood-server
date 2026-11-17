@@ -1559,6 +1559,27 @@ its size.
       second device shows its own marks.
     - The engine's script hook grew: a step can be `door: key` ("walk to that
       building's door"), and a script can answer a click (`opts.onClick`).
+    **Photo mode is built** (2026-11-17): `js/photo.js` (`KWPhoto`; proofs
+    `verify/photo_proofs.js`). Nothing in the game changes and it never talks
+    to the server.
+    - **On screen:** a 📷 Photo chip on Home. While it is on, the town card,
+      the season card, the chips, nameplates, bubbles and marks step aside,
+      nothing opens on a click (the view still pans), and a bar offers the
+      time of day (dawn, day, dusk, night), the weather (clear, cloudy, rain,
+      snow), Save picture and Done. The choices are looks held on the device;
+      Done, Esc, the chip or leaving Home puts the real hour and sky back.
+    - **The picture** is painted on a canvas by our own painter (no library):
+      every picture, drawing and sprite in the world in the page's stacking
+      order, then the evening's tint (multiply), the lit windows and lantern
+      light (screen), rain or snow, and the town's name in a corner. It is as
+      sharp as the screen up to twice, and at most about eight million
+      pixels. A phone shares it (to Photos, a message); a computer downloads
+      `kindlewood-<town>-<date>.png`.
+    - **The cost of our own painter:** it knows the scene's parts by name
+      (`kindOf` in `js/photo.js`). Pictures, canvases, drawings and villager
+      sprites are found by themselves; anything new that is drawn with CSS
+      alone (a new kind of particle, say) must be added there or it will be
+      missing from photos. Names are left out of pictures for now.
 25. **A visiting merchant** (F.13).
 26. **Events in the scene** (F.12). Last: it builds on mood, life events and
     town events (steps 14 to 16).

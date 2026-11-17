@@ -771,6 +771,11 @@ bell up beside the head and swings it side to side twice, then lowers it a
 little", 6 frames, the same frame size as the walk. West is mirrored. The
 bubble then goes and only the mark for news stays.
 
+**P. Photo mode** (step 24). Needs no art. One thing to know when adding
+art: pictures (PNG/WebP in an `<img>`), sprite sheets and drawings are picked
+up by the photo painter by themselves, so new buildings, props and villagers
+appear in saved pictures with no extra work.
+
 Still to make, in a sensible order: the Workshop's night image (the rest of
 batch A is in); the scenery props, calmer meadow and path texture above; batch E (building
 time is the next thing built); the Outskirts (C) and the Jeweller (B); the
