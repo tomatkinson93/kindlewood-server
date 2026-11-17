@@ -9,6 +9,7 @@
 //   DATABASE_URL=postgres://… CRAFTING_TEST_BASE=http://localhost:3999 CRAFTING_TEST_ADMIN_ID=990001 node scripts/research_test.js
 
 'use strict';
+const { standing } = require('./_build');   // with building time on, an order is finished at once (as Dev Tools does)
 
 const fs = require('fs');
 const path = require('path');
@@ -201,7 +202,7 @@ async function part2() {
   let b = await api(u, 'GET', '/api/buildings');
   const sm0 = (b.body.buildings || []).find(x => x.id === 'smelter');
   check(sm0 && sm0.researchMet === false && sm0.researchLabel === 'Smelting', 'the Smelter is locked behind Smelting');
-  r = await api(u, 'POST', '/api/buildings/build', { buildingId: 'smelter' });
+  r = await standing(await api(u, 'POST', '/api/buildings/build', { buildingId: 'smelter' }), u);
   check(r.status === 400 && /Smelting/.test(r.body.error || ''), '…and the server refuses to build it');
   const lib0 = (b.body.buildings || []).find(x => x.id === 'library');
   await research.adminComplete(u.sid, 'smelting');

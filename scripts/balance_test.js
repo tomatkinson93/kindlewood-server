@@ -8,6 +8,7 @@
 //   DATABASE_URL=postgres://… CRAFTING_TEST_BASE=http://localhost:3999 CRAFTING_TEST_ADMIN_ID=990001 node scripts/balance_test.js
 
 'use strict';
+const { standing } = require('./_build');   // with building time on, an order is finished at once (as Dev Tools does)
 
 const M = require('../lib/career_math');
 const C = require('../lib/careers/classes');
@@ -80,7 +81,7 @@ async function part2() {
   const lib2 = r.body.buildings.find(b => b.id === 'library');
   check(lib2.cost.timber === Math.ceil(lib0.cost.timber * 0.8) && lib2.discount.length === 2, 'with Engineering too, the total is capped at −20%');
   const w0 = Number((await q('SELECT timber FROM settlements WHERE id=$1', [t.sid])).rows[0].timber);
-  r = await api(t, 'POST', '/api/buildings/build', { buildingId: 'library' });
+  r = await standing(await api(t, 'POST', '/api/buildings/build', { buildingId: 'library' }), t);
   const w1 = Number((await q('SELECT timber FROM settlements WHERE id=$1', [t.sid])).rows[0].timber);
   check(r.status === 200 && w0 - w1 === lib2.cost.timber, 'building charges the discounted price');
 

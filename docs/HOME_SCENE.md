@@ -1308,9 +1308,11 @@ Each step ships on its own and is shown to the owner.
       around the clock. When it is finished they cheer.
     - **Dev Tools** (Life tab): on for this town, on for every town (asked
       twice), finish the first site now, set the number of builders.
-    - **Before turning it on for everyone:** move the server suites that
-      build things onto `scripts/_build.js` (step 12), and play a new town
-      through the first ten minutes with it on.
+    - **Before turning it on for everyone:** play a new town through the
+      first ten minutes with it on. The server suites are ready
+      (2026-11-17): the ones that build things go through
+      `scripts/_build.js`, and the whole set passes with the switch on as
+      well as off.
 14. **Mood** (§3.8). **Built** (2026-11-17) in `js/villager-engine.js`:
     emotes from a villager's own happiness (the town's when they have none),
     with no bed, short food and a festival coming first; at most two at a
@@ -1542,9 +1544,14 @@ its size.
       at dawn they go out. If nobody is free they come on by themselves. The
       engine got one new hook for this, `KWCast.playScript(id, steps,
       prefer)`, which steps 24 to 26 use too.
-    - **Left for later:** villagers do not yet sit on benches or walk round
-      the well and the pond (they pass in front or behind); festival and
-      paid decorations (they must never be worth more charm than these).
+    - **Villagers use them** (2026-11-17): a bench is a place to sit a while
+      (9 to 18 seconds), a flower bed, the well and the pond are places to
+      stop, and nobody walks through the well or the pond: a step that would
+      land in one slides round it by the shorter way (`stepRound` in the
+      engine, which also goes round the big scenery props). There is no
+      sitting animation yet: they stand at the bench.
+    - **Left for later:** festival and paid decorations (they must never be
+      worth more charm than these).
 24. **The town crier** (F.11) and **photo mode** (F.10).
     **The town crier is built** (2026-11-17): `js/crier.js` (`KWCrier`;
     proofs `verify/crier_proofs.js`). It reads only; nothing on the server.
@@ -1584,7 +1591,14 @@ its size.
       (`kindOf` in `js/photo.js`). Pictures, canvases, drawings and villager
       sprites are found by themselves; anything new that is drawn with CSS
       alone (a new kind of particle, say) must be added there or it will be
-      missing from photos. Names are left out of pictures for now.
+      missing from photos.
+    - **Names** (2026-11-17): the bar has a Names button. With it on, the
+      building nameplates and the villagers' name tags are in the picture
+      (plates painted last, so the night does not dim them; a villager's tag
+      stays with the villager, so a building in front still hides it). It is
+      the photo's own setting: the player's Names choice comes back on Done.
+      The cracks on a worn building and the boards on a broken one are
+      painted too.
 25. **A visiting merchant** (F.13). **Built** (2026-11-17): `lib/merchant.js`,
     `/api/merchant` and `migrations/0NN_merchant.sql` on the server (tests
     `scripts/merchant_test.js`); `js/merchant.js` (`KWMerchant`; proofs

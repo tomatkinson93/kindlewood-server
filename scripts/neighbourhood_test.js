@@ -4,6 +4,7 @@
 //   DATABASE_URL=postgres://… QUEST_TEST_BASE=http://localhost:3999 node scripts/neighbourhood_test.js
 // ══════════════════════════════════════════════════════════════════════════
 'use strict';
+const { standing, placeHome } = require('./_build');   // with building time on, an order is finished at once (as Dev Tools does)
 
 let passed = 0, failed = 0;
 function check(cond, msg) {
@@ -102,38 +103,38 @@ async function main() {
   const nid = x.body.neighbourhoods[0].id, open = x.body.neighbourhoods[0].open;
   check(x.body.neighbourhoods.length === 1 && x.body.houses === 0 && open.join() === N.openPlots('camp').join() && x.body.cost.timber === 40 && x.body.cost.stone === 20, 'a new town has a neighbourhood, six open plots, and the first home costs 40 timber and 20 stone');
   {
-    x = await t.api('POST', `/api/neighbourhoods/${nid}/houses`, { plot: open[2], style: 'stone' });
+    x = await placeHome(t.api, t.id, nid, { plot: open[2], style: 'stone' });
     const h = x.body.house;
     check(x.status === 200 && h.plot === open[2] && h.style === 'stone' && h.capacity === 4 && x.body.town.houses === 1, 'a home goes on the plot asked for, in the style asked for');
     const s = (await q('SELECT timber, stone FROM settlements WHERE id = $1', [t.id])).rows[0];
     check(s.timber === 100000 - 40 && s.stone === 100000 - 20 && await rows(t.id) === 1, 'it is paid for, and counted as a building');
     check(x.body.town.cost.timber === 80, 'the next one costs more, as before');
-    x = await t.api('POST', `/api/neighbourhoods/${nid}/houses`, { plot: open[2] });
+    x = await placeHome(t.api, t.id, nid, { plot: open[2] });
     check(x.status === 400 && /already stands/.test(x.body.error), 'two houses cannot share a plot');
-    const two = await Promise.all([t.api('POST', `/api/neighbourhoods/${nid}/houses`, { plot: open[3] }), t.api('POST', `/api/neighbourhoods/${nid}/houses`, { plot: open[3] })]);
+    const two = await Promise.all([placeHome(t.api, t.id, nid, { plot: open[3] }), placeHome(t.api, t.id, nid, { plot: open[3] })]);
     check(two.filter(r => r.status === 200).length === 1 && two.filter(r => r.status === 400).length === 1, '…even when two requests race for it');
-    x = await t.api('POST', `/api/neighbourhoods/${nid}/houses`, { plot: 0 });
+    x = await placeHome(t.api, t.id, nid, { plot: 0 });
     check(x.status === 400 && /not open yet/.test(x.body.error), 'a plot the tier has not opened is refused');
-    x = await t.api('POST', `/api/neighbourhoods/${nid}/houses`, { plot: 99 });
+    x = await placeHome(t.api, t.id, nid, { plot: 99 });
     check(x.status === 400, 'so is a plot that does not exist');
-    x = await t.api('POST', `/api/neighbourhoods/${nid}/houses`, { plot: open[4], style: 'palace' });
+    x = await placeHome(t.api, t.id, nid, { plot: open[4], style: 'palace' });
     check(x.status === 400 && /style/.test(x.body.error) && (await houses(t.id)).length === 2, 'a style the town does not own is refused, and nothing is built or paid');
     x = await t.api('POST', '/api/neighbourhoods/999999999/houses', { plot: open[4] });
     check(x.status === 404, "someone else's neighbourhood is not found");
     await q('UPDATE settlements SET timber = 5 WHERE id = $1', [t.id]);
-    x = await t.api('POST', `/api/neighbourhoods/${nid}/houses`, { plot: open[4] });
+    x = await placeHome(t.api, t.id, nid, { plot: open[4] });
     check(x.status === 400 && /Not enough timber/.test(x.body.error), 'no timber, no home');
     await q('UPDATE settlements SET timber = 100000 WHERE id = $1', [t.id]);
   }
 
   console.log('The old Build button still works');
   {
-    x = await t.api('POST', '/api/buildings/build', { buildingId: 'starter_house' });
+    x = await standing(await t.api('POST', '/api/buildings/build', { buildingId: 'starter_house' }), t.id);
     const hs = await houses(t.id);
     check(x.status === 200 && hs.length === 3 && open.includes(hs[2].plot) && hs[2].style === 'thatch', 'it puts the home on the first free open plot, thatched');
-    for (let i = 0; i < 3; i++) x = await t.api('POST', '/api/buildings/build', { buildingId: 'starter_house' });
+    for (let i = 0; i < 3; i++) x = await standing(await t.api('POST', '/api/buildings/build', { buildingId: 'starter_house' }), t.id);
     check(x.status === 200 && (await houses(t.id)).length === 6, 'six homes fill a camp');
-    x = await t.api('POST', '/api/buildings/build', { buildingId: 'starter_house' });
+    x = await standing(await t.api('POST', '/api/buildings/build', { buildingId: 'starter_house' }), t.id);
     check(x.status === 400 && /Village has room for 12/.test(x.body.error), 'a seventh is refused, and the message says what a Village allows');
     const b = (await t.api('GET', '/api/buildings')).body.buildings.find(d => d.id === 'starter_house');
     check(b.currentLevel === 6 && b.maxLevel === 6 && b.canUpgrade === false, 'the buildings list shows 6 of 6');
@@ -229,7 +230,7 @@ async function main() {
   console.log('Tier upgrades count kinds of building');
   {
     const v = await mkTown('camp');
-    for (let i = 0; i < 4; i++) await v.api('POST', '/api/buildings/build', { buildingId: 'starter_house' });
+    for (let i = 0; i < 4; i++) await standing(await v.api('POST', '/api/buildings/build', { buildingId: 'starter_house' }), v.id);
     x = await v.api('GET', '/api/game/tier-info');
     const cur = x.body.requirementsMet && x.body.requirementsMet.current;
     check(x.status === 200 && cur && cur.buildings === 1 && x.body.requirementsMet.buildings === false, 'four homes are one building (the Neighbourhood), not four');

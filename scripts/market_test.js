@@ -10,6 +10,7 @@
 //     node scripts/market_test.js
 
 'use strict';
+const { standing } = require('./_build');   // with building time on, an order is finished at once (as Dev Tools does)
 
 const market = require('../lib/market');
 
@@ -282,7 +283,7 @@ async function part2() {
   await api(seller, 'POST', `/api/market/orders/${o4}/cancel`);
 
   console.log('Market levels');
-  r = await api(seller, 'POST', '/api/buildings/build', { buildingId: 'market' });
+  r = await standing(await api(seller, 'POST', '/api/buildings/build', { buildingId: 'market' }), seller);
   check(r.status === 400 && /Village/.test(r.body.error), 'Market L2 needs a Village');
 
   // ── Items ───────────────────────────────────────────────────────────────
@@ -410,9 +411,9 @@ async function part2() {
 
   // ── Shops ──────────────────────────────────────────────────────────────
   console.log('Shops');
-  r = await api(isel, 'POST', '/api/buildings/build', { buildingId: 'smithy' });
+  r = await standing(await api(isel, 'POST', '/api/buildings/build', { buildingId: 'smithy' }), isel);
   check(r.status === 400 && /Village/.test(r.body.error), 'Smithy needs a Village');
-  r = await api(isel, 'POST', '/api/buildings/build', { buildingId: 'jeweller' });
+  r = await standing(await api(isel, 'POST', '/api/buildings/build', { buildingId: 'jeweller' }), isel);
   check(r.status === 400 && /Town/.test(r.body.error), 'Jeweller needs a Town');
   await q("INSERT INTO buildings (settlement_id, type, level) VALUES ($1,'smithy',1), ($1,'fishing_post',2)", [isel.sid]);
   const sword = await inv(isel, 'mt_sword_' + RUN, { name: 'Shop Sword', icon: '🗡', category: 'equipment', equip_slot: 'weapon' });

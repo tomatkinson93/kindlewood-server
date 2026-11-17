@@ -64,6 +64,8 @@ async function main() {
   const { pool } = require('../db');
   const jwt = require('jsonwebtoken');
   const CN = require('../lib/construction'), N = require('../lib/neighbourhoods');
+  // This suite turns building time on town by town, and checks towns where it is off: the switch for everyone is held off while it runs.
+  const putBack = await require('./_build').withoutBuildingTime();
   const { build, finishAll } = require('./_build');
   const BASE = process.env.QUEST_TEST_BASE || 'http://localhost:3000';
   const SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
@@ -345,6 +347,7 @@ async function main() {
     } else console.log('  (admin routes skipped — set TEST_ADMIN_ID)');
   }
 
+  await putBack();
   await pool.end();
 }
 
