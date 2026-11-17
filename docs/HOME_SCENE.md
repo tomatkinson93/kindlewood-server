@@ -1483,7 +1483,27 @@ its size.
       a graphics card, they cost about 20 ms a frame on a desktop-sized view;
       on a real device they should cost almost nothing. If a phone stutters
       in rain, drop to one sheet everywhere.
-22. **A lost thing each day** (F.8).
+22. **A lost thing each day** (F.8). **Built** (2026-11-17): `lib/lost.js`,
+    `/api/lost` and `migrations/0NN_lost.sql` on the server (tests
+    `scripts/lost_test.js`); `js/lost.js` (`KWLost`; proofs
+    `verify/lost_proofs.js`).
+    - **The server decides** what is lost (a basket, a ribbon, a coin purse,
+      or a wooden toy, which is always a child's), whose it is, whether it
+      has been found, and what finding it gives: the owner +3 happiness and
+      the town 15 food (the basket) or 3 to 12 wealth, a chronicle line and
+      a news line. One row per town per day, made the first time it is asked
+      for; the find is taken under the town's lock, so two devices clicking
+      at once count once.
+    - **Where it lies** is looks: the server sends a seed and the scene
+      places it from that, in Town, the Neighbourhood or the Outskirts, on
+      open ground (a point under a building is passed over for the next
+      seeded one), so every device draws it in the same place.
+    - **The hint** is the owner's thought line: "Has lost a ribbon somewhere
+      in the Outskirts." The town crier will carry it too (step 24).
+    - It is small on purpose, with a glint every few seconds. Hidden in
+      Build mode. If the owner has died, it goes to the family and there is
+      no happiness to give.
+    - Not found by the day's end: it is gone, and the next day has its own.
 23. **Decorating and charm** (F.9). Needs the scenery props' art.
 24. **The town crier** (F.11) and **photo mode** (F.10).
 25. **A visiting merchant** (F.13).

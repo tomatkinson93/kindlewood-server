@@ -699,6 +699,22 @@ much each would add:
 - **Rain and snow falling**: fine as code; no art.
 - **Blossom, leaves and seeds on the wind**: batch K.
 
+**M. Lost things** (step 22; `art/props/lost.png`; props opener). Stand-in:
+four emoji (a basket, a ribbon, a purse, a yo-yo), which look out of place
+next to the painted buildings and differ from phone to phone. Worth making
+early: it is one small image.
+> Draw four small separate things lying on the ground in a row, with wide
+> empty gaps so each can be cut out, each about as big as the attached
+> cottage's door is wide: 1. a small woven wicker basket tipped on its side
+> with two apples spilling out; 2. a red hair ribbon tied in a bow, lying
+> flat; 3. a small brown leather coin purse with a drawstring and one gold
+> coin beside it; 4. a child's wooden toy, a little painted horse on four
+> wheels with a pull string. Seen from the same high three-quarter view as
+> the attached images. No grass and no ground under them.
+
+Cut into `lost_basket.png`, `lost_ribbon.png`, `lost_purse.png` and
+`lost_toy.png`. In the scene each is drawn about 28 px wide.
+
 Still to make, in a sensible order: the Workshop's night image (the rest of
 batch A is in); the scenery props, calmer meadow and path texture above; batch E (building
 time is the next thing built); the Outskirts (C) and the Jeweller (B); the
