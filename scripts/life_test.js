@@ -12,6 +12,7 @@
 //   DATABASE_URL=postgres://… QUEST_TEST_BASE=http://localhost:3999 node scripts/life_test.js
 // ══════════════════════════════════════════════════════════════════════════
 'use strict';
+const { standing } = require('./_build');   // with building time on, an order is finished at once (as Dev Tools does)
 
 let passed = 0, failed = 0;
 function check(cond, msg) {
@@ -278,7 +279,7 @@ async function main() {
   check(st.status === 200 && st.body.settlement.population === 3 && st.body.settlement.beds === 0, 'the settlement shows live population and beds (no huts yet: 0)');
 
   console.log('Building a hut: 4 beds, and the homeless move in');
-  const br = await api('POST', '/api/buildings/build', { buildingId: 'starter_house' });
+  const br = await standing(await api('POST', '/api/buildings/build', { buildingId: 'starter_house' }), s.id);
   const hut = (await q('SELECT id, capacity FROM houses WHERE settlement_id = $1', [s.id])).rows;
   check(br.status === 200 && hut.length === 1 && hut[0].capacity === 4, 'a new Willow Hut holds 4');
   const housed = (await q('SELECT COUNT(*)::int AS n FROM citizens WHERE settlement_id = $1 AND house_id = $2', [s.id, hut[0].id])).rows[0].n;
@@ -301,7 +302,7 @@ async function main() {
 
   console.log('The real simulation: a couple in separate houses has a child');
   // A second hut; put a couple in different houses and run an hour of catch-up.
-  await api('POST', '/api/buildings/build', { buildingId: 'starter_house' });
+  await standing(await api('POST', '/api/buildings/build', { buildingId: 'starter_house' }), s.id);
   const huts = (await q('SELECT id FROM houses WHERE settlement_id = $1 ORDER BY id', [s.id])).rows.map(r => r.id);
   const mum = await cit('Mum', { gender: 'female', house_id: huts[0] });
   const dad = await cit('Dad', { gender: 'male', house_id: huts[1] });
@@ -569,9 +570,12 @@ async function main() {
     check(bad && bad.status === 400 && /between 6 and 25/.test(bad.message), 'out-of-range values are refused');
     bad = null; try { await TU.setLife('NOPE', 1); } catch (e) { bad = e; }
     check(bad && bad.status === 400, 'unknown numbers are refused');
+    await TU.setSwitch('upkeep.on', true);
     await TU.resetLife('ADULT_FROM');
     check(LIFE.CONFIG.ADULT_FROM === 12 && LIFE.CONFIG.DEATH_BASE === 0.5, 'one number resets on its own');
     await TU.resetLife();
+    check(await TU.switchOn('upkeep.on') === true, 'resetting the numbers leaves the switches (building time, upkeep) as they were');
+    await TU.setSwitch('upkeep.on', false);
     check(LIFE.CONFIG.DEATH_BASE === 0.06, 'and all of them together');
     check(TU.T('passive_xp') === 1 && (await TU.all()).length === Object.keys(TU.KEYS).length, 'the career multipliers are untouched');
 
