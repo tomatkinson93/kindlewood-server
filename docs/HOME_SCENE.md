@@ -1302,7 +1302,16 @@ Each step ships on its own and is shown to the owner.
       never showed, and a dozen other modules read `undefined` the same way
       (the town's species, the raid on its way). `js/main.js` now makes
       `window.gameData` the same value.
-15. **Life events** (§3.9).
+15. **Life events** (§3.9). **Built** (2026-11-17). `js/life-scenes.js`
+    reads the chronicle while Home shows (on opening, then every 45 seconds)
+    and hands its lines to the engine, which plays the six scenes: one at a
+    time, up to three waiting, each under a minute, only lines under ten
+    minutes old, each once per browser session. People in a scene join the
+    cast for its length. Nobody busy with the player (picked, a window open
+    on them, a moment waiting, a chat the player set up) is pulled in; a
+    partnership plays with both or not at all. A death hushes happy emotes
+    for four minutes. Scenes play in Town and the Neighbourhood (where the
+    homes are), not the Outskirts. Emoji stand in for the bubble icons.
 16. **Town-wide events** (§3.10).
 17. **Upkeep** (Part E), server and scene, behind `upkeep.on`. Last on purpose: turn it on only after building time has been live long enough to know that players keep builders.
 
