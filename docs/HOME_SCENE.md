@@ -1355,6 +1355,48 @@ Each step ships on its own and is shown to the owner.
       §3.3: Outskirts workers are in Town off work, on their breaks and on
       errands.
 17. **Upkeep** (Part E), server and scene, behind `upkeep.on`. Last on purpose: turn it on only after building time has been live long enough to know that players keep builders.
+    **Built** (2026-11-17), off everywhere. Server: `lib/upkeep.js`,
+    `/api/upkeep` (`GET /`, `POST /repair`, admin `/admin/town`,
+    `/admin/switch`, `/admin/health`), `health` on `buildings` and `houses`;
+    tests in `scripts/upkeep_test.js`. Screen: `js/upkeep.js` (KWUpkeep),
+    proofs in `verify/upkeep_proofs.js`.
+    - **Two switches**, as for building time: `settlements.upkeep_on` (one
+      town) and the tuning switch `upkeep.on` (every town). Camps are exempt
+      either way. Everything is set to 100 when it goes on, and back to 100
+      when it goes off, so nothing stays broken with the rule switched off.
+    - **Wear and repair** as in E.3 and E.4. The order things wear in: the
+      Jeweller, Guild Hall, Library, Tavern and Market first; then defences
+      and workshops; then the gathering buildings; then homes (the newest
+      first); the Granary last. The 8 and the 5 days are tunable numbers
+      (Dev Tools, Life, "Upkeep").
+    - **Repair now** is a site of its own kind in the builders' queue, put at
+      the front, sized by the damage (1 builder-minute a point), costing
+      nothing; cancelling it gives nothing back.
+    - **Broken:** left out of what the town produces; its workers keep their
+      jobs (they are not sent back to foraging, so nothing has to be put
+      right by hand after a repair). In the scene its Enter says why and
+      opens its panel with Repair now instead of its screen. *This last
+      part is on the screen only: the server does not yet refuse the Tavern,
+      Market, Library or crafting routes for a broken building.*
+    - **A broken home** keeps its beds; the family in it loses 3 happiness
+      when it breaks and gets it back when it is mended.
+    - **Said out loud:** one news line when nobody is looking after the
+      town, one for each thing that breaks, one for each that is mended;
+      they also appear in the away report. The town card has the one line
+      ("Upkeep: 2 builders look after 16 of 19 buildings"), amber with a
+      warning sign when builders are short.
+    - **In the scenes:** worn and broken looks are drawn over the building's
+      own picture by code; a broken one also says "Needs repair". A builder
+      with nothing to build walks a round of the buildings and taps at each.
+    - **The worker** looks at a few towns a pass, the longest-waiting first;
+      wear is worked out from the clock, so a town looked at every hour or
+      two loses nothing, and reading the town card does it at once.
+    - **Worth knowing before it goes on** (the owner's numbers, as built):
+      a builder with an empty queue mends about 70 times faster than one
+      building wears, so with even one free builder nothing stays worn.
+      Being short of builders only bites while they are kept busy building,
+      or when there are none. That is gentle, as intended; if it proves too
+      gentle, the lever is the repair rate, not the 8 or the 5 days.
 
 **Part F, the town alive** (agreed 2026-11-17). These do not depend on building
 time and can be built in between; the order below is by how much each adds for
