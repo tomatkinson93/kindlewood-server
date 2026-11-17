@@ -61,11 +61,11 @@ router.post('/send', requireAuth, async (req, res) => {
 
     // Check scout post exists
     const scoutPost = await query(
-      "SELECT level FROM buildings WHERE settlement_id=$1 AND type='scout_post'",
+      "SELECT level FROM buildings WHERE settlement_id=$1 AND type='scout_post' AND COALESCE(health, 100) > 0",   // a broken one is none (lib/upkeep)
       [settlement.id]
     );
     if (!scoutPost.rows.length)
-      return res.status(400).json({ error: 'Build a Scout Post first.' });
+      return res.status(400).json({ error: await require('../lib/upkeep').needLine(null, settlement.id, 'scout_post', 'Build a Scout Post first.') });
 
     // Validate citizen if provided
     let citizenName = 'Unknown Scout';

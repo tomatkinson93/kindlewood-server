@@ -12,6 +12,7 @@
 //     node scripts/clan_phase1_test.js
 
 'use strict';
+const { standing } = require('./_build');   // with building time on, an order is finished at once (as Dev Tools does)
 
 const { Pool } = require('pg');
 
@@ -92,12 +93,12 @@ async function main() {
   const village = await player('village', { tier: 'village' });
   const town = await player('town', { tier: 'town' });
   for (const p of [camp, village]) {
-    const r = await api(p.token, 'POST', '/api/buildings/build', { buildingId: 'guild_hall' });
+    const r = await standing(await api(p.token, 'POST', '/api/buildings/build', { buildingId: 'guild_hall' }), p.token);
     check(r.status === 400 && /Town/.test(r.data.error), `guild hall at ${p.username.split('_')[0]} → 400 tier message`);
     const list = await api(p.token, 'GET', '/api/buildings');
     check(list.data.buildings.find(b => b.id === 'guild_hall').tierMet === false, 'list reports tierMet:false');
   }
-  const built = await api(town.token, 'POST', '/api/buildings/build', { buildingId: 'guild_hall' });
+  const built = await standing(await api(town.token, 'POST', '/api/buildings/build', { buildingId: 'guild_hall' }), town.token);
   check(built.status === 200, 'guild hall at town → 200');
 
   // ── Founding ──

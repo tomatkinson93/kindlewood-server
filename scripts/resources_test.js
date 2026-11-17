@@ -9,6 +9,7 @@
 //   DATABASE_URL=postgres://… CRAFTING_TEST_BASE=http://localhost:3999 CRAFTING_TEST_ADMIN_ID=990001 node scripts/resources_test.js
 
 'use strict';
+const { standing } = require('./_build');   // with building time on, an order is finished at once (as Dev Tools does)
 
 const fs = require('fs');
 const path = require('path');
@@ -215,10 +216,10 @@ async function part2() {
   const mineRow = (lb.body.buildings || []).find(b => b.id === 'mine');
   check(mineRow && mineRow.cost.bronze === 15 && mineRow.cost.timber === 180, 'a Mine Lv3 costs 15 bronze on top of timber and food');
   check((lb.body.buildings || []).find(b => b.id === 'smithy').cost.steel === undefined, '…while Lv1 buildings cost no metals');
-  let br = await api(lc, 'POST', '/api/buildings/build', { buildingId: 'mine' });
+  let br = await standing(await api(lc, 'POST', '/api/buildings/build', { buildingId: 'mine' }), lc);
   check(br.status === 400 && /bronze/i.test(br.body.error), 'without bronze the upgrade is refused');
   await q('UPDATE settlements SET bronze = 20 WHERE id=$1', [lc.sid]);
-  br = await api(lc, 'POST', '/api/buildings/build', { buildingId: 'mine' });
+  br = await standing(await api(lc, 'POST', '/api/buildings/build', { buildingId: 'mine' }), lc);
   const lcs = (await q("SELECT s.bronze, b.level FROM settlements s JOIN buildings b ON b.settlement_id = s.id AND b.type = 'mine' WHERE s.id=$1", [lc.sid])).rows[0];
   check(br.status === 200 && lcs.level === 3 && lcs.bronze === 5, 'with it, the Mine reaches Lv3 and 15 bronze is spent');
 

@@ -99,6 +99,26 @@ width, the y is 4 px above the bottom). They are right to within a few pixels.
 Check each one in the scene and nudge it; a Dev Tools overlay that draws the door
 point would pay for itself.
 
+Three more fields say where a building's small life comes from (Part F, step
+20; `js/home-ambient.js`). All are optional and in the same on-screen pixels as
+`door`, measured from the picture's top-left corner:
+
+```json
+"smithy": {
+  …
+  "smoke": [[262, 14]],         the top of each chimney; a puff rises from each
+  "fire": [300, 204],           the forge mouth: a glow and sparks while someone works it
+  "dust": [268, 196]            where sawdust puffs while someone works (the Workshop)
+}
+```
+
+A building with no `smoke` just never smokes. When a new building or house
+style arrives, add the chimney tops; if a redrawn picture moves the chimney,
+move the point. Set on 2026-11-17: Tavern, Smithy (smoke and fire), Workshop
+(smoke and dust), Jeweller, the Neighbourhood's door, and the four house
+styles. To add later with their art: the Farm, the Smelter (smoke and fire),
+the Forager's Hut, the Fishing Post.
+
 ## 4. How to put it in
 
 In this order, each step shippable:
@@ -610,7 +630,266 @@ animate the existing mouse facing east, "hammering: raises a small wooden
 mallet above the head and strikes down in front, then lifts again", 6 frames,
 the same frame size as the walk. West is mirrored.
 
-Still to make, in a sensible order: the Workshop's night image (the rest of
-batch A is in); the scenery props, calmer meadow and path texture above; batch E (building
-time is the next thing built); the Outskirts (C) and the Jeweller (B); the
-scene props (D); clouds and smoke; then the other species.
+### Part F, the town alive: what stands in today and what to make (written 2026-11-17)
+
+Everything in Part F works today with stand-ins drawn by code, so nothing
+here blocks anything. Each batch below says what the stand-in is, the file to
+make, and the prompt. Put the PNGs in the folder named and run the packer as
+for any other art; code picks a file up when it is there and keeps the
+stand-in when it is not.
+
+**I. Sounds of work** (step 20; no art, four short sound loops).
+The Smithy, Tavern, Market and Workshop each play a quiet loop while someone
+is inside, louder as the view pans near. Until the files exist the scene is
+silent (nothing breaks).
+
+| File (in `assets/audio/ambient/`) | What it should be |
+|---|---|
+| `forge.mp3` | A hammer on an anvil at a slow steady pace, a low fire roar, the odd hiss of quenching. |
+| `tavern.mp3` | Low friendly chatter with no words you can make out, mugs set down, a chair, a soft lute far off. |
+| `market.mp3` | Outdoor bustle: light chatter, a cart wheel, coins, a stall bell now and then. |
+| `workshop.mp3` | A handsaw through wood, a plane, a few light mallet taps. |
+
+Each: 15 to 30 seconds, loops with no click at the join, mono, about 96 kbps
+MP3, no music with a tune (it would clash with the Home music), and even
+loudness (the game sets the volume). Free sources that allow use in games:
+freesound.org (filter by the CC0 licence) and pixabay.com/sound-effects. Search
+words: "blacksmith loop", "tavern ambience loop", "medieval market ambience",
+"carpenter sawing loop". If you use a sound generator, a prompt that works:
+> A seamless 20 second loop of [the description above]. Cosy, soft, no music,
+> no voices you can understand, no sudden loud sounds.
+
+**J. Smoke, sparks and sawdust** (step 20). Stand-in: soft round puffs drawn by
+code. Batch G above (`smoke.png`) replaces the smoke; the sparks and sawdust
+are fine as code and need no art.
+
+**K. Fireflies, butterflies, leaves and seeds** (step 20). Stand-in: small
+shapes drawn by code (a glowing dot, two yellow wings, an orange leaf, a white
+seed). Optional art, `art/props/smalllife.png` (props opener, wide gaps):
+> Draw six tiny separate things in a row with wide empty gaps, each no bigger
+> than the attached cottage's door knob is wide four times over: 1. a yellow
+> butterfly with wings open; 2. the same butterfly with wings half closed;
+> 3. a white-and-blue butterfly with wings open; 4. the same with wings half
+> closed; 5. an orange autumn leaf; 6. a fluffy white dandelion seed.
+No birds, cats or other pets: the villagers are animals themselves.
+
+**L. Weather** (step 21). Everything is drawn by code today. In order of how
+much each would add:
+- **Clouds** (`art/backdrop/clouds.png`): batch F above. Stand-in: white
+  rounded shapes with a blue-grey underside. Code greys them itself on a wet
+  day, so draw them white.
+- **Puddles** (`art/props/puddles.png`; props opener). Stand-in: pale blue
+  ovals. Cut into three and add to the props manifest as `puddle_1`,
+  `puddle_2` and `puddle_3` (`file`, `w`, `h`; about 64 × 18 on screen); the
+  game uses whichever of the three are there.
+  > Draw three separate rain puddles in a row with wide empty gaps, seen from
+  > the same high three-quarter view as the attached cottage's doorstep, so
+  > each is a flat, wide oval lying on the ground: one small, one medium, one
+  > long and irregular. Pale sky-blue water with one or two lighter streaks
+  > of reflection and a thin darker rim, no grass, no splashes, no ripples.
+  > The medium one about as wide as the attached cottage's door.
+- **Snow on roofs.** Stand-in: code finds the top outline of each picture and
+  lays a white band along it, so every building, present and future, gets a
+  cap with no art. It reads well; proper snowy pictures would be one extra
+  image per building (`<key>_snow.png`) and are **not worth making** unless
+  winter becomes a long part of play. If you ever do, the prompt is:
+  > The exact same image, pixel for pixel, with a thick layer of fresh white
+  > snow lying on the roof, the chimney top, the window sills and the sign.
+  > Change nothing else: the same outline, colours, size and position. Keep
+  > the fully transparent background. No falling snow and no snow on the
+  > ground.
+- **Rain and snow falling**: fine as code; no art.
+- **Blossom, leaves and seeds on the wind**: batch K.
+
+**M. Lost things** (step 22; `art/props/lost.png`; props opener). Stand-in:
+four emoji (a basket, a ribbon, a purse, a yo-yo), which look out of place
+next to the painted buildings and differ from phone to phone. Worth making
+early: it is one small image.
+> Draw four small separate things lying on the ground in a row, with wide
+> empty gaps so each can be cut out, each about as big as the attached
+> cottage's door is wide: 1. a small woven wicker basket tipped on its side
+> with two apples spilling out; 2. a red hair ribbon tied in a bow, lying
+> flat; 3. a small brown leather coin purse with a drawstring and one gold
+> coin beside it; 4. a child's wooden toy, a little painted horse on four
+> wheels with a pull string. Seen from the same high three-quarter view as
+> the attached images. No grass and no ground under them.
+
+Cut into `lost_basket.png`, `lost_ribbon.png`, `lost_purse.png` and
+`lost_toy.png`. They go in the props manifest under the keys `lost_basket`,
+`lost_ribbon`, `lost_purse` and `lost_toy` (`file`, `w`, `h`); the game uses
+each as soon as its entry is there, with no change to code. In the scene
+each is drawn at most 34 px wide.
+
+**N. Decorations the player places** (step 23; `art/props/`; props opener).
+Stand-in: simple drawings made by code (flat colours and a brown outline),
+which read clearly but look plainer than the buildings. These six are what
+the player chooses and pays for, so they are the art most worth making after
+the buildings. Two chats of three.
+
+Chat 1 (`decor_bench.png`, `decor_flower_bed.png`, `decor_fence.png`):
+> Draw three separate small things in a row with wide empty gaps so each can
+> be cut out, seen from the same high three-quarter view as the attached
+> cottage: 1. a wooden garden bench with a slatted back, about as wide as
+> the attached cottage's door is wide twice over; 2. a low wooden planter
+> box full of flowers in pink, yellow, white and purple, the same width as
+> the bench; 3. one straight piece of low wooden picket fence with four
+> pointed pickets and two rails, the same width as the bench, drawn so that
+> several placed side by side would join up. Nothing on the ground under
+> them.
+
+Chat 2 (`decor_well.png`, `decor_pond.png`, `decor_lantern.png`):
+> Draw three separate things in a row with wide empty gaps so each can be
+> cut out, seen from the same high three-quarter view as the attached
+> cottage: 1. a round stone well with a small red-tiled roof on two wooden
+> posts, a rope and a hanging wooden bucket, about as tall as the attached
+> cottage's door and as wide as the door is wide twice over; 2. a small
+> garden pond seen from above at the same angle, so it is a wide flat oval
+> about as wide as the attached cottage is wide by half, with a rim of
+> grass and small stones, pale blue water, two lily pads and a few reeds at
+> one end; 3. a tall wooden lantern post with an iron lantern on top, the
+> lantern unlit with dark glass, the post about as tall as the attached
+> cottage's door and very thin. Nothing on the ground under them.
+
+Then, in the same chat as the lantern, its night image
+(`decor_lantern_lit.png`):
+> The exact same lantern post, pixel for pixel, with the lantern lit: warm
+> yellow glass. Change nothing else. Keep the fully transparent background.
+> No glow or halo outside the glass (the game adds the glow itself).
+
+How they go in: add each to the props manifest
+(`assets/images/scene_v2/props/manifest.json`) under the key `decor_<kind>`
+(`decor_bench`, `decor_lantern`, `decor_flower_bed`, `decor_fence`,
+`decor_well`, `decor_pond`) with `file`, `w`, `h` and, for the lantern, `lit`
+and `lamp: [x, y]` (the middle of the glass, in on-screen pixels from the
+picture's top-left, where the glow is drawn). Sizes on screen today, as a
+guide: bench 58 × 36, lantern 26 × 64, flower bed 56 × 28, fence 62 × 32,
+well 68 × 74, pond 116 × 46. An entry named `decor_…` is never scattered
+automatically; the scenery's own bench, lantern, fence, well and pond (the
+"Props" batch above) can be the same pictures under their own keys.
+
+**O. The town crier's bell** (step 24). Stand-in: a bell emoji in a speech
+bubble over the crier's head, which swings. It reads well and needs nothing.
+If you want the crier to look the part, the nicer version is an animation
+(PixelLab, as batch H; `art/villagers/mouse/bell_e.gif`): animate the
+existing mouse facing east, "ringing a hand bell: holds a small brass hand
+bell up beside the head and swings it side to side twice, then lowers it a
+little", 6 frames, the same frame size as the walk. West is mirrored. The
+bubble then goes and only the mark for news stays.
+
+**P. Photo mode** (step 24). Needs no art. One thing to know when adding
+art: pictures (PNG/WebP in an `<img>`), sprite sheets and drawings are picked
+up by the photo painter by themselves, so new buildings, props and villagers
+appear in saved pictures with no extra work.
+
+**Q. The merchant's cart** (step 25; `art/props/merchant_cart.png`; props
+opener). Stand-in: a cart drawn by code (a brown box on two wheels with a
+red-and-cream striped awning and a few coloured goods). One image.
+> A travelling merchant's market cart as one object, seen from the same high
+> three-quarter view as the attached cottage and about as wide as the
+> cottage's door is wide three times over: a sturdy wooden hand cart on two
+> big spoked wheels with a red-and-cream striped cloth awning on four thin
+> posts, its top loaded with goods for sale: a basket of apples, a round of
+> cheese, bolts of coloured cloth, a few clay jars, a hanging lantern
+> (unlit) and a small set of brass scales. Two wooden handles at one end
+> resting on a short prop. No merchant, no animal, nothing on the ground.
+
+Add it to the props manifest under the key `merchant_cart` with `file`, `w`
+and `h` (today's stand-in is 104 × 86 on screen). A merchant character to
+stand beside it would be a villager of another species (when those exist),
+not a new kind of art.
+
+**R. Events in the scene** (step 26; `art/props/`; props opener). Stand-ins:
+flames, a bush with eyes and a small cart, all drawn by code. They are on
+screen for a few hours every few days, so they are the last props worth
+making. One chat:
+> Draw three separate small things in a row with wide empty gaps so each can
+> be cut out, seen from the same high three-quarter view as the attached
+> cottage: 1. a cluster of three cartoon flames for a roof fire, orange with
+> yellow hearts and a deep-brown outline, about as wide as the attached
+> cottage's door is wide twice over, with no smoke; 2. a round leafy green
+> bush about as wide as the attached cottage's door, with two wide white
+> cartoon eyes peeping out of the leaves and nothing else of the creature
+> showing; 3. a small two-wheeled wooden hand cart loaded with a few apples
+> and cabbages, tipped slightly forward as if rolling, about as wide as the
+> attached cottage's door is wide by one and a half. Nothing on the ground.
+
+Files: `event_fire.png`, `event_bush.png`, `event_cart.png`. They go in the
+props manifest under the keys `event_fire`, `event_bush` and `event_cart`
+(`file`, `w`, `h`); the game uses each as soon as its entry is there. On
+screen today: flames 70 × 60, bush 54 × 40, cart 66 × 46.
+
+**S. Stand-ins from the earlier steps** (steps 13 to 17), listed here so the
+whole set is in one place.
+- **Emotes over heads** (step 14). Stand-in: emoji in a small bubble (a
+  smile, a note, a heart, a frown, a rain cloud, a bowl, a house with a
+  question mark, a lantern, three dots). They differ from phone to phone and
+  sit oddly beside pixel villagers. `assets/sprites/emotes.png`, a strip of
+  eleven 16 × 16 pixel-art icons (PixelLab, or any pixel editor; ChatGPT
+  does not hold a 16 px grid well):
+  > A sprite strip of eleven 16×16 pixel-art emote icons on a transparent
+  > background, in a row with no gaps, each with a 1-pixel deep-brown
+  > outline and at most four flat colours, in the same palette as the
+  > attached mouse sprite: 1 a smiling face, 2 a musical note, 3 a red
+  > heart, 4 a sad face, 5 a small rain cloud, 6 an empty bowl, 7 a tiny
+  > house with a question mark, 8 a paper lantern, 9 three dots, 10 a hand
+  > bell, 11 a wooden bucket.
+- **Dancing and cheering** (steps 13 and 16: a festival ring on the green,
+  builders cheering). Stand-in: the idle animation with a little hop.
+  PixelLab, as batch H (`art/villagers/mouse/cheer_s.gif`): the existing
+  mouse facing the viewer, "cheering: both arms thrown up, a small jump, and
+  down again", 6 frames, the same frame size as the walk. One direction is
+  enough.
+- **Worn and broken buildings** (step 17, upkeep). Stand-in: code dulls a
+  worn building's colours and lays faint cracks over it, and greys a broken
+  one with boards across it. It reads clearly. Proper pictures would be two
+  more images per building (`<key>_worn.png`, `<key>_broken.png`), about
+  fifty images in all, and are **not worth making** now. If one building
+  ever deserves it (the Tavern, say), attach that building and ask:
+  > The exact same image, pixel for pixel, but in poor repair: a few roof
+  > tiles missing, one cracked window pane, the paint faded and a plank
+  > hanging loose. Change nothing else: the same outline, size and position.
+  > Keep the fully transparent background.
+  and for broken: "…but derelict: holes in the roof, the door off one hinge
+  and boarded across, the windows dark and broken, weeds at the foot."
+- **A repair under way** (step 17). Stand-in: the building's site sign. The
+  construction-site art (batch E) covers it.
+
+### How a picture replaces a drawing
+
+For everything in Part F the rule is the same: the picture goes in
+`assets/images/scene_v2/props/` and gets an entry in that folder's
+`manifest.json` under the key given in its batch, with `file`, `w` and `h`
+(on-screen pixels). The code asks the manifest for that key
+(`KWGround.picture(key)`), and draws the picture when it is there and its own
+drawing when it is not. No code changes when art arrives. Keys in use:
+`decor_bench`, `decor_lantern` (with `lit` and `lamp`), `decor_flower_bed`,
+`decor_fence`, `decor_well`, `decor_pond`, `merchant_cart`, `lost_basket`,
+`lost_ribbon`, `lost_purse`, `lost_toy`, `event_fire`, `event_bush`,
+`event_cart`, `puddle_1` to `puddle_3`. An entry with no `kind` is never
+scattered as scenery. Clouds, smoke and the emote strip are not wired yet
+(they are low on the list below).
+
+### What to make, in order (updated 2026-11-17)
+
+Everything on this list has a stand-in in the game today, so the order is by
+how much each improves what the player sees.
+
+| # | Batch | What | Tool | Why now |
+|---|---|---|---|---|
+| 1 | A | The Workshop's night image | ChatGPT | finishes the lit set for Town |
+| 2 | N | The six decorations and the lit lantern | ChatGPT | the player chooses and pays for these |
+| 3 | E | Construction sites, small and large | ChatGPT | every building passes through them once building time is on |
+| 4 | C, B | The Outskirts buildings and the Jeweller | ChatGPT | the last placeholder huts |
+| 5 | — | Scenery props, the calmer meadow and the path texture ("Props" above) | ChatGPT | the ground is bare without them |
+| 6 | M | Lost things (one image of four) | ChatGPT | replaces emoji seen every day |
+| 7 | Q | The merchant's cart | ChatGPT | one image; seen one day in four |
+| 8 | S | The emote strip | PixelLab | replaces emoji seen all the time |
+| 9 | H, S | Work and cheer animations for the mouse | PixelLab | builders and festivals |
+| 10 | I | The four sound loops | freesound or a generator | the scene is silent without them |
+| 11 | D | Village green, Wonder site, Neighbourhood door | ChatGPT | props you can click |
+| 12 | F, G, L | Clouds, smoke, puddles | ChatGPT | weather reads well without them |
+| 13 | R, K, O | Fire, bush and small cart; butterflies and leaves; the bell animation | ChatGPT, PixelLab | rare or tiny |
+| 14 | — | The other six species of villager | PixelLab | the largest job; last |
+
+Not worth making (code does it well enough): snowy buildings, worn and broken
+buildings, rain and snow, sparks and sawdust.

@@ -5,6 +5,7 @@
 //   DATABASE_URL=postgres://… QUEST_TEST_BASE=http://localhost:3999 node scripts/defences_test.js
 // ══════════════════════════════════════════════════════════════════════════
 'use strict';
+const { standing } = require('./_build');   // with building time on, an order is finished at once (as Dev Tools does)
 
 let passed = 0, failed = 0;
 function check(cond, msg) {
@@ -55,15 +56,15 @@ async function part2() {
 
   console.log('Walls');
   const a = await player('walls');
-  let r = await api(a, 'POST', '/api/buildings/build', { buildingId: 'walls' });
+  let r = await standing(await api(a, 'POST', '/api/buildings/build', { buildingId: 'walls' }), a);
   check(r.status === 400 && /Library/.test(r.body.error || ''), 'Walls need Palisades' + (r.status === 400 ? '' : ' — ' + JSON.stringify(r.body)));
   const rsCols = (await q("SELECT column_name FROM information_schema.columns WHERE table_name='settlement_research'")).rows.map(x => x.column_name);
   check(rsCols.length > 0, `research table present (${rsCols.join(',')})`);
   await study(a, 'palisades');
-  r = await api(a, 'POST', '/api/buildings/build', { buildingId: 'walls' });
+  r = await standing(await api(a, 'POST', '/api/buildings/build', { buildingId: 'walls' }), a);
   check(r.status === 200, 'with Palisades: Walls Lv1' + (r.status === 200 ? '' : ' — ' + JSON.stringify(r.body)));
   await q("UPDATE buildings SET level = 2 WHERE settlement_id=$1 AND type='walls'", [a.sid]);
-  r = await api(a, 'POST', '/api/buildings/build', { buildingId: 'walls' });
+  r = await standing(await api(a, 'POST', '/api/buildings/build', { buildingId: 'walls' }), a);
   check(r.status === 400 && /Level 3 Walls needs/.test(r.body.error || ''), 'Walls Lv3 needs Stone Forts');
   let td = await D.townDefence(await sRow(a));
   check(td.walls === 30 && td.own === 30, `Lv2 Walls: 30 town defence (${td.walls})`);

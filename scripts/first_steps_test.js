@@ -18,6 +18,8 @@ async function main() {
   const SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
   const RUN = Math.random().toString(36).slice(2, 7);
   const q = (t, p) => pool.query(t, p);
+  // This suite checks the steps with building time off, then on: the switch is held off while it runs and put back after.
+  const putBack = await require('./_build').withoutBuildingTime();
   const username = `steps_${RUN}`;
   const u = (await q("INSERT INTO users (username, email, password_hash, species) VALUES ($1,$2,'x','Mice') RETURNING id", [username, `${username}@t.l`])).rows[0];
   const tq = -70000 - Math.floor(Math.random() * 5000) * 20;
@@ -64,6 +66,7 @@ async function main() {
   check(x.body.dismissed === true, '…and it stays dismissed');
 
   await q('DELETE FROM outposts WHERE settlement_id=$1', [s.id]);
+  await putBack();
   await pool.end();
 }
 

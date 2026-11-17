@@ -20,7 +20,8 @@ function send(res, e, fallback) {
   res.status(500).json({ error: fallback });
 }
 
-router.post('/solo-start', requireAuth, async (req, res) => {
+// A broken Tavern takes no new games (lib/upkeep); one already begun can finish.
+router.post('/solo-start', requireAuth, require('../lib/upkeep').guard('tavern'), async (req, res) => {
   try { res.json({ ok: true, ticket: await pay.soloStart(req.user.userId, String((req.body || {}).game || '')) }); }
   catch (e) { send(res, e, 'Could not start the game.'); }
 });

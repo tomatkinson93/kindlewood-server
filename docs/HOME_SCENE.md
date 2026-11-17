@@ -139,6 +139,17 @@ Props keep their single click; only built buildings have the menu.
 - **See through** is a chip beside Names that minimises, or restores, every
   building at once.
 
+### 2.2b Full screens, and coming back (2026-11-17)
+
+The Tavern, the Market and Fishing are full screens over the Land, so Home
+closes for them. Home keeps a return ticket (which part of town, and how far
+along it the player had panned) and opens again right there when the screen is
+closed: from a Town building back to Town, from an Outskirts building back to
+the Outskirts. Going somewhere else with the place bar tears the ticket up.
+Every other building opens over Home and never leaves it. The village green
+and the Wonder site open a radial menu like buildings do (no "Who's here":
+they have no inside); a signpost is still walked through at once.
+
 ### 2.3 Build mode
 
 One **Build** button remains, top left. It replaces both Build and Edit:
@@ -268,7 +279,21 @@ Since the polish pass (2026-11-16):
   spread across families; a child only together with one of its parents;
   at least one elder if the town has one.
 - Town shows people who work in town buildings, the unemployed, children and
-  elders. The Outskirts show people who work in outskirts buildings.
+  elders. The Outskirts show people who work in outskirts buildings **while
+  they are at work**. *(Changed 2026-11-17, agreed with the owner: before,
+  Outskirts workers were in the Outskirts all day, which left an early town,
+  where every job is an Outskirts job, with an almost empty Town.)*
+  - An Outskirts worker is in Town when off work, on their breaks (§3.5a),
+    and now and then on an errand to town: about one worker in four, for
+    twenty minutes at a time. In Town they do what everyone does: wander,
+    visit buildings, chat, sit.
+  - By day Town never has fewer than its minimum of grown-ups (4, or 3 on a
+    phone): more workers are sent on an errand until it has them.
+  - Who is on an errand is seeded by the villager and the twenty minutes, so
+    a reload shows the same town.
+  - They come and go by the signpost between Town and the Outskirts.
+  - Home's first cast is made again as soon as its buildings are drawn
+    (nobody's workplace is known before that).
 - The cast changes slowly: every minute or so one villager walks into a
   building and a different one walks out. Nobody pops in or out of thin air,
   except when Home first opens (start them spread out, some indoors).
@@ -864,7 +889,8 @@ server (so every device agrees): clear, cloudy, rain, or snow in winter.
 
 - **The lamplighter.** At dusk one villager (an elder if there is one) walks
   the lanes and lights each lantern post in turn; at dawn they are put out
-  together. Needs the lantern props (ART_GUIDE §8).
+  together. Built with decorating (step 23): the posts are the ones the
+  player places.
 - **Small life.** Chimney smoke from homes and workplaces with someone in,
   fireflies at night, butterflies over the flower props by day, leaves and
   seeds on the wind. No birds, cats or pets.
@@ -1282,9 +1308,11 @@ Each step ships on its own and is shown to the owner.
       around the clock. When it is finished they cheer.
     - **Dev Tools** (Life tab): on for this town, on for every town (asked
       twice), finish the first site now, set the number of builders.
-    - **Before turning it on for everyone:** move the server suites that
-      build things onto `scripts/_build.js` (step 12), and play a new town
-      through the first ten minutes with it on.
+    - **Before turning it on for everyone:** play a new town through the
+      first ten minutes with it on. The server suites are ready
+      (2026-11-17): the ones that build things go through
+      `scripts/_build.js`, and the whole set passes with the switch on as
+      well as off.
 14. **Mood** (§3.8). **Built** (2026-11-17) in `js/villager-engine.js`:
     emotes from a villager's own happiness (the town's when they have none),
     with no bed, short food and a festival coming first; at most two at a
@@ -1326,17 +1354,57 @@ Each step ships on its own and is shown to the owner.
     - **Priority:** raid, then a death (its hush stops the festival ring),
       then a festival. No life scenes, emotes or chats while raiders are near.
     - Famine and night were built with mood and the working day.
-    - **Open question for the owner (found while testing, 2026-11-17).** §3.3
-      puts everyone with an Outskirts job in the Outskirts all day. In an
-      early town every job is an Outskirts job (forager, farmer, woodcutter),
-      so the Town scene, where the player lands, has only the idle, children
-      and elders. It looks full when Home first opens only because the first
-      cast is made before the Outskirts' buildings are known; the next time
-      the cast is looked at (a new moment, a job change) they all walk off to
-      the Outskirts together. Suggested rule: at their workplace during their
-      working hours, in Town the rest of the day. Not changed: it is the
-      owner's design.
+    - **Answered by the owner (2026-11-17):** who is in Town changed, see
+      §3.3: Outskirts workers are in Town off work, on their breaks and on
+      errands.
 17. **Upkeep** (Part E), server and scene, behind `upkeep.on`. Last on purpose: turn it on only after building time has been live long enough to know that players keep builders.
+    **Built** (2026-11-17), off everywhere. Server: `lib/upkeep.js`,
+    `/api/upkeep` (`GET /`, `POST /repair`, admin `/admin/town`,
+    `/admin/switch`, `/admin/health`), `health` on `buildings` and `houses`;
+    tests in `scripts/upkeep_test.js`. Screen: `js/upkeep.js` (KWUpkeep),
+    proofs in `verify/upkeep_proofs.js`.
+    - **Two switches**, as for building time: `settlements.upkeep_on` (one
+      town) and the tuning switch `upkeep.on` (every town). Camps are exempt
+      either way. Everything is set to 100 when it goes on, and back to 100
+      when it goes off, so nothing stays broken with the rule switched off.
+    - **Wear and repair** as in E.3 and E.4. The order things wear in: the
+      Jeweller, Guild Hall, Library, Tavern and Market first; then defences
+      and workshops; then the gathering buildings; then homes (the newest
+      first); the Granary last. The 8 and the 5 days are tunable numbers
+      (Dev Tools, Life, "Upkeep").
+    - **Repair now** is a site of its own kind in the builders' queue, put at
+      the front, sized by the damage (1 builder-minute a point), costing
+      nothing; cancelling it gives nothing back.
+    - **Broken:** left out of what the town produces; its workers keep their
+      jobs (they are not sent back to foraging, so nothing has to be put
+      right by hand after a repair). In the scene its Enter says why and
+      opens its panel with Repair now instead of its screen. The server
+      refuses too (2026-11-17): whatever reads a building's level for its
+      own screen counts a broken one as none (the Library, crafting
+      stations, the Market and its shopkeepers, the Scout Post, the
+      Watchtower and the Walls), with the words "The Library is broken and
+      gives nothing until a builder mends it"; a broken Tavern takes no new
+      games and a broken Fishing Post no new casts (one already begun can
+      finish). `lib/upkeep.js` `WORKING`, `needLine`, `guard`.
+    - **A broken home** keeps its beds; the family in it loses 3 happiness
+      when it breaks and gets it back when it is mended.
+    - **Said out loud:** one news line when nobody is looking after the
+      town, one for each thing that breaks, one for each that is mended;
+      they also appear in the away report. The town card has the one line
+      ("Upkeep: 2 builders look after 16 of 19 buildings"), amber with a
+      warning sign when builders are short.
+    - **In the scenes:** worn and broken looks are drawn over the building's
+      own picture by code; a broken one also says "Needs repair". A builder
+      with nothing to build walks a round of the buildings and taps at each.
+    - **The worker** looks at a few towns a pass, the longest-waiting first;
+      wear is worked out from the clock, so a town looked at every hour or
+      two loses nothing, and reading the town card does it at once.
+    - **Worth knowing before it goes on** (the owner's numbers, as built):
+      a builder with an empty queue mends about 70 times faster than one
+      building wears, so with even one free builder nothing stays worn.
+      Being short of builders only bites while they are kept busy building,
+      or when there are none. That is gentle, as intended; if it proves too
+      gentle, the lever is the repair rate, not the 8 or the 5 days.
 
 **Part F, the town alive** (agreed 2026-11-17). These do not depend on building
 time and can be built in between; the order below is by how much each adds for
@@ -1355,16 +1423,245 @@ its size.
     Also fixed while here: the hourly simulation wrote relationship scores
     over whatever was there, so a change made while it ran could be lost; it
     now adds its gain to the current score.
-19. **Thought bubbles and Follow** (F.3, F.4).
-20. **Small life and working buildings** (F.6, F.7), then **the lamplighter**
-    once the lantern art is in.
-21. **Weather and seasons** (F.5).
-22. **A lost thing each day** (F.8).
-23. **Decorating and charm** (F.9). Needs the scenery props' art.
+19. **Thought bubbles and Follow** (F.3, F.4). **Built** (2026-11-17) in
+    `js/villager-engine.js`.
+    - **A thought:** one line under a selected villager's name, the most
+      pressing first: no bed, short food, a moment waiting, grief, a new
+      partner or child, a coming of age, pride in something just built,
+      taking to their work or not (only from a trait the player has already
+      seen), something they like to talk about (only once a chat has taught
+      it), else how the day feels. Events count for a day.
+    - **Follow:** a seventh button on the menu. The view keeps the villager
+      centred and goes with them to another part of town. A card at the top
+      lists their day so far (from their routine, with times), the chats the
+      player set up today, and what they do while watched. A wheel, a drag,
+      a swipe, Esc, the card's close button or leaving Home ends it. The one
+      being followed is kept in the cast.
+20. **Small life and working buildings** (F.6, F.7). **Built** (2026-11-17)
+    in `js/home-ambient.js` (`KWAmbient`; proofs `verify/ambient_proofs.js`).
+    Looks only: it never calls the server. **The lamplighter** comes with
+    decorating (step 23), when there are lantern posts to light.
+    - **Small life:** a puff of smoke from each chimney of a building with
+      someone in it, and from homes in the evening and at night when someone
+      lives there; fireflies at dusk and at night (not in winter or the wet);
+      butterflies by day in spring and summer; leaves on the wind in autumn
+      and seeds in spring and summer. No birds, cats or pets.
+    - **Working buildings:** with someone inside, the forge mouth glows and
+      throws sparks, the Workshop puffs sawdust, the Tavern's windows flicker
+      at dusk and at night; around midday (12:30 to 15:00 game time) a few
+      more villagers choose the Market for their errand. A broken building
+      shows none of it.
+    - **Sound:** the Smithy, Tavern, Market and Workshop each have a quiet
+      loop, louder as the view nears and following the sound-effects volume.
+      The four files are the owner's to add (`ART_GUIDE.md` §8, batch I);
+      without them the scene is silent.
+    - **Where things come from:** `smoke`, `fire` and `dust` points in each
+      building's manifest entry (`ART_GUIDE.md`, "The manifest").
+    - **Kept small:** at most 28 things in the air; transform and opacity
+      only; nothing while Home is closed, the tab is hidden or the player
+      asks for reduced motion.
+21. **Weather and seasons** (F.5). **Built** (2026-11-17): `lib/weather.js`
+    on the server (tests `scripts/weather_test.js`), `js/home-weather.js`
+    (`KWWeather`; proofs `verify/weather_proofs.js`).
+    - **The roll:** each game day (09:00 UTC to 09:00 UTC) has a word for the
+      day (clear, cloudy, rain, or snow in winter) and four six-hour spells,
+      seeded by the town and the day. No table and no tick: the same answer
+      whenever it is asked. A clear day may cloud over for a spell; a wet day
+      is wet for at least one spell and cloudy between, so it seldom rains for
+      a whole real day. Chances by season are in `CONFIG.ODDS` (summer 60 %
+      clear and 15 % rain; winter 35 % snow). It comes with the town
+      (`settlement.weather`), so the scene never asks for it.
+    - **Changed from the plan:** F.5 said one roll per day. A game day is a
+      real day, so one roll would mean a player who looks in the evening sees
+      the same rain as at breakfast; the spells fix that and keep "today's
+      weather" as one word for the crier.
+    - **Drawn by code for now:** clouds drifting behind the mountains (more
+      and greyer in the wet), a grey wash over the world, rain or snow over
+      the view, puddles (placed from the day's seed) while it rains and for
+      the spell after, a snow cap along the top outline of every building
+      (worked out from the picture, once) and a dusting on the meadow while
+      snow falls and for the spell after. Blossom in spring and leaves in
+      autumn ride the wind (`js/home-ambient.js`).
+    - **Villagers** walk a quarter faster and stand about half as long in
+      rain or snow. Nothing else in the game reads the weather.
+    - **Reduced motion:** nothing falls and the clouds stand still; the wash,
+      the caps and the puddles stay.
+    - **To check on a real phone:** rain and snow are two large sheets moved
+      by transform (one on a phone). In the test browser, which draws without
+      a graphics card, they cost about 20 ms a frame on a desktop-sized view;
+      on a real device they should cost almost nothing. If a phone stutters
+      in rain, drop to one sheet everywhere.
+22. **A lost thing each day** (F.8). **Built** (2026-11-17): `lib/lost.js`,
+    `/api/lost` and `migrations/0NN_lost.sql` on the server (tests
+    `scripts/lost_test.js`); `js/lost.js` (`KWLost`; proofs
+    `verify/lost_proofs.js`).
+    - **The server decides** what is lost (a basket, a ribbon, a coin purse,
+      or a wooden toy, which is always a child's), whose it is, whether it
+      has been found, and what finding it gives: the owner +3 happiness and
+      the town 15 food (the basket) or 3 to 12 wealth, a chronicle line and
+      a news line. One row per town per day, made the first time it is asked
+      for; the find is taken under the town's lock, so two devices clicking
+      at once count once.
+    - **Where it lies** is looks: the server sends a seed and the scene
+      places it from that, in Town, the Neighbourhood or the Outskirts, on
+      open ground (a point under a building is passed over for the next
+      seeded one), so every device draws it in the same place.
+    - **The hint** is the owner's thought line: "Has lost a ribbon somewhere
+      in the Outskirts." The town crier will carry it too (step 24).
+    - It is small on purpose, with a glint every few seconds. Hidden in
+      Build mode. If the owner has died, it goes to the family and there is
+      no happiness to give.
+    - Not found by the day's end: it is gone, and the next day has its own.
+23. **Decorating and charm** (F.9), and **the lamplighter** (F.6). **Built**
+    (2026-11-17): `lib/decor.js`, `/api/decor` and
+    `migrations/0NN_decor.sql` on the server (tests `scripts/decor_test.js`);
+    `js/decor.js` (`KWDecor`; proofs `verify/decor_proofs.js`). It did not
+    wait for the art: each thing is drawn by code until its picture arrives.
+    - **What can be placed:** a bench (12 timber), a lantern post (8 timber),
+      a flower bed (4 timber), a fence piece (5 timber), a well (30 stone and
+      10 timber; two per town) and a pond (20 stone; two per town). Sixty
+      decorations per town. Placing is at once (no builders, no wait); moving
+      is free; removing gives half back.
+    - **How:** Build mode has a Decorate bar along the bottom. Pick a thing,
+      tap open ground (as many times as wanted; Esc or the button again
+      stops). Drag a decoration to move it; press it to get Remove. On a
+      phone the bar scrolls sideways.
+    - **Charm:** the first of a kind is worth its full charm (bench 3,
+      lantern 3, flower bed 2, fence 1, well 6, pond 6), each further one
+      0.7 of the one before, so variety beats rows of benches. With upkeep
+      on, buildings kept sound add up to 10 more. Every 10 charm is +1
+      happiness for everyone, to +5. `lib/town_mods.js` adds it, so it shows
+      in the town's sources as "🌷 Charm"; the town card and the Decorate bar
+      show the line ("Charm 23: +2 happiness for everyone (7 more for +3).").
+      One of each kind is 21 charm (+2); +5 takes about four of each, or
+      three of each with every building sound.
+    - **The scenery:** once the player has placed a bench, lantern, fence,
+      well or pond of their own, the automatic scatter of that kind is left
+      out (`js/home-ground.js`). Meadow flowers stay.
+    - **The lamplighter:** when evening falls while Home is open, one free
+      villager (an elder if there is one out) walks to each lantern post in
+      view, nearest first, and lights it; opening Home later finds them lit;
+      at dawn they go out. If nobody is free they come on by themselves. The
+      engine got one new hook for this, `KWCast.playScript(id, steps,
+      prefer)`, which steps 24 to 26 use too.
+    - **Villagers use them** (2026-11-17): a bench is a place to sit a while
+      (9 to 18 seconds), a flower bed, the well and the pond are places to
+      stop, and nobody walks through the well or the pond: a step that would
+      land in one slides round it by the shorter way (`stepRound` in the
+      engine, which also goes round the big scenery props). There is no
+      sitting animation yet: they stand at the bench.
+    - **Left for later:** festival and paid decorations (they must never be
+      worth more charm than these).
 24. **The town crier** (F.11) and **photo mode** (F.10).
-25. **A visiting merchant** (F.13).
-26. **Events in the scene** (F.12). Last: it builds on mood, life events and
-    town events (steps 14 to 16).
+    **The town crier is built** (2026-11-17): `js/crier.js` (`KWCrier`;
+    proofs `verify/crier_proofs.js`). It reads only; nothing on the server.
+    - **In the scene:** at dawn and at dusk, in Town, one free villager (an
+      elder if there is one out) walks to the Guild Hall and stands by its
+      steps with a bell over their head; the bell carries a mark when the
+      chronicle has something the player has not seen. A click on them opens
+      the news instead of their menu. They go when the hour passes.
+    - **The news:** today (the weather by spell, anything lost and roughly
+      where, what is being built and how far along, the upkeep line, the
+      charm line), then who was born and who died, then the rest of the last
+      day's chronicle, newest first, each with how long ago and a mark on
+      what is new.
+    - **At any hour** the same window is on the Guild Hall's menu ("Today's
+      news"). The building menu took a general `extra` list for this.
+    - **"Seen"** is kept on the device (it changes nothing in the game), so a
+      second device shows its own marks.
+    - The engine's script hook grew: a step can be `door: key` ("walk to that
+      building's door"), and a script can answer a click (`opts.onClick`).
+    **Photo mode is built** (2026-11-17): `js/photo.js` (`KWPhoto`; proofs
+    `verify/photo_proofs.js`). Nothing in the game changes and it never talks
+    to the server.
+    - **On screen:** a 📷 Photo chip on Home. While it is on, the town card,
+      the season card, the chips, nameplates, bubbles and marks step aside,
+      nothing opens on a click (the view still pans), and a bar offers the
+      time of day (dawn, day, dusk, night), the weather (clear, cloudy, rain,
+      snow), Save picture and Done. The choices are looks held on the device;
+      Done, Esc, the chip or leaving Home puts the real hour and sky back.
+    - **The picture** is painted on a canvas by our own painter (no library):
+      every picture, drawing and sprite in the world in the page's stacking
+      order, then the evening's tint (multiply), the lit windows and lantern
+      light (screen), rain or snow, and the town's name in a corner. It is as
+      sharp as the screen up to twice, and at most about eight million
+      pixels. A phone shares it (to Photos, a message); a computer downloads
+      `kindlewood-<town>-<date>.png`.
+    - **The cost of our own painter:** it knows the scene's parts by name
+      (`kindOf` in `js/photo.js`). Pictures, canvases, drawings and villager
+      sprites are found by themselves; anything new that is drawn with CSS
+      alone (a new kind of particle, say) must be added there or it will be
+      missing from photos.
+    - **Names** (2026-11-17): the bar has a Names button. With it on, the
+      building nameplates and the villagers' name tags are in the picture
+      (plates painted last, so the night does not dim them; a villager's tag
+      stays with the villager, so a building in front still hides it). It is
+      the photo's own setting: the player's Names choice comes back on Done.
+      The cracks on a worn building and the boards on a broken one are
+      painted too.
+25. **A visiting merchant** (F.13). **Built** (2026-11-17): `lib/merchant.js`,
+    `/api/merchant` and `migrations/0NN_merchant.sql` on the server (tests
+    `scripts/merchant_test.js`); `js/merchant.js` (`KWMerchant`; proofs
+    `verify/merchant_proofs.js`).
+    - **When:** one visit in every four game days, on a day seeded by the
+      town (never two days running, never a week without, and not like
+      clockwork). No table and no tick: the day is worked out. The visit
+      lasts that game day; the cart leaves at dawn.
+    - **What:** three or four trades seeded by the town and the day: a sale
+      (goods for wealth at 1.25 of the going rate), a purchase (goods for
+      wealth at 0.8 of it), a swap (goods for goods, 1.2 by worth), and half
+      the time a fourth. Food, timber, stone and iron only. Sizes grow with
+      the town's tier (about 30 wealth's worth in a Camp to 160 in a City).
+      Each can be made once; the only thing stored is which have been.
+    - **In the scene:** a cart stands in Town in the first lane that is
+      clear, with a badge counting the trades left. Clicking it opens them.
+      Drawn by code until its picture arrives (`ART_GUIDE.md` §8, batch Q).
+    - **News:** the first look of a visit puts one line in the town's news
+      ("A travelling merchant has set up a cart in town"). The crier's news
+      says the merchant is here, or how long until they come.
+    - **Dev Tools → Life:** "Call the merchant today" (and "Send them away"),
+      for testing; it sets `settlements.merchant_day`.
+    - **Why it cannot be farmed:** the gain on every trade is under half its
+      worth, each is once per visit, and the visit is once in four days; a
+      second device sees the same cart with the same trades taken.
+26. **Events in the scene** (F.12). **Built** (2026-11-17):
+    `lib/moments_scene.js` on the server (tests
+    `scripts/scene_events_test.js`); `js/scene-events.js` (`KWSceneEvents`;
+    proofs `verify/scene_events_proofs.js`). They are ordinary moments: the
+    daily budget, the cap, a cooldown, a timer and a default, with
+    `subject.scene` telling the scene what to show. Each still has its card
+    and its dialogue.
+    - **A fire** (3 hours, at most every 6 days): flames and smoke on one
+      building (never the Guild Hall, never something already broken), with
+      an alarm to press. A bucket chain costs nothing and saves it three
+      times in four (the helpers +3 happiness); the fourth time a little
+      timber goes into mending it and, with upkeep on, the building loses 30
+      health (never broken outright). Pulling down the roof always works and
+      costs that timber. Default: the bucket chain. With the chain, four
+      free villagers line up from the player's well or pond (or the lane) to
+      the building while the fire dies down.
+    - **A lost child** (6 hours, at most every 5 days): the child hides in a
+      bush somewhere in Home (seeded, as a lost thing is) and is not in the
+      cast while lost. Clicking the bush is the good ending (the child +5,
+      the parents +3); that option is marked `scene: true` and is not offered
+      in the dialogue, which says roughly where to look. Or call a search
+      (always works; every grown villager −1), or wait (seven times in ten
+      they come home; else the child −8 and the parents −5). Default: the
+      search.
+    - **A runaway cart** (2 hours, at most every 4 days): a small cart rolls
+      a short way up and down a lane in Town. Clicking it (or "Stop it" in
+      the dialogue) saves its load (15 to 60 food by tier); one time in four
+      the catcher is bruised (−5 happiness), else pleased (+3). Let it go and
+      nobody is hurt but a little timber is lost. Default: let it go.
+    - **Review notes.** (1) F.12 said the server decides how long they last;
+      these are much shorter than other moments (which last a day), so the
+      default will often be what happens and the chronicle will say "Nobody
+      sent word, so…". The outcomes were kept mild for that reason. If that
+      reads as nagging in play, lengthen `*_HOURS` in `CONFIG`. (2) They
+      share the three-a-day budget with every other moment, so each one
+      shown is one family or year moment not shown; their weight is 2 (most
+      are 2 or 3). (3) Finding the child is a click the server cannot check,
+      as with a lost thing: the gain is small and once per moment.
 
 Steps 1 to 9 are the core. Steps 10 to 13 are the Neighbourhood and building
 time; step 12 is the only one that changes how the game plays, so it gets its own
