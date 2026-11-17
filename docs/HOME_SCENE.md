@@ -1541,6 +1541,24 @@ its size.
       the well and the pond (they pass in front or behind); festival and
       paid decorations (they must never be worth more charm than these).
 24. **The town crier** (F.11) and **photo mode** (F.10).
+    **The town crier is built** (2026-11-17): `js/crier.js` (`KWCrier`;
+    proofs `verify/crier_proofs.js`). It reads only; nothing on the server.
+    - **In the scene:** at dawn and at dusk, in Town, one free villager (an
+      elder if there is one out) walks to the Guild Hall and stands by its
+      steps with a bell over their head; the bell carries a mark when the
+      chronicle has something the player has not seen. A click on them opens
+      the news instead of their menu. They go when the hour passes.
+    - **The news:** today (the weather by spell, anything lost and roughly
+      where, what is being built and how far along, the upkeep line, the
+      charm line), then who was born and who died, then the rest of the last
+      day's chronicle, newest first, each with how long ago and a mark on
+      what is new.
+    - **At any hour** the same window is on the Guild Hall's menu ("Today's
+      news"). The building menu took a general `extra` list for this.
+    - **"Seen"** is kept on the device (it changes nothing in the game), so a
+      second device shows its own marks.
+    - The engine's script hook grew: a step can be `door: key` ("walk to that
+      building's door"), and a script can answer a click (`opts.onClick`).
 25. **A visiting merchant** (F.13).
 26. **Events in the scene** (F.12). Last: it builds on mood, life events and
     town events (steps 14 to 16).

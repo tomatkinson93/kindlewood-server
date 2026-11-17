@@ -762,6 +762,15 @@ well 68 × 74, pond 116 × 46. An entry named `decor_…` is never scattered
 automatically; the scenery's own bench, lantern, fence, well and pond (the
 "Props" batch above) can be the same pictures under their own keys.
 
+**O. The town crier's bell** (step 24). Stand-in: a bell emoji in a speech
+bubble over the crier's head, which swings. It reads well and needs nothing.
+If you want the crier to look the part, the nicer version is an animation
+(PixelLab, as batch H; `art/villagers/mouse/bell_e.gif`): animate the
+existing mouse facing east, "ringing a hand bell: holds a small brass hand
+bell up beside the head and swings it side to side twice, then lowers it a
+little", 6 frames, the same frame size as the walk. West is mirrored. The
+bubble then goes and only the mark for news stays.
+
 Still to make, in a sensible order: the Workshop's night image (the rest of
 batch A is in); the scenery props, calmer meadow and path texture above; batch E (building
 time is the next thing built); the Outskirts (C) and the Jeweller (B); the
