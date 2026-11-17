@@ -49,7 +49,8 @@ router.get('/pool', requireAuth, (req, res) => {
   });
 });
 
-router.post('/cast', requireAuth, async (req, res) => {
+// A broken Fishing Post takes no new casts (lib/upkeep); a line already out can be landed.
+router.post('/cast', requireAuth, require('../lib/upkeep').guard('fishing_post'), async (req, res) => {
   const now = wallNow();
   const id = uid(req);
   let stamps = _stamps.get(id);

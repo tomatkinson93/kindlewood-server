@@ -12,6 +12,8 @@ const npcTrade = require('../lib/npc_trade');
 const careers = require('../lib/careers');
 const ledger = require('../lib/market_ledger');
 const router = express.Router();
+// Why the Market cannot be used: broken (lib/upkeep), or not built.
+const needMarket = sid => require('../lib/upkeep').needLine(null, sid, 'market', 'Build a Market first.');
 
 class MarketError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -391,7 +393,7 @@ router.post('/orders', requireAuth, async (req, res) => {
     if (!ids || !ids.length) throw new MarketError(400, 'Choose at least one merchant.');
 
     const mods = await market.loadModifiers({ query }, me.id);
-    if (!mods.marketLevel) throw new MarketError(403, 'Build a Market first.');
+    if (!mods.marketLevel) throw new MarketError(403, await needMarket(me.id));
     const bad = market.validateOrder(body, mods, item);
     if (bad) throw new MarketError(400, bad);
 
@@ -454,7 +456,7 @@ router.post('/orders/:id/buy', requireAuth, async (req, res) => {
     const me = await mySettlement(req.user.userId);
     await settle(me.id);
     if (me.tile_q == null) throw new MarketError(400, 'Place your settlement on the map first.');
-    if (!(await market.marketLevelOf({ query }, me.id))) throw new MarketError(403, 'Build a Market first.');
+    if (!(await market.marketLevelOf({ query }, me.id))) throw new MarketError(403, await needMarket(me.id));
 
     const result = await withTransaction(async (client) => {
       const o = (await client.query('SELECT * FROM market_orders WHERE id = $1 FOR UPDATE', [orderId])).rows[0];
@@ -527,7 +529,7 @@ router.post('/orders/:id/pickup', requireAuth, async (req, res) => {
     const me = await mySettlement(req.user.userId);
     await settle(me.id);
     if (me.tile_q == null) throw new MarketError(400, 'Place your settlement on the map first.');
-    if (!(await market.marketLevelOf({ query }, me.id))) throw new MarketError(403, 'Build a Market first.');
+    if (!(await market.marketLevelOf({ query }, me.id))) throw new MarketError(403, await needMarket(me.id));
     const qty = toInt(req.body.qty), citizenId = parseId(req.body.citizen_id);
     if (!Number.isInteger(qty) || qty <= 0) throw new MarketError(400, 'Invalid quantity.');
     if (!citizenId) throw new MarketError(400, 'Choose a porter.');
@@ -601,8 +603,8 @@ router.patch('/shops/:venue/keeper', requireAuth, async (req, res) => {
     const venue = req.params.venue;
     const def = market.VENUES[venue];
     if (!def || !def.keeper) throw new MarketError(400, 'That building has no shopkeeper.');
-    const built = (await query('SELECT 1 FROM buildings WHERE settlement_id = $1 AND type = $2', [me.id, def.building])).rowCount;
-    if (!built) throw new MarketError(400, `Build a ${def.label} first.`);
+    const built = (await query('SELECT 1 FROM buildings WHERE settlement_id = $1 AND type = $2 AND COALESCE(health, 100) > 0', [me.id, def.building])).rowCount;
+    if (!built) throw new MarketError(400, await require('../lib/upkeep').needLine(null, me.id, def.building, `Build a ${def.label} first.`));
     const citizenId = req.body.citizen_id == null ? null : parseId(req.body.citizen_id);
     if (req.body.citizen_id != null && !citizenId) throw new MarketError(400, 'Bad citizen id.');
     if (citizenId) {
@@ -734,7 +736,7 @@ router.post('/npc/:npcId/:orderKey', requireAuth, async (req, res) => {
     await settle(me.id);
     if (me.tile_q == null) throw new MarketError(400, 'Place your settlement on the map first.');
     const mods = await market.loadModifiers({ query }, me.id);
-    if (!mods.marketLevel) throw new MarketError(403, 'Build a Market first.');
+    if (!mods.marketLevel) throw new MarketError(403, await needMarket(me.id));
     const qty = toInt(req.body.qty), citizenId = parseId(req.body.citizen_id);
     if (!Number.isInteger(qty) || qty <= 0) throw new MarketError(400, 'Invalid quantity.');
     if (!citizenId) throw new MarketError(400, 'Choose a porter.');
@@ -863,7 +865,7 @@ router.post('/wants', requireAuth, async (req, res) => {
     await settle(me.id);
     if (me.tile_q == null) throw new MarketError(400, 'Place your settlement on the map first.');
     const mods = await market.loadModifiers({ query }, me.id);
-    if (!mods.marketLevel) throw new MarketError(403, 'Build a Market first.');
+    if (!mods.marketLevel) throw new MarketError(403, await needMarket(me.id));
     const kind = req.body.kind === 'resource' ? 'resource' : 'item';
     const qty = toInt(req.body.qty), price = toInt(req.body.price);
     if (!Number.isInteger(qty) || qty <= 0 || qty > 1000000) throw new MarketError(400, 'Invalid quantity.');

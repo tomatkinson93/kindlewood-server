@@ -1376,9 +1376,14 @@ Each step ships on its own and is shown to the owner.
     - **Broken:** left out of what the town produces; its workers keep their
       jobs (they are not sent back to foraging, so nothing has to be put
       right by hand after a repair). In the scene its Enter says why and
-      opens its panel with Repair now instead of its screen. *This last
-      part is on the screen only: the server does not yet refuse the Tavern,
-      Market, Library or crafting routes for a broken building.*
+      opens its panel with Repair now instead of its screen. The server
+      refuses too (2026-11-17): whatever reads a building's level for its
+      own screen counts a broken one as none (the Library, crafting
+      stations, the Market and its shopkeepers, the Scout Post, the
+      Watchtower and the Walls), with the words "The Library is broken and
+      gives nothing until a builder mends it"; a broken Tavern takes no new
+      games and a broken Fishing Post no new casts (one already begun can
+      finish). `lib/upkeep.js` `WORKING`, `needLine`, `guard`.
     - **A broken home** keeps its beds; the family in it loses 3 happiness
       when it breaks and gets it back when it is mended.
     - **Said out loud:** one news line when nobody is looking after the

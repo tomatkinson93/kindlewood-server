@@ -225,6 +225,36 @@ async function main() {
     check((await TU.lifeAll()).filter(n => n.group === 'Upkeep').map(n => n.key + '=' + n.value).join() === 'UPKEEP_PER_BUILDER=8,UPKEEP_DAYS_TO_BREAK=5', '8 buildings per builder and 5 days to break, both tunable');
   }
 
+  console.log('A broken building gives nothing from its own screen');
+  {
+    const t = await mkTown({ types: ['library', 'smithy', 'market', 'scout_post', 'tavern', 'fishing_post', 'watchtower', 'walls'] });
+    const who = await mk(t.id, 'Ivy Scout', 'scout');
+    await q('UPDATE settlements SET tile_q = tile_q WHERE id = $1', [t.id]);
+    const MK = require('../lib/market'), CR = require('../lib/crafting'), RS = require('../lib/research'), WT = require('../lib/watchtower'), DF = require('../lib/defences');
+    const town = async () => (await q('SELECT * FROM settlements WHERE id = $1', [t.id])).rows[0];
+    const before = { market: await MK.marketLevelOf({ query: q }, t.id), library: (await RS.scholarsOf(t.id, null)).level, tower: (await WT.state(null, t.id)).level, walls: (await DF.townDefence(await town())).walls };
+    check(before.market === 1 && before.library === 1 && before.tower === 1 && before.walls > 0, 'sound: each counts at its level', before);
+    check((await U.needLine(null, t.id, 'library', 'Build a Library first.')) === 'Build a Library first.' && (await U.needLine(null, t.id, 'library')) === null, 'and nothing is called broken');
+    let x = await t.api('POST', '/api/fishing/cast', {});
+    check(x.status !== 409, 'fishing is open', x.status);
+    await q('UPDATE buildings SET health = 0 WHERE settlement_id = $1', [t.id]);
+    const after = { market: await MK.marketLevelOf({ query: q }, t.id), library: (await RS.scholarsOf(t.id, null)).level, tower: (await WT.state(null, t.id)).level, walls: (await DF.townDefence(await town())).walls };
+    check(after.market === 0 && after.library === 0 && after.tower === 0 && after.walls === 0, 'broken: the Market, the Library, the Watchtower and the Walls count as none', after);
+    check(/The Library is broken and gives nothing until a builder mends it\./.test(await U.needLine(null, t.id, 'library', 'Build a Library first.')), 'and the words say broken, not "build one"');
+    x = await t.api('POST', '/api/fishing/cast', {});
+    check(x.status === 409 && x.body.broken === 'fishing_post' && /Fishing Post is broken/.test(x.body.error), 'a broken Fishing Post takes no new casts', x.body);
+    x = await t.api('POST', '/api/game/tavern/solo-start', { game: 'briar' });
+    check(x.status === 409 && x.body.broken === 'tavern', 'a broken Tavern takes no new games', x.body);
+    x = await t.api('POST', '/api/research/start', { project: 'nope' });
+    const y = await t.api('POST', '/api/expeditions/send', { citizen_id: who, target_q: 1, target_r: 1 });
+    check([x, y].every(r => r.status !== 500), 'the Library and the Scout Post answer, not crash', [x.status, y.status]);
+    check(/Scout Post is broken/.test(y.body.error || '') || y.status === 404, 'a broken Scout Post sends nobody', y.body);
+    await q("UPDATE buildings SET health = 40 WHERE settlement_id = $1", [t.id]);
+    check((await MK.marketLevelOf({ query: q }, t.id)) === 1 && (await U.needLine(null, t.id, 'market')) === null && (await t.api('POST', '/api/fishing/cast', {})).status !== 409, 'worn still works');
+    const other = await mkTown({ types: [] });
+    check((await other.api('POST', '/api/fishing/cast', {})).status !== 409 && (await other.api('POST', '/api/game/tavern/solo-start', { game: 'briar' })).status !== 409, 'a town with no Tavern or Fishing Post is as before (they never asked for one)');
+  }
+
   await pool.end();
 }
 
