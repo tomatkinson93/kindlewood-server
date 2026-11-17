@@ -1373,7 +1373,20 @@ its size.
     Also fixed while here: the hourly simulation wrote relationship scores
     over whatever was there, so a change made while it ran could be lost; it
     now adds its gain to the current score.
-19. **Thought bubbles and Follow** (F.3, F.4).
+19. **Thought bubbles and Follow** (F.3, F.4). **Built** (2026-11-17) in
+    `js/villager-engine.js`.
+    - **A thought:** one line under a selected villager's name, the most
+      pressing first: no bed, short food, a moment waiting, grief, a new
+      partner or child, a coming of age, pride in something just built,
+      taking to their work or not (only from a trait the player has already
+      seen), something they like to talk about (only once a chat has taught
+      it), else how the day feels. Events count for a day.
+    - **Follow:** a seventh button on the menu. The view keeps the villager
+      centred and goes with them to another part of town. A card at the top
+      lists their day so far (from their routine, with times), the chats the
+      player set up today, and what they do while watched. A wheel, a drag,
+      a swipe, Esc, the card's close button or leaving Home ends it. The one
+      being followed is kept in the cast.
 20. **Small life and working buildings** (F.6, F.7), then **the lamplighter**
     once the lantern art is in.
 21. **Weather and seasons** (F.5).
