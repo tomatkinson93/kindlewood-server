@@ -99,6 +99,26 @@ width, the y is 4 px above the bottom). They are right to within a few pixels.
 Check each one in the scene and nudge it; a Dev Tools overlay that draws the door
 point would pay for itself.
 
+Three more fields say where a building's small life comes from (Part F, step
+20; `js/home-ambient.js`). All are optional and in the same on-screen pixels as
+`door`, measured from the picture's top-left corner:
+
+```json
+"smithy": {
+  …
+  "smoke": [[262, 14]],         the top of each chimney; a puff rises from each
+  "fire": [300, 204],           the forge mouth: a glow and sparks while someone works it
+  "dust": [268, 196]            where sawdust puffs while someone works (the Workshop)
+}
+```
+
+A building with no `smoke` just never smokes. When a new building or house
+style arrives, add the chimney tops; if a redrawn picture moves the chimney,
+move the point. Set on 2026-11-17: Tavern, Smithy (smoke and fire), Workshop
+(smoke and dust), Jeweller, the Neighbourhood's door, and the four house
+styles. To add later with their art: the Farm, the Smelter (smoke and fire),
+the Forager's Hut, the Fishing Post.
+
 ## 4. How to put it in
 
 In this order, each step shippable:
@@ -609,6 +629,49 @@ Two images, each a row of three stages with wide gaps:
 animate the existing mouse facing east, "hammering: raises a small wooden
 mallet above the head and strikes down in front, then lifts again", 6 frames,
 the same frame size as the walk. West is mirrored.
+
+### Part F, the town alive: what stands in today and what to make (written 2026-11-17)
+
+Everything in Part F works today with stand-ins drawn by code, so nothing
+here blocks anything. Each batch below says what the stand-in is, the file to
+make, and the prompt. Put the PNGs in the folder named and run the packer as
+for any other art; code picks a file up when it is there and keeps the
+stand-in when it is not.
+
+**I. Sounds of work** (step 20; no art, four short sound loops).
+The Smithy, Tavern, Market and Workshop each play a quiet loop while someone
+is inside, louder as the view pans near. Until the files exist the scene is
+silent (nothing breaks).
+
+| File (in `assets/audio/ambient/`) | What it should be |
+|---|---|
+| `forge.mp3` | A hammer on an anvil at a slow steady pace, a low fire roar, the odd hiss of quenching. |
+| `tavern.mp3` | Low friendly chatter with no words you can make out, mugs set down, a chair, a soft lute far off. |
+| `market.mp3` | Outdoor bustle: light chatter, a cart wheel, coins, a stall bell now and then. |
+| `workshop.mp3` | A handsaw through wood, a plane, a few light mallet taps. |
+
+Each: 15 to 30 seconds, loops with no click at the join, mono, about 96 kbps
+MP3, no music with a tune (it would clash with the Home music), and even
+loudness (the game sets the volume). Free sources that allow use in games:
+freesound.org (filter by the CC0 licence) and pixabay.com/sound-effects. Search
+words: "blacksmith loop", "tavern ambience loop", "medieval market ambience",
+"carpenter sawing loop". If you use a sound generator, a prompt that works:
+> A seamless 20 second loop of [the description above]. Cosy, soft, no music,
+> no voices you can understand, no sudden loud sounds.
+
+**J. Smoke, sparks and sawdust** (step 20). Stand-in: soft round puffs drawn by
+code. Batch G above (`smoke.png`) replaces the smoke; the sparks and sawdust
+are fine as code and need no art.
+
+**K. Fireflies, butterflies, leaves and seeds** (step 20). Stand-in: small
+shapes drawn by code (a glowing dot, two yellow wings, an orange leaf, a white
+seed). Optional art, `art/props/smalllife.png` (props opener, wide gaps):
+> Draw six tiny separate things in a row with wide empty gaps, each no bigger
+> than the attached cottage's door knob is wide four times over: 1. a yellow
+> butterfly with wings open; 2. the same butterfly with wings half closed;
+> 3. a white-and-blue butterfly with wings open; 4. the same with wings half
+> closed; 5. an orange autumn leaf; 6. a fluffy white dandelion seed.
+No birds, cats or other pets: the villagers are animals themselves.
 
 Still to make, in a sensible order: the Workshop's night image (the rest of
 batch A is in); the scenery props, calmer meadow and path texture above; batch E (building

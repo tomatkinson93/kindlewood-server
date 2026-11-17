@@ -1429,8 +1429,29 @@ its size.
       player set up today, and what they do while watched. A wheel, a drag,
       a swipe, Esc, the card's close button or leaving Home ends it. The one
       being followed is kept in the cast.
-20. **Small life and working buildings** (F.6, F.7), then **the lamplighter**
-    once the lantern art is in.
+20. **Small life and working buildings** (F.6, F.7). **Built** (2026-11-17)
+    in `js/home-ambient.js` (`KWAmbient`; proofs `verify/ambient_proofs.js`).
+    Looks only: it never calls the server. **The lamplighter** comes with
+    decorating (step 23), when there are lantern posts to light.
+    - **Small life:** a puff of smoke from each chimney of a building with
+      someone in it, and from homes in the evening and at night when someone
+      lives there; fireflies at dusk and at night (not in winter or the wet);
+      butterflies by day in spring and summer; leaves on the wind in autumn
+      and seeds in spring and summer. No birds, cats or pets.
+    - **Working buildings:** with someone inside, the forge mouth glows and
+      throws sparks, the Workshop puffs sawdust, the Tavern's windows flicker
+      at dusk and at night; around midday (12:30 to 15:00 game time) a few
+      more villagers choose the Market for their errand. A broken building
+      shows none of it.
+    - **Sound:** the Smithy, Tavern, Market and Workshop each have a quiet
+      loop, louder as the view nears and following the sound-effects volume.
+      The four files are the owner's to add (`ART_GUIDE.md` §8, batch I);
+      without them the scene is silent.
+    - **Where things come from:** `smoke`, `fire` and `dust` points in each
+      building's manifest entry (`ART_GUIDE.md`, "The manifest").
+    - **Kept small:** at most 28 things in the air; transform and opacity
+      only; nothing while Home is closed, the tab is hidden or the player
+      asks for reduced motion.
 21. **Weather and seasons** (F.5).
 22. **A lost thing each day** (F.8).
 23. **Decorating and charm** (F.9). Needs the scenery props' art.
