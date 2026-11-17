@@ -1,10 +1,9 @@
-# Phase 3 — Onboarding and the guide (DRAFT for the owner, 2026-11-17)
+# Phase 3 — Onboarding and the guide
 
-**Status: a draft. Nothing here is built.** It turns `ROADMAP_1_0.md` §6 into
-something that can be built, against the game as it stands today (the Home
-scene, moments, building time behind its switch). Section 9 lists the
-decisions that are the owner's; each has a recommendation, and the build
-order in section 8 assumes the recommendations.
+**Status (2026-11-17): agreed with the owner and being built.** Section 8
+says what is built. Section 9 records the decisions. This turns
+`ROADMAP_1_0.md` §6 into something buildable against the game as it stands
+(the Home scene, moments, building time behind its switch).
 
 ## 1. What it is for
 
@@ -13,48 +12,41 @@ something, send someone on an errand, and meet a family.** They should leave
 the first session knowing what will have happened by tomorrow, and wanting to
 see it.
 
-It is measured, not guessed: the funnel already records the first time each
-player reaches each step (`lib/milestones.js`, Dev Tools → Funnel). The
-numbers to move are "built something", "changed a job", "answered a moment"
-and "came back the next day".
+It is measured, not guessed: the funnel records the first time each player
+reaches each step (`lib/milestones.js`, Dev Tools → Funnel), now including
+"the tour began", "three homes built", "finished the tour" and "skipped the
+tour", and a row for every beat reached (`guide:<key>`).
 
-## 2. What exists today (so the spec does not rebuild it)
+## 2. What existed before (so nothing is rebuilt)
 
 | Piece | Where | State |
 |---|---|---|
-| The funnel: 18 steps from "made an account" to "came back after a week" | `lib/milestones.js`, `js/funnel-admin.js` | built; needs real numbers |
-| The dialogue box: portrait, speaker, a line or two, up to three options | `js/say.js` (`KWSay`) | built; used by moments |
-| First steps: a checklist worked out from what the town has done | `lib/first_steps.js`, `js/first-steps.js` | built; the guide replaces it (§6) |
-| The five places, all shown from the start | `js/places.js` | built; §5 changes what a new town sees |
-| Home: buildings as buttons, Build mode, villagers with a menu, Follow | `js/home-scene.js`, `js/villager-engine.js` | built |
-| Moments: a new town's first comes within ten minutes and is a gentle one | `lib/moments.js` | built |
-| Help | `js/help.js` | built; gets "Replay the tour" |
+| The funnel | `lib/milestones.js`, `js/funnel-admin.js` | built; needs real numbers |
+| The dialogue box for moments | `js/say.js` (`KWSay.ask`) | built |
+| First steps: a checklist worked out from what the town has done | `lib/first_steps.js`, `js/first-steps.js` | built; becomes the guide's "What next?" (§6) |
+| The five places | `js/places.js` | built; §6 changes what a new town sees |
+| Home: buildings as buttons, Build mode, villagers with a menu | `js/home-scene.js`, `js/villager-engine.js` | built |
+| Moments: a new town's first comes within ten minutes, a gentle one | `lib/moments.js` | built |
 
 **What a new town is given** (`routes/map.js`): ten founders in families,
 three starter buildings by species (Mice: Granary, Farm, Market), 500 food,
-300 timber, 150 stone, 50 iron, 100 wealth, and **no homes**. So today a new
-player's first look at their villagers finds every one of them thinking "Has
-no bed of their own", the town card says "Beds 10 of 0", and the Neighbourhood
-is empty. That is the first thing to fix (§3).
+300 timber, 150 stone, 50 iron, 100 wealth, and no homes.
 
-## 3. The new town (before any guide)
+## 3. The new town
 
-1. **Homes on arrival.** A new town is founded with three Willow Huts already
-   standing (12 beds for 10 founders), placed on the first three open plots
-   and the founders seated by family, as the beds-cliff fix did for old
-   towns. The first thing a player sees is a small lived-in place.
-2. **The founders' jobs.** As now: foragers, plus whatever the species'
-   starter buildings need.
-3. **Nothing else changes** in what a town starts with. The guide's first
-   build is paid for from the starting timber.
+**It still starts with no homes** (owner's decision). The elder gives timber
+and stone for exactly three homes and walks the player through building them
+in the Neighbourhood and moving someone in. So the first thing a player does
+is put roofs over their people's heads, with the elder's gift, not their own
+stores.
 
 ## 4. The guide
 
 ### 4.1 Who
-An elder of the player's species with a name and a manner of speaking, one
-per species (roadmap decision 5). The portrait is the species' existing art
-until proper portraits exist (`ART_GUIDE.md` gets a batch for six elder
-portraits when this is built).
+An elder of the player's species: a voice, not a citizen (they do not age,
+work, or appear in the families). The owner draws a character for each
+(`ART_GUIDE.md` §8, batch T); until a picture is there the species' emoji
+stands in.
 
 | Species | Name | Manner |
 |---|---|---|
@@ -65,174 +57,130 @@ portraits when this is built).
 | Foxes | Aunt Russet | sly, fond of a bargain |
 | Hares | Thistle the Elder | brisk, always a little out of breath |
 
-The guide is a voice, not a citizen: they do not age, work, or appear in the
-families. (See decision 4.)
+Each has their own greeting and goodbye today (`lib/guide.js` `ELDERS`); the
+rest of the script is shared until the owner has heard how they feel.
 
-### 4.2 How it works
-One module, `js/guide.js` (`KWGuide`), driven by a script held as data. A
-step is:
+### 4.2 The look
+As in the owner's reference picture: the character stands large at the lower
+left (up to 62 % of the screen's height), and a dark translucent box across
+the bottom carries their name, one line at a time, and an arrow for "next".
+The game stays visible and usable behind it; only the box and the character
+take clicks. On a phone the character stands above a full-width box. This is
+`KWSay.tell` in `js/say.js`, so anything else that should speak this way
+(an envoy, the crier) can use it.
 
-```js
-{ key: 'build_lumber',
-  say: ['Timber first, {town} needs timber.', 'Press Build, then an empty plot.'],
-  point: 'tool:build',            // what to ring (see 4.3)
-  until: 'built:lumber_camp',     // the game event that completes it (see 4.4)
-  then: 'A fine camp. {builder} will be pleased.' }   // optional line when done
-```
+### 4.3 How it works
+- **The server holds the tour** (`lib/guide.js`, `guide_progress`): which beat
+  a player is on, when it is done, and what has been given. So it survives a
+  reload and follows the player to their phone.
+- **A beat** is one to three short lines and, usually, one thing to do. It is
+  done when the town shows it (a home stands, someone has the job), when a
+  route noted it (someone was moved into a home), or, for things that change
+  nothing (a villager pressed, a window opened, a walk to another part of
+  Home), when the screen reports it. Nothing that gives anything can be
+  completed by the screen saying so.
+- **While it waits** the lines fold to a chip at the lower left: the elder,
+  what to do, "hear that again", "Skip the tour", and the step number. The
+  thing to press is ringed (`js/guide.js`: named targets, most exact first:
+  a villager, then their menu's button once the menu is open; Build, then a
+  plot once Build mode is on, then the choice once the panel is open).
+- **It never blocks.** Everything in the game works whatever the beat.
+- **Skip** at any time. Skipping gives every gift the tour would have given
+  (the homes' timber and stone, the errand's reward, the parting gift), and
+  brings home anyone out on the errand.
+- **Replay** from Help starts it again; what the town has already done is
+  passed as it comes, and no gift is given twice.
+- **Lines name real villagers** (someone with a partner for "meet a family",
+  a forager for the first job), and read plainly where there is nobody to
+  name.
 
-- **Lines** are shown in `KWSay` with the elder's portrait and a "next"
-  arrow. `{town}`, `{citizen}`, `{partner}` and the like are filled from the
-  real town, so the guide names real villagers.
-- **Waiting.** When a step has `until`, the box folds to a small chip ("Old
-  Bramble: press Build") and waits for the player to do it. It never blocks
-  the game: everything else still works.
-- **Progress is on the server** (`guide_progress`: user, step key, state
-  `active | done | skipped`, when), so it survives a reload and follows the
-  player to their phone. `GET /api/guide`, `POST /api/guide/advance { key }`,
-  `POST /api/guide/skip`, `POST /api/guide/replay`.
-- **The server checks completion.** A step is done when the server sees the
-  thing has happened (the same checks the first-steps list uses today), not
-  when the client says so. The client only asks "has it happened yet?"
-  (and listens for the live event).
-- **Skip** at any time ("Skip the tour" in the box, and in Help). **Replay**
-  in Help starts it again from the first step that still makes sense.
+## 5. The first session (as built)
 
-### 4.3 Pointing
-`point` names a target; the module finds its element and draws a pulsing
-ring round it, dimming the rest slightly. Targets are named, not CSS
-selectors, so the script does not break when markup moves:
-
-`tool:build`, `tool:names`, `building:<type>`, `plot:any`, `villager:<id>`,
-`villager-menu:work`, `place:families`, `place:land`, `card:town`,
-`window:<id>`, `moment:first`.
-
-If the target is in another part of Home, the ring goes on the signpost
-first. On a phone the ring is at least 44 px. Under reduced motion it does
-not pulse.
-
-### 4.4 Events
-`until` is one of a small set the server can check and the live stream
-already carries: `built:<type>`, `job:<class>` (or `job:any`),
-`errand:sent`, `errand:collected`, `opened:<window>`, `moment:answered`,
-`place:<key>`, `selected:villager`. `opened:` and `place:` and `selected:`
-are client-only (they change nothing), and are the only ones the client may
-complete by itself.
-
-## 5. The first session
-
-Written against the Home scene. Each beat is one or two lines and one thing
-to do. Target: done in twelve to fifteen minutes; no beat needs waiting more
-than two minutes.
-
-| # | Beat | The guide says (Mice) | Points at | Done when |
+| # | Beat | The elder says (Mice) | Rings | Done when |
 |---|---|---|---|---|
-| 1 | Arrival | "There you are. Welcome to {town}. Ten of us, three roofs, and a great deal to do." | nothing | next |
-| 2 | Look round | "Drag the view to look about. Those are your people. Press one." | any villager | a villager is selected |
-| 3 | Meet someone | "That is {citizen}. {partner} is their partner. Everyone here belongs to a family." | their menu's Family | the family window is opened |
-| 4 | Build | "Timber first. Press Build, then an empty plot, and choose the Lumber Camp." | Build, then a plot | a Lumber Camp stands |
-| 5 | A job | "A camp needs a woodcutter. Press {forager} and give them the work." | that villager, then Work | someone is a woodcutter |
-| 6 | An errand | "The {village} folk have left word. Send {citizen2} to see what they want." | the notice (see decision 3) | an errand is sent |
-| 7 | While they are gone | "They will be back in two minutes. Meanwhile, the Families: who is courting, who is expecting." | Families | Families is opened |
-| 8 | Collect | "{citizen2} is back, and not empty-handed." | the returned errand | it is collected |
-| 9 | A choice | "Someone wants a word with you. It is yours to decide; nothing here is wrong." | the first moment | it is answered |
-| 10 | Goodbye | "That is a good first day. By tomorrow: {tomorrow}. I will be about if you want me." | nothing | closed |
+| 1 | arrival | "There you are. I have counted us twice: ten, and not one roof." "Welcome to {town}…" | — | next |
+| 2 | look | "Drag the view to look about. Those are your people. Press one of them." | a villager | a villager is selected (screen) |
+| 3 | family | "Everyone here belongs to a family. Press Family to see theirs." | Family in their menu | the family window opens (screen) |
+| 3b | builder | (building time only) "Nothing gets built here without a builder…" | Work in {a}'s menu | someone is a builder |
+| 4 | homes_gift | "First, roofs. Here is timber and stone enough for three homes: my gift." | the Neighbourhood | the player walks there (screen) |
+| 5 | first_home | "Press Build, then an empty plot, and choose how the home should look." | Build, a plot, a style | one home stands |
+| 6 | more_homes | "That is four beds. We are ten: two more homes, if you please." | a plot | three homes stand |
+| 7 | move_in | "They have found their own beds. But who lives where is yours to say…" | a home, then Move in | someone is moved in by hand |
+| 8 | lumber | "Now, timber… choose the Lumber Camp." | Build, a plot, the camp | a Lumber Camp stands |
+| 9 | job | "A camp wants a woodcutter. Press {b}, choose Work…" | Work in {b}'s menu | someone is a woodcutter |
+| 10 | errand | "Word has come from the next valley… Send someone to hear them out." | Send someone | the errand is sent |
+| 11 | families | "{errand} will be back in two minutes. Meanwhile, look in on the Families." | Families | Families is opened (screen) |
+| 12 | collect | "{errand} is back, and not empty-handed." | Hear the news | the errand is collected |
+| 13 | moment | "Someone wants a word with you. It is yours to decide, and nothing here is wrong." | the waiting moment | a moment is answered by the player |
+| 14 | goodbye | their own goodbye; "By tomorrow: {tomorrow}"; a parting gift | — | next: the tour is done |
 
-- **Beat 4 with building time on:** the first building of a new town
-  finishes at once, this one time, whether or not anyone is a builder
-  (roadmap §6.2), and the guide's next beat is "Make someone a builder" in
-  place of the woodcutter. With building time off, as written.
-- **Beat 9** uses the real moments system: when the tour reaches it, the
-  server starts the town's first gentle moment at once if it has not come
-  yet (it is due within ten minutes anyway).
-- **Beat 10's `{tomorrow}`** is built from the real town: "the Lumber Camp
-  will have filled the stores", "{name} and {name} may be courting", "a
-  merchant is due in two days".
+- **Homes move people in by themselves** when they are built (as they always
+  have), so beat 7 teaches the house window's Move in by asking for one move.
+- **The first errand** is the guide's own (decision 3): two minutes, always
+  comes home, 30 wealth and 40 food. It counts as the first quest sent and
+  collected in the funnel. The Tavern, and with it The Road, comes later.
+- **The first moment** is the real moments system: reaching the beat starts a
+  gentle one at once if none is waiting.
+- **{tomorrow}** is built from the real town: the Lumber Camp filling the
+  store, a pair who may grow closer, when the merchant is due.
+- **Building time** (decision 6): the tour is written for it. Where it is on,
+  beat 3b comes first, and the chip offers a free **Finish now** on whatever
+  is being built, six times during the tour, so no beat waits on builders.
 
 ## 6. After the first session
 
-- **What next?** The first-steps checklist becomes the guide's list: the
-  same server checks, shown from the guide's chip ("Old Bramble: what
-  next?") instead of its own card. Steps stay as they are today (scout,
-  outpost, research, market), each with a "Show me" that rings the target.
-- **Later beats**, one or two lines each, the first time each thing
-  happens: the first season turn, the first birth, the first death, the
-  first raid warning, the first visit of the merchant, the first lost
-  thing, the first broken building (upkeep), a Guild Hall built. Each is a
-  row in the same script with an `on:` event instead of a place in the
-  order, shown once, never blocking.
-- **Progressive unlock** (roadmap §6.3). A new town's place bar shows Home,
-  Families and The Land. The Road appears when the town has a Tavern, and
-  The Clan when it has a Guild Hall, each with a one-line introduction.
-  Nothing is hidden from a player who skipped the tour or whose account is
-  older than this phase (decision 5).
+- **What next?** The first-steps checklist becomes the guide's list.
+- **Later, one-off lines** the first time a thing happens, once the tour is
+  over: a merchant's visit, a lost thing, a broken building, a Tavern (The
+  Road), a Guild Hall (The Clan), a raid, a season turning, a birth
+  (`lib/guide.js` `LATER`).
+- **Progressive unlock.** A town founded with the tour sees Home, Families
+  and The Land; The Road appears when it has a Tavern and The Clan when it
+  has a Guild Hall. Towns from before this, and towns that asked for a
+  replay, see all five.
 
 ## 7. Rules it keeps
 
-- **Never blocks.** Every beat can be ignored; the game underneath always
-  works. Closing the box is always possible.
-- **Never lies.** Lines are filled from the real town; a beat whose subject
-  does not exist (no partner, no village nearby) uses its plain variant.
-- **Server decides.** Progress and completion are on the server; a second
-  device shows the same beat.
-- **One voice.** The guide, moments, the crier and envoys all use `KWSay`.
-- **Access.** Tab reaches the box and the ringed target; Enter advances; a
-  screen reader hears the line and what to press; full width on phones;
-  reduced motion stills the ring.
-- **Measured.** Each beat reached is a funnel row (`guide_<key>`), so the
-  beat where players stop is visible in Dev Tools → Funnel.
+- **Never blocks.** Every beat can be ignored; closing the box is always
+  possible.
+- **Never lies.** Lines are filled from the real town.
+- **Server decides.** Progress, completion and gifts are on the server.
+- **One voice.** The story layout is one function, `KWSay.tell`.
+- **Access.** Enter, Space or the arrow key advance; the box is a named
+  dialog; the chip is a live region; buttons are at least 36 px (44 on the
+  ring); reduced motion stills the ring and the arrow.
+- **Measured.** Each beat reached is a funnel row.
 
-## 8. Build order (assuming §9's recommendations)
+## 8. Build order
 
-1. **Homes on arrival** (§3) and its tests. Ships by itself.
-2. **Server:** `guide_progress`, the script's step list and completion
-   checks (`lib/guide.js`), the four routes, funnel rows, tests.
-3. **`KWGuide`:** lines in `KWSay` with the elder's portrait, the waiting
-   chip, skip and replay. No pointing yet; beats 1, 7 and 10 work.
-4. **Pointing** (§4.3): the ring, the named targets, the other-area case.
-5. **The first session** (§5), beat by beat, with a browser check of a
-   brand-new town on desktop and phone. The first errand (decision 3).
+1. ~~Homes on arrival~~ (dropped: decision 1).
+2. **Server** (built 2026-11-17): `lib/guide.js`, `/api/guide`,
+   `migrations/0NN_guide.sql`, `scripts/guide_test.js`.
+3. **The look and the guide** (built 2026-11-17): `KWSay.tell`,
+   `js/guide.js`, `css/guide.css`.
+4. **Pointing** (built 2026-11-17, with step 3).
+5. **The first session** on a brand-new town, desktop and phone.
 6. **What next?** replaces the first-steps card; Help gets Replay.
-7. **Progressive unlock** of The Road and The Clan.
-8. **Later beats** (§6), a few at a time.
-9. **Watch five to ten first sessions** and tune (roadmap §6.1). The spec is
-   not finished until the funnel says the tour is being completed.
+7. **Progressive unlock** (the server and the place bar are built; the
+   one-off lines for Tavern and Guild Hall come with step 8).
+8. **Later beats**.
+9. **Watch five to ten first sessions** and tune.
 
-Steps 1 to 6 are the core. Each is its own commit, with proofs in the
-frontend and tests on the server, as in Phases 1, 2 and 4b.
+## 9. Decisions (owner, 2026-11-17)
 
-## 9. Decisions for the owner
-
-1. **Homes on arrival.** Recommended: yes, three Willow Huts. The
-   alternative is making "build your first home" beat 4 of the tour, which
-   teaches the Neighbourhood but leaves the first minute looking like a
-   town with a problem.
-2. **How much of the tour is required.** Recommended: none; "Skip the tour"
-   is always there, and skipping is recorded. The alternative is a short
-   forced core (beats 1 to 5), which raises completion and annoys returning
-   players making a second account.
-3. **The first errand.** Today the quest board is reached from The Road
-   (and from the Tavern in Home); the server does not ask for a Tavern. But
-   progressive unlock (§6) hides The Road until there is a Tavern, and a new
-   town has none (80 timber, 60 food, 40 wealth: affordable, but a second
-   build before the first errand). Recommended: a one-off "first errand"
-   given by the guide (two minutes, always succeeds, a small reward, counts
-   as a quest for the funnel), and the Tavern introduced later as "more of
-   these", which is also what brings The Road. Alternatives: make the
-   Tavern beat 6 and the quest beat 7 (two builds in a row); or leave The
-   Road showing from the start and send the player there (simplest, but it
-   opens a screen full of things the tour has not mentioned).
-4. **Is the elder a real citizen?** Recommended: no, a voice only. A real
-   citizen would be a lovely touch (the guide could die of old age and be
-   remembered), but it ties the tour to someone who can be sent away, and a
-   very new player losing their guide in week eight reads as a bug.
-5. **Who gets progressive unlock.** Recommended: only accounts made after
-   it ships; existing towns keep all five places. The alternative
-   (everyone, by building) hides The Road from old towns without a Tavern.
-6. **Building time and the tour.** Recommended: write the tour for building
-   time on (it is the game's direction) and keep the off wording as a
-   variant, so turning the switch on later needs no rewrite.
-7. **The six names and manners** in §4.1 are placeholders. Change freely;
-   each species needs about forty lines in its own voice (a base script
-   plus per-species wording for the ten first-session beats).
-8. **Portraits.** Recommended: ship with the existing species art, and add
-   six elder portraits to `ART_GUIDE.md` when step 3 is built.
+1. **No homes on arrival.** The elder gives the resources and walks the
+   player through building them and moving people in.
+2. **Skip is always available**, and skipping gives every reward the tour
+   would have given.
+3. **The first errand is the guide's own.**
+4. **The elder is a voice, not a citizen.** The owner draws a character for
+   each species, shown large at the lower left with the dialogue box across
+   the bottom, as in the reference picture.
+5. **Progressive unlock only for towns founded after this ships.** Also: a
+   "Play as a fresh test account" button on the login screen, deleted on
+   sign-out (`lib/test_accounts.js`), for the owner's testing.
+6. **The tour is written for building time**, with a free Finish now during
+   the tour so nothing waits on builders.
+7. **The six names stand for now.**
+8. **Ships with the species' emoji standing in** until the owner's
+   characters are in (`ART_GUIDE.md` §8, batch T).
