@@ -889,7 +889,8 @@ server (so every device agrees): clear, cloudy, rain, or snow in winter.
 
 - **The lamplighter.** At dusk one villager (an elder if there is one) walks
   the lanes and lights each lantern post in turn; at dawn they are put out
-  together. Needs the lantern props (ART_GUIDE §8).
+  together. Built with decorating (step 23): the posts are the ones the
+  player places.
 - **Small life.** Chimney smoke from homes and workplaces with someone in,
   fireflies at night, butterflies over the flower props by day, leaves and
   seeds on the wind. No birds, cats or pets.
@@ -1504,7 +1505,41 @@ its size.
       Build mode. If the owner has died, it goes to the family and there is
       no happiness to give.
     - Not found by the day's end: it is gone, and the next day has its own.
-23. **Decorating and charm** (F.9). Needs the scenery props' art.
+23. **Decorating and charm** (F.9), and **the lamplighter** (F.6). **Built**
+    (2026-11-17): `lib/decor.js`, `/api/decor` and
+    `migrations/0NN_decor.sql` on the server (tests `scripts/decor_test.js`);
+    `js/decor.js` (`KWDecor`; proofs `verify/decor_proofs.js`). It did not
+    wait for the art: each thing is drawn by code until its picture arrives.
+    - **What can be placed:** a bench (12 timber), a lantern post (8 timber),
+      a flower bed (4 timber), a fence piece (5 timber), a well (30 stone and
+      10 timber; two per town) and a pond (20 stone; two per town). Sixty
+      decorations per town. Placing is at once (no builders, no wait); moving
+      is free; removing gives half back.
+    - **How:** Build mode has a Decorate bar along the bottom. Pick a thing,
+      tap open ground (as many times as wanted; Esc or the button again
+      stops). Drag a decoration to move it; press it to get Remove. On a
+      phone the bar scrolls sideways.
+    - **Charm:** the first of a kind is worth its full charm (bench 3,
+      lantern 3, flower bed 2, fence 1, well 6, pond 6), each further one
+      0.7 of the one before, so variety beats rows of benches. With upkeep
+      on, buildings kept sound add up to 10 more. Every 10 charm is +1
+      happiness for everyone, to +5. `lib/town_mods.js` adds it, so it shows
+      in the town's sources as "🌷 Charm"; the town card and the Decorate bar
+      show the line ("Charm 23: +2 happiness for everyone (7 more for +3).").
+      One of each kind is 21 charm (+2); +5 takes about four of each, or
+      three of each with every building sound.
+    - **The scenery:** once the player has placed a bench, lantern, fence,
+      well or pond of their own, the automatic scatter of that kind is left
+      out (`js/home-ground.js`). Meadow flowers stay.
+    - **The lamplighter:** when evening falls while Home is open, one free
+      villager (an elder if there is one out) walks to each lantern post in
+      view, nearest first, and lights it; opening Home later finds them lit;
+      at dawn they go out. If nobody is free they come on by themselves. The
+      engine got one new hook for this, `KWCast.playScript(id, steps,
+      prefer)`, which steps 24 to 26 use too.
+    - **Left for later:** villagers do not yet sit on benches or walk round
+      the well and the pond (they pass in front or behind); festival and
+      paid decorations (they must never be worth more charm than these).
 24. **The town crier** (F.11) and **photo mode** (F.10).
 25. **A visiting merchant** (F.13).
 26. **Events in the scene** (F.12). Last: it builds on mood, life events and

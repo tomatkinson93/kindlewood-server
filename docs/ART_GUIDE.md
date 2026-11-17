@@ -715,6 +715,53 @@ early: it is one small image.
 Cut into `lost_basket.png`, `lost_ribbon.png`, `lost_purse.png` and
 `lost_toy.png`. In the scene each is drawn about 28 px wide.
 
+**N. Decorations the player places** (step 23; `art/props/`; props opener).
+Stand-in: simple drawings made by code (flat colours and a brown outline),
+which read clearly but look plainer than the buildings. These six are what
+the player chooses and pays for, so they are the art most worth making after
+the buildings. Two chats of three.
+
+Chat 1 (`decor_bench.png`, `decor_flower_bed.png`, `decor_fence.png`):
+> Draw three separate small things in a row with wide empty gaps so each can
+> be cut out, seen from the same high three-quarter view as the attached
+> cottage: 1. a wooden garden bench with a slatted back, about as wide as
+> the attached cottage's door is wide twice over; 2. a low wooden planter
+> box full of flowers in pink, yellow, white and purple, the same width as
+> the bench; 3. one straight piece of low wooden picket fence with four
+> pointed pickets and two rails, the same width as the bench, drawn so that
+> several placed side by side would join up. Nothing on the ground under
+> them.
+
+Chat 2 (`decor_well.png`, `decor_pond.png`, `decor_lantern.png`):
+> Draw three separate things in a row with wide empty gaps so each can be
+> cut out, seen from the same high three-quarter view as the attached
+> cottage: 1. a round stone well with a small red-tiled roof on two wooden
+> posts, a rope and a hanging wooden bucket, about as tall as the attached
+> cottage's door and as wide as the door is wide twice over; 2. a small
+> garden pond seen from above at the same angle, so it is a wide flat oval
+> about as wide as the attached cottage is wide by half, with a rim of
+> grass and small stones, pale blue water, two lily pads and a few reeds at
+> one end; 3. a tall wooden lantern post with an iron lantern on top, the
+> lantern unlit with dark glass, the post about as tall as the attached
+> cottage's door and very thin. Nothing on the ground under them.
+
+Then, in the same chat as the lantern, its night image
+(`decor_lantern_lit.png`):
+> The exact same lantern post, pixel for pixel, with the lantern lit: warm
+> yellow glass. Change nothing else. Keep the fully transparent background.
+> No glow or halo outside the glass (the game adds the glow itself).
+
+How they go in: add each to the props manifest
+(`assets/images/scene_v2/props/manifest.json`) under the key `decor_<kind>`
+(`decor_bench`, `decor_lantern`, `decor_flower_bed`, `decor_fence`,
+`decor_well`, `decor_pond`) with `file`, `w`, `h` and, for the lantern, `lit`
+and `lamp: [x, y]` (the middle of the glass, in on-screen pixels from the
+picture's top-left, where the glow is drawn). Sizes on screen today, as a
+guide: bench 58 × 36, lantern 26 × 64, flower bed 56 × 28, fence 62 × 32,
+well 68 × 74, pond 116 × 46. An entry named `decor_…` is never scattered
+automatically; the scenery's own bench, lantern, fence, well and pond (the
+"Props" batch above) can be the same pictures under their own keys.
+
 Still to make, in a sensible order: the Workshop's night image (the rest of
 batch A is in); the scenery props, calmer meadow and path texture above; batch E (building
 time is the next thing built); the Outskirts (C) and the Jeweller (B); the
