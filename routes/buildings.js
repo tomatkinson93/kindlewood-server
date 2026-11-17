@@ -84,7 +84,9 @@ router.get('/', requireAuth, async (req, res) => {
     const discount = await buildDiscount(settlement.id, done);
     // Building time (lib/construction.js): what the builders are working on.
     const queue = await CN.queue(settlement.id).catch(() => ({ on: false, sites: [] }));
-    const siteOf = id => queue.sites.find(x => x.type === id && x.kind !== 'house') || null;
+    const siteOf = id => queue.sites.find(x => x.type === id && x.kind !== 'house' && x.kind !== 'repair') || null;
+    const UK = require('../lib/upkeep');
+    const upkeepOn = await UK.enabled(settlement).catch(() => false);
     const homesGoing = queue.sites.filter(x => x.kind === 'house').length;
 
     // Determine what can be built / upgraded
@@ -135,13 +137,18 @@ router.get('/', requireAuth, async (req, res) => {
         nextEffect: canUpgrade ? def.effect(currentLevel + 1) : null,
         citizenSlots: def.citizenSlots(Math.max(1, currentLevel)),
         site: site ? { id: site.id, kind: site.kind, level: site.level, pct: site.pct, eta_minutes: site.eta_minutes } : null,
+        // Upkeep (lib/upkeep.js): how sound it is, and whether a repair is in the builders' queue.
+        health: existing && !def.isHousing ? Math.round(Number(existing.health)) : null,
+        state: existing && !def.isHousing && upkeepOn ? UK.stateOf(existing.health) : null,
+        repair: (queue.sites.find(x => x.kind === 'repair' && x.type === def.id && x.target_id == null) || null) && { id: queue.sites.find(x => x.kind === 'repair' && x.type === def.id && x.target_id == null).id },
         building: def.isHousing ? homesGoing : 0,
         work: queue.on && canUpgrade ? CN.workFor(def.isHousing ? 'house' : currentLevel > 0 ? 'upgrade' : 'building', def.id, currentLevel + 1, require('../lib/tuning').T('build_work')) : null,
       };
     });
 
     res.json({ ok: true, buildings: available, builtIds: Object.keys(builtMap),
-      construction: { on: queue.on, waiting: !!queue.waiting, builders: (queue.builders || []).length, queued: queue.sites.length, max: queue.max } });
+      construction: { on: queue.on, waiting: !!queue.waiting, builders: (queue.builders || []).length, queued: queue.sites.length, max: queue.max },
+      upkeep: { on: upkeepOn } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch buildings.' });

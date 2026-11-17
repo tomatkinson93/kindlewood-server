@@ -95,7 +95,8 @@ async function applyTick(settlement, species, workforce) {
   const hoursElapsed = (now - lastTick) / (1000 * 60 * 60);
   if (hoursElapsed < 0.005) return settlement;
 
-  const bRes = await query('SELECT type, level FROM buildings WHERE settlement_id=$1', [settlement.id]);
+  // (A broken building gives nothing: lib/upkeep.js.)
+  const bRes = await query('SELECT type, level FROM buildings WHERE settlement_id=$1 AND health > 0', [settlement.id]);
   // Outposts fill their own stores on their own clock; porters carry the
   // goods home (lib/outpost_store), so they are not in the town's rates.
   const wf = workforce || await loadWorkforce(settlement.id);
@@ -232,12 +233,14 @@ router.get('/settlement', requireAuth, async (req, res) => {
     settlement = (await query('SELECT * FROM settlements WHERE id=$1', [settlement.id])).rows[0] || settlement;
 
     const buildingsResult = await query(
-      'SELECT type, level FROM buildings WHERE settlement_id=$1',
+      'SELECT type, level, health FROM buildings WHERE settlement_id=$1',
       [settlement.id]
     );
+    for (const b of buildingsResult.rows) b.health = Math.round(Number(b.health));
     // Outposts fill their own stores (lib/outpost_store) — not in the town's rates.
     const season = getCurrentSeason();
-    const baseRates = calculateRates(buildingsResult.rows, workforce, user.species, [], { research: await research.doneSet(null, settlement.id) });
+    // A broken building (health 0) gives nothing until it is mended (lib/upkeep.js).
+    const baseRates = calculateRates(buildingsResult.rows.filter(b => b.health > 0), workforce, user.species, [], { research: await research.doneSet(null, settlement.id) });
     // …but each outpost's carter brings a share of its output home by itself:
     // show that in the town's rates (the goods arrive through outpost_store.sync).
     for (const [k, v] of Object.entries(await require('../lib/outpost_store').townTrickleRates(settlement))) baseRates[k] = (baseRates[k] || 0) + v;
@@ -371,7 +374,7 @@ router.get('/resource-breakdown', requireAuth, async (req, res) => {
     if (!settlement) return res.status(404).json({ error: 'No settlement.' });
 
     const buildingsResult = await query(
-      'SELECT id, type, level FROM buildings WHERE settlement_id=$1',
+      'SELECT id, type, level FROM buildings WHERE settlement_id=$1 AND health > 0',   // a broken building gives nothing
       [settlement.id]
     );
     const workforce = await loadWorkforce(settlement.id);
