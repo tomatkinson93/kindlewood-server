@@ -72,6 +72,7 @@ app.use('/api/diplomacy', diplomacyRoutes);
 const housingRoutes = require('./routes/housing');
 app.use('/api/housing', housingRoutes);
 app.use('/api/neighbourhoods', require('./routes/neighbourhoods'));
+app.use('/api/social', require('./routes/social'));
 const eventsRoutes = require('./routes/events');
 app.use('/api/events', eventsRoutes);
 const relationshipsRoutes = require('./routes/relationships');
