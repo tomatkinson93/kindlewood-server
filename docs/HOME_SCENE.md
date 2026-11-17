@@ -152,6 +152,16 @@ One **Build** button remains, top left. It replaces both Build and Edit:
 A town with nothing built yet starts with Build mode's plots showing, so a new
 player is never looking at an empty meadow with no way forward.
 
+**Where buildings stand is kept on the server** (2026-11-17), so the town looks
+the same on a phone and a desktop. It is one small map, plot to building
+(`settlements.scene_layout`; `GET` and `PUT /api/buildings/layout`). The browser
+keeps a working copy so the scene draws at once. The first time a device loads
+it: if the server has a map, the device takes it; if not, the device sends its
+own (so nobody's arrangement is lost by this change). After that each move is
+sent a moment later and other open devices follow on the live stream. The last
+change wins. A working copy left on a shared browser by another town is never
+sent as this town's.
+
 ### 2.4 Labels and bubbles
 
 - Name labels are **not** shown all the time. Hover or keyboard focus lifts the
@@ -1242,9 +1252,9 @@ Each step ships on its own and is shown to the owner.
     - **Fixed while here.** The build route was not in a transaction: two
       presses at once paid twice for one level. It now takes the settlement's
       row lock (two presses are two honest builds, each at its own price).
+    - **Building positions are on the server** (§2.3), done with this step.
     - **Still to do in step 13:** the Dev Tools panel's buttons for the admin
-      routes, building positions on the server, and everything the player
-      sees. Until then do not turn it on for a town: the screens do not yet
+      routes, and everything the player sees. Until then do not turn it on for a town: the screens do not yet
       show a site.
 13. **Construction in the scenes** (D.8): sites, working builders, the queue in the town card.
 14. **Mood** (§3.8).

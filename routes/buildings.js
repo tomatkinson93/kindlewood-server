@@ -325,6 +325,47 @@ router.get('/definitions', async (req, res) => {
   res.json({ ok: true, buildings: BUILDINGS });
 });
 
+// ── Where each building stands in the Home scene ───────────────────────────
+// { plot id: building id }, the same on every device (docs/HOME_SCENE.md
+// §2.3). The plots themselves are the scene's (the client knows them); the
+// server keeps the map and checks its shape.
+//   GET /api/buildings/layout          { layout } (null: never saved)
+//   PUT /api/buildings/layout { layout }
+const LAYOUT_MAX = 80;
+// A layout as it may be stored, or null when it is not one. Pure.
+function cleanLayout(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const keys = Object.keys(raw);
+  if (keys.length > LAYOUT_MAX) return null;
+  const out = {}, seen = new Set();
+  for (const k of keys) {
+    const v = raw[k];
+    if (!/^[a-z0-9_-]{1,40}$/i.test(k) || typeof v !== 'string') return null;
+    if (!(BUILDINGS[v] || v === 'neighbourhood') || seen.has(v)) return null;   // a known building, standing in one place
+    seen.add(v);
+    out[k] = v;
+  }
+  return out;
+}
+router.get('/layout', requireAuth, async (req, res) => {
+  try {
+    const s = (await query('SELECT scene_layout FROM settlements WHERE user_id=$1', [req.user.userId])).rows[0];
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+    res.json({ ok: true, layout: s.scene_layout || null });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Could not load the layout.' }); }
+});
+router.put('/layout', requireAuth, async (req, res) => {
+  try {
+    const layout = cleanLayout((req.body || {}).layout);
+    if (!layout) return res.status(400).json({ error: 'That is not a layout.' });
+    const s = (await query('UPDATE settlements SET scene_layout = $2 WHERE user_id = $1 RETURNING id', [req.user.userId, JSON.stringify(layout)])).rows[0];
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+    try { require('../lib/event_bus').publish(s.id, { type: 'layout' }); } catch (_) { /* no stream */ }
+    res.json({ ok: true, layout });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Could not save the layout.' }); }
+});
+
 module.exports = router;
 module.exports.buildDiscount = buildDiscount;
 module.exports.scaledCost = scaledCost;
+module.exports.cleanLayout = cleanLayout;
