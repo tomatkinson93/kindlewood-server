@@ -1285,7 +1285,23 @@ Each step ships on its own and is shown to the owner.
     - **Before turning it on for everyone:** move the server suites that
       build things onto `scripts/_build.js` (step 12), and play a new town
       through the first ten minutes with it on.
-14. **Mood** (§3.8).
+14. **Mood** (§3.8). **Built** (2026-11-17) in `js/villager-engine.js`:
+    emotes from a villager's own happiness (the town's when they have none),
+    with no bed, short food and a festival coming first; at most two at a
+    time, each villager at most once a minute, 2 to 3 seconds. Happy
+    villagers sometimes hop. Unhappy ones walk slower and stand about longer,
+    and an unhappy town chats less. With food short some stand by the
+    granary; someone with no bed stands near the Neighbourhood. Emoji stand
+    in until the emote sheet arrives. Not built: the two-villager dance (it
+    comes with the festival ring in step 16).
+    - **Found and fixed while here:** the Home scene read the town from
+      `window.gameData`, which was never set (the game keeps it in a
+      top-level `let`). So the scene always believed the town was a Camp with
+      no famine and no festival: the granary's "Famine!" sign, the green's
+      "Festival on!", the Neighbourhood's bed count and the City's Wonder site
+      never showed, and a dozen other modules read `undefined` the same way
+      (the town's species, the raid on its way). `js/main.js` now makes
+      `window.gameData` the same value.
 15. **Life events** (§3.9).
 16. **Town-wide events** (§3.10).
 17. **Upkeep** (Part E), server and scene, behind `upkeep.on`. Last on purpose: turn it on only after building time has been live long enough to know that players keep builders.
