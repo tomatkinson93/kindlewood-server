@@ -101,6 +101,7 @@ router.post('/assign', requireAuth, async (req, res) => {
     // Assign
     const hadHome = citizenRes.rows[0].house_id != null;
     await query('UPDATE citizens SET house_id=$1 WHERE id=$2', [house_id, citizen_id]);
+    require('../lib/guide').note(settlement.id, 'moved_home');   // the tour's "move someone in" (lib/guide.js)
 
     // The happiness of getting a home: only for someone who had none. (Moving
     // between two houses used to give it every time, without limit.)

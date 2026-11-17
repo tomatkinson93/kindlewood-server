@@ -78,6 +78,7 @@ app.use('/api/upkeep', require('./routes/upkeep'));
 app.use('/api/lost', require('./routes/lost'));
 app.use('/api/decor', require('./routes/decor'));
 app.use('/api/merchant', require('./routes/merchant'));
+app.use('/api/guide', require('./routes/guide'));
 const eventsRoutes = require('./routes/events');
 app.use('/api/events', eventsRoutes);
 const relationshipsRoutes = require('./routes/relationships');
