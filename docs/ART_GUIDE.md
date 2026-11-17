@@ -51,23 +51,29 @@ backdrop/mountains.webp       mountains, tiles sideways
 |---|---|---|---|
 | `tavern` | yes | yes | 331 × 320 |
 | `granary` | yes | not needed (a storehouse) | 346 × 342 |
-| `market` | yes | **missing** | 392 × 327 |
+| `market` | yes | yes | 392 × 327 |
 | `library` | yes | yes | 333 × 349 |
-| `smithy` | yes | **missing** | 388 × 264 |
+| `smithy` | yes | yes | 388 × 264 |
 | `workshop` | yes | **missing** | 392 × 240 |
-| `guild_hall` | yes | **missing** | 452 × 415 |
+| `guild_hall` | yes | yes | 452 × 415 |
 | `house_thatch` | yes | yes | 212 × 196 |
 | `house_timber` | yes | yes | 219 × 209 |
 | `house_stone` | yes | yes | 216 × 208 |
-| `house_burrow` | **missing** (the lit one stands in) | yes | 239 × 159 |
+| `house_burrow` | yes | yes | 239 × 159 |
+| `jeweller` | yes | yes | 286 × 305 |
+| `neighbourhood` (its door in Town) | yes | yes | 440 × 227 |
+| `village_green` (a prop, flat, no shadow) | yes | not needed | 320 × 159 |
 
 The four `house_*` images are the four starting house styles (`HOME_SCENE.md`
 C.4). Their keys replace the stand-in names there: `thatch`, `timber`, `stone`,
 `burrow`.
 
-Not yet drawn: `jeweller`, `farm`, `lumber_camp`, `fishing_post`, `forager_hut`,
-`mine`, `smelter`, `scout_post`, `watchtower`, `walls`, the Neighbourhood's
-"cluster of roofs" door in Town, the props (`village_green`, `wonder_site`,
+(Added 2026-11-17: the night images for the Market, Smithy and Guild Hall, the
+burrow by day, the Jeweller, the Neighbourhood's door and the village green.
+The Workshop's night image is still missing.)
+
+Not yet drawn: `farm`, `lumber_camp`, `fishing_post`, `forager_hut`,
+`mine`, `smelter`, `scout_post`, `watchtower`, `walls`, the props (`wonder_site`,
 `signpost`), scenery props (trees, rocks, bushes, flowers, a well, fence pieces,
 a pond), clouds, construction-site stages, and the other six species of
 villager. Keep the placeholders for these.
@@ -287,12 +293,23 @@ manifest above.
 3. Add the manifest entry: on-screen `w` and `h` are half the file's size.
 4. Place the door point and check a villager walks to it.
 
-A small script that does 2 and 3 from a folder of source images would be worth
-having: `scripts/pack_buildings.js`, beside `pack_sprites.js`. It needs to cope
-with three kinds of source, because the generator returns all three: real
-transparency, a white background, and a black background. For the last two,
-flood in from the edges so white flowers and dark outlines inside the drawing
-survive, then pull the edge in by one pixel.
+`scripts/pack_buildings.py` does 2 and 3 from a folder of source images
+(`python3 scripts/pack_buildings.py SRC_DIR`; it needs Pillow and numpy):
+- **Background.** The generator returns four kinds of source: real
+  transparency, a white fill, a black fill, and a baked-in grey and white
+  checkerboard (most night images arrive this way). For the last three the
+  script floods in from the edges, so white flowers and dark outlines inside
+  the drawing survive, then pulls the edge in by two pixels. Background seen
+  through a hole in a night image (the Guild Hall's belfry) is cleared wherever
+  the day image is clear.
+- **Size.** A night image is made the same size as its day image; both are
+  cropped tight first, so they line up (the script reports how well). A new
+  drawing takes its on-screen width from `SIZES` at the top of the script.
+- **Output.** Lossless WebP in `assets/images/scene_v2/buildings/`, named
+  `<key>.webp` and `<key>_lit.webp`. It prints the manifest's `w` and `h`; the
+  door point is still set by eye.
+- **Sources** are not kept in the repository (the host serves every file in
+  it); keep the PNGs you were sent.
 
 ## 6. Known rough edges
 
@@ -593,7 +610,7 @@ animate the existing mouse facing east, "hammering: raises a small wooden
 mallet above the head and strikes down in front, then lifts again", 6 frames,
 the same frame size as the walk. West is mirrored.
 
-Still to make, in a sensible order: batch A (the night images and the burrow by
-day); the scenery props, calmer meadow and path texture above; batch E (building
+Still to make, in a sensible order: the Workshop's night image (the rest of
+batch A is in); the scenery props, calmer meadow and path texture above; batch E (building
 time is the next thing built); the Outskirts (C) and the Jeweller (B); the
 scene props (D); clouds and smoke; then the other species.
