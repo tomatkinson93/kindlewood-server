@@ -1580,7 +1580,31 @@ its size.
       sprites are found by themselves; anything new that is drawn with CSS
       alone (a new kind of particle, say) must be added there or it will be
       missing from photos. Names are left out of pictures for now.
-25. **A visiting merchant** (F.13).
+25. **A visiting merchant** (F.13). **Built** (2026-11-17): `lib/merchant.js`,
+    `/api/merchant` and `migrations/0NN_merchant.sql` on the server (tests
+    `scripts/merchant_test.js`); `js/merchant.js` (`KWMerchant`; proofs
+    `verify/merchant_proofs.js`).
+    - **When:** one visit in every four game days, on a day seeded by the
+      town (never two days running, never a week without, and not like
+      clockwork). No table and no tick: the day is worked out. The visit
+      lasts that game day; the cart leaves at dawn.
+    - **What:** three or four trades seeded by the town and the day: a sale
+      (goods for wealth at 1.25 of the going rate), a purchase (goods for
+      wealth at 0.8 of it), a swap (goods for goods, 1.2 by worth), and half
+      the time a fourth. Food, timber, stone and iron only. Sizes grow with
+      the town's tier (about 30 wealth's worth in a Camp to 160 in a City).
+      Each can be made once; the only thing stored is which have been.
+    - **In the scene:** a cart stands in Town in the first lane that is
+      clear, with a badge counting the trades left. Clicking it opens them.
+      Drawn by code until its picture arrives (`ART_GUIDE.md` §8, batch Q).
+    - **News:** the first look of a visit puts one line in the town's news
+      ("A travelling merchant has set up a cart in town"). The crier's news
+      says the merchant is here, or how long until they come.
+    - **Dev Tools → Life:** "Call the merchant today" (and "Send them away"),
+      for testing; it sets `settlements.merchant_day`.
+    - **Why it cannot be farmed:** the gain on every trade is under half its
+      worth, each is once per visit, and the visit is once in four days; a
+      second device sees the same cart with the same trades taken.
 26. **Events in the scene** (F.12). Last: it builds on mood, life events and
     town events (steps 14 to 16).
 

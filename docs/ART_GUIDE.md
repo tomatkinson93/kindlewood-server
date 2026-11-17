@@ -776,6 +776,23 @@ art: pictures (PNG/WebP in an `<img>`), sprite sheets and drawings are picked
 up by the photo painter by themselves, so new buildings, props and villagers
 appear in saved pictures with no extra work.
 
+**Q. The merchant's cart** (step 25; `art/props/merchant_cart.png`; props
+opener). Stand-in: a cart drawn by code (a brown box on two wheels with a
+red-and-cream striped awning and a few coloured goods). One image.
+> A travelling merchant's market cart as one object, seen from the same high
+> three-quarter view as the attached cottage and about as wide as the
+> cottage's door is wide three times over: a sturdy wooden hand cart on two
+> big spoked wheels with a red-and-cream striped cloth awning on four thin
+> posts, its top loaded with goods for sale: a basket of apples, a round of
+> cheese, bolts of coloured cloth, a few clay jars, a hanging lantern
+> (unlit) and a small set of brass scales. Two wooden handles at one end
+> resting on a short prop. No merchant, no animal, nothing on the ground.
+
+Add it to the props manifest under the key `merchant_cart` with `file`, `w`
+and `h` (today's stand-in is 104 × 86 on screen). A merchant character to
+stand beside it would be a villager of another species (when those exist),
+not a new kind of art.
+
 Still to make, in a sensible order: the Workshop's night image (the rest of
 batch A is in); the scenery props, calmer meadow and path texture above; batch E (building
 time is the next thing built); the Outskirts (C) and the Jeweller (B); the
