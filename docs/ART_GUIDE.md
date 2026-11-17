@@ -793,7 +793,82 @@ and `h` (today's stand-in is 104 × 86 on screen). A merchant character to
 stand beside it would be a villager of another species (when those exist),
 not a new kind of art.
 
-Still to make, in a sensible order: the Workshop's night image (the rest of
-batch A is in); the scenery props, calmer meadow and path texture above; batch E (building
-time is the next thing built); the Outskirts (C) and the Jeweller (B); the
-scene props (D); clouds and smoke; then the other species.
+**R. Events in the scene** (step 26; `art/props/`; props opener). Stand-ins:
+flames, a bush with eyes and a small cart, all drawn by code. They are on
+screen for a few hours every few days, so they are the last props worth
+making. One chat:
+> Draw three separate small things in a row with wide empty gaps so each can
+> be cut out, seen from the same high three-quarter view as the attached
+> cottage: 1. a cluster of three cartoon flames for a roof fire, orange with
+> yellow hearts and a deep-brown outline, about as wide as the attached
+> cottage's door is wide twice over, with no smoke; 2. a round leafy green
+> bush about as wide as the attached cottage's door, with two wide white
+> cartoon eyes peeping out of the leaves and nothing else of the creature
+> showing; 3. a small two-wheeled wooden hand cart loaded with a few apples
+> and cabbages, tipped slightly forward as if rolling, about as wide as the
+> attached cottage's door is wide by one and a half. Nothing on the ground.
+
+Files: `event_fire.png`, `event_bush.png`, `event_cart.png`. These three are
+not wired to the manifest yet: when they exist, say so and the three drawings
+in `js/scene-events.js` are swapped for them (a few lines each).
+
+**S. Stand-ins from the earlier steps** (steps 13 to 17), listed here so the
+whole set is in one place.
+- **Emotes over heads** (step 14). Stand-in: emoji in a small bubble (a
+  smile, a note, a heart, a frown, a rain cloud, a bowl, a house with a
+  question mark, a lantern, three dots). They differ from phone to phone and
+  sit oddly beside pixel villagers. `assets/sprites/emotes.png`, a strip of
+  eleven 16 × 16 pixel-art icons (PixelLab, or any pixel editor; ChatGPT
+  does not hold a 16 px grid well):
+  > A sprite strip of eleven 16×16 pixel-art emote icons on a transparent
+  > background, in a row with no gaps, each with a 1-pixel deep-brown
+  > outline and at most four flat colours, in the same palette as the
+  > attached mouse sprite: 1 a smiling face, 2 a musical note, 3 a red
+  > heart, 4 a sad face, 5 a small rain cloud, 6 an empty bowl, 7 a tiny
+  > house with a question mark, 8 a paper lantern, 9 three dots, 10 a hand
+  > bell, 11 a wooden bucket.
+- **Dancing and cheering** (steps 13 and 16: a festival ring on the green,
+  builders cheering). Stand-in: the idle animation with a little hop.
+  PixelLab, as batch H (`art/villagers/mouse/cheer_s.gif`): the existing
+  mouse facing the viewer, "cheering: both arms thrown up, a small jump, and
+  down again", 6 frames, the same frame size as the walk. One direction is
+  enough.
+- **Worn and broken buildings** (step 17, upkeep). Stand-in: code dulls a
+  worn building's colours and lays faint cracks over it, and greys a broken
+  one with boards across it. It reads clearly. Proper pictures would be two
+  more images per building (`<key>_worn.png`, `<key>_broken.png`), about
+  fifty images in all, and are **not worth making** now. If one building
+  ever deserves it (the Tavern, say), attach that building and ask:
+  > The exact same image, pixel for pixel, but in poor repair: a few roof
+  > tiles missing, one cracked window pane, the paint faded and a plank
+  > hanging loose. Change nothing else: the same outline, size and position.
+  > Keep the fully transparent background.
+  and for broken: "…but derelict: holes in the roof, the door off one hinge
+  and boarded across, the windows dark and broken, weeds at the foot."
+- **A repair under way** (step 17). Stand-in: the building's site sign. The
+  construction-site art (batch E) covers it.
+
+### What to make, in order (updated 2026-11-17)
+
+Everything on this list has a stand-in in the game today, so the order is by
+how much each improves what the player sees.
+
+| # | Batch | What | Tool | Why now |
+|---|---|---|---|---|
+| 1 | A | The Workshop's night image | ChatGPT | finishes the lit set for Town |
+| 2 | N | The six decorations and the lit lantern | ChatGPT | the player chooses and pays for these |
+| 3 | E | Construction sites, small and large | ChatGPT | every building passes through them once building time is on |
+| 4 | C, B | The Outskirts buildings and the Jeweller | ChatGPT | the last placeholder huts |
+| 5 | — | Scenery props, the calmer meadow and the path texture ("Props" above) | ChatGPT | the ground is bare without them |
+| 6 | M | Lost things (one image of four) | ChatGPT | replaces emoji seen every day |
+| 7 | Q | The merchant's cart | ChatGPT | one image; seen one day in four |
+| 8 | S | The emote strip | PixelLab | replaces emoji seen all the time |
+| 9 | H, S | Work and cheer animations for the mouse | PixelLab | builders and festivals |
+| 10 | I | The four sound loops | freesound or a generator | the scene is silent without them |
+| 11 | D | Village green, Wonder site, Neighbourhood door | ChatGPT | props you can click |
+| 12 | F, G, L | Clouds, smoke, puddles | ChatGPT | weather reads well without them |
+| 13 | R, K, O | Fire, bush and small cart; butterflies and leaves; the bell animation | ChatGPT, PixelLab | rare or tiny |
+| 14 | — | The other six species of villager | PixelLab | the largest job; last |
+
+Not worth making (code does it well enough): snowy buildings, worn and broken
+buildings, rain and snow, sparks and sawdust.

@@ -1605,8 +1605,44 @@ its size.
     - **Why it cannot be farmed:** the gain on every trade is under half its
       worth, each is once per visit, and the visit is once in four days; a
       second device sees the same cart with the same trades taken.
-26. **Events in the scene** (F.12). Last: it builds on mood, life events and
-    town events (steps 14 to 16).
+26. **Events in the scene** (F.12). **Built** (2026-11-17):
+    `lib/moments_scene.js` on the server (tests
+    `scripts/scene_events_test.js`); `js/scene-events.js` (`KWSceneEvents`;
+    proofs `verify/scene_events_proofs.js`). They are ordinary moments: the
+    daily budget, the cap, a cooldown, a timer and a default, with
+    `subject.scene` telling the scene what to show. Each still has its card
+    and its dialogue.
+    - **A fire** (3 hours, at most every 6 days): flames and smoke on one
+      building (never the Guild Hall, never something already broken), with
+      an alarm to press. A bucket chain costs nothing and saves it three
+      times in four (the helpers +3 happiness); the fourth time a little
+      timber goes into mending it and, with upkeep on, the building loses 30
+      health (never broken outright). Pulling down the roof always works and
+      costs that timber. Default: the bucket chain. With the chain, four
+      free villagers line up from the player's well or pond (or the lane) to
+      the building while the fire dies down.
+    - **A lost child** (6 hours, at most every 5 days): the child hides in a
+      bush somewhere in Home (seeded, as a lost thing is) and is not in the
+      cast while lost. Clicking the bush is the good ending (the child +5,
+      the parents +3); that option is marked `scene: true` and is not offered
+      in the dialogue, which says roughly where to look. Or call a search
+      (always works; every grown villager −1), or wait (seven times in ten
+      they come home; else the child −8 and the parents −5). Default: the
+      search.
+    - **A runaway cart** (2 hours, at most every 4 days): a small cart rolls
+      a short way up and down a lane in Town. Clicking it (or "Stop it" in
+      the dialogue) saves its load (15 to 60 food by tier); one time in four
+      the catcher is bruised (−5 happiness), else pleased (+3). Let it go and
+      nobody is hurt but a little timber is lost. Default: let it go.
+    - **Review notes.** (1) F.12 said the server decides how long they last;
+      these are much shorter than other moments (which last a day), so the
+      default will often be what happens and the chronicle will say "Nobody
+      sent word, so…". The outcomes were kept mild for that reason. If that
+      reads as nagging in play, lengthen `*_HOURS` in `CONFIG`. (2) They
+      share the three-a-day budget with every other moment, so each one
+      shown is one family or year moment not shown; their weight is 2 (most
+      are 2 or 3). (3) Finding the child is a click the server cannot check,
+      as with a lost thing: the gain is small and once per moment.
 
 Steps 1 to 9 are the core. Steps 10 to 13 are the Neighbourhood and building
 time; step 12 is the only one that changes how the game plays, so it gets its own
