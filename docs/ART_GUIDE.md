@@ -679,7 +679,9 @@ much each would add:
   rounded shapes with a blue-grey underside. Code greys them itself on a wet
   day, so draw them white.
 - **Puddles** (`art/props/puddles.png`; props opener). Stand-in: pale blue
-  ovals.
+  ovals. Cut into three and add to the props manifest as `puddle_1`,
+  `puddle_2` and `puddle_3` (`file`, `w`, `h`; about 64 × 18 on screen); the
+  game uses whichever of the three are there.
   > Draw three separate rain puddles in a row with wide empty gaps, seen from
   > the same high three-quarter view as the attached cottage's doorstep, so
   > each is a flat, wide oval lying on the ground: one small, one medium, one
@@ -713,7 +715,10 @@ early: it is one small image.
 > the attached images. No grass and no ground under them.
 
 Cut into `lost_basket.png`, `lost_ribbon.png`, `lost_purse.png` and
-`lost_toy.png`. In the scene each is drawn about 28 px wide.
+`lost_toy.png`. They go in the props manifest under the keys `lost_basket`,
+`lost_ribbon`, `lost_purse` and `lost_toy` (`file`, `w`, `h`); the game uses
+each as soon as its entry is there, with no change to code. In the scene
+each is drawn at most 34 px wide.
 
 **N. Decorations the player places** (step 23; `art/props/`; props opener).
 Stand-in: simple drawings made by code (flat colours and a brown outline),
@@ -808,9 +813,10 @@ making. One chat:
 > and cabbages, tipped slightly forward as if rolling, about as wide as the
 > attached cottage's door is wide by one and a half. Nothing on the ground.
 
-Files: `event_fire.png`, `event_bush.png`, `event_cart.png`. These three are
-not wired to the manifest yet: when they exist, say so and the three drawings
-in `js/scene-events.js` are swapped for them (a few lines each).
+Files: `event_fire.png`, `event_bush.png`, `event_cart.png`. They go in the
+props manifest under the keys `event_fire`, `event_bush` and `event_cart`
+(`file`, `w`, `h`); the game uses each as soon as its entry is there. On
+screen today: flames 70 × 60, bush 54 × 40, cart 66 × 46.
 
 **S. Stand-ins from the earlier steps** (steps 13 to 17), listed here so the
 whole set is in one place.
@@ -847,6 +853,21 @@ whole set is in one place.
   and boarded across, the windows dark and broken, weeds at the foot."
 - **A repair under way** (step 17). Stand-in: the building's site sign. The
   construction-site art (batch E) covers it.
+
+### How a picture replaces a drawing
+
+For everything in Part F the rule is the same: the picture goes in
+`assets/images/scene_v2/props/` and gets an entry in that folder's
+`manifest.json` under the key given in its batch, with `file`, `w` and `h`
+(on-screen pixels). The code asks the manifest for that key
+(`KWGround.picture(key)`), and draws the picture when it is there and its own
+drawing when it is not. No code changes when art arrives. Keys in use:
+`decor_bench`, `decor_lantern` (with `lit` and `lamp`), `decor_flower_bed`,
+`decor_fence`, `decor_well`, `decor_pond`, `merchant_cart`, `lost_basket`,
+`lost_ribbon`, `lost_purse`, `lost_toy`, `event_fire`, `event_bush`,
+`event_cart`, `puddle_1` to `puddle_3`. An entry with no `kind` is never
+scattered as scenery. Clouds, smoke and the emote strip are not wired yet
+(they are low on the list below).
 
 ### What to make, in order (updated 2026-11-17)
 
