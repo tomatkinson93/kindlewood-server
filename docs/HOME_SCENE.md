@@ -1312,7 +1312,30 @@ Each step ships on its own and is shown to the owner.
     partnership plays with both or not at all. A death hushes happy emotes
     for four minutes. Scenes play in Town and the Neighbourhood (where the
     homes are), not the Outskirts. Emoji stand in for the bubble icons.
-16. **Town-wide events** (§3.10).
+16. **Town-wide events** (§3.10). **Built** (2026-11-17) in the engine.
+    - **Festival:** most of the cast sets off for the village green as it
+      starts and dances in a loose ring (turning, a note or a lantern, a hop);
+      a few still wander.
+    - **Raid:** in its last ten minutes, and while it is under way, everyone
+      runs for the nearest door and stays in; guards stand by the way out
+      with a shield. When it ends people come out, relieved or sad by how it
+      went. *Changed from the first design:* a raid still hours off changes
+      nothing. The warning lasts hours, and a town standing empty all that
+      time would be bleak and would hide every other part of the scene.
+    - **A tier gained:** everyone out cheers once.
+    - **Priority:** raid, then a death (its hush stops the festival ring),
+      then a festival. No life scenes, emotes or chats while raiders are near.
+    - Famine and night were built with mood and the working day.
+    - **Open question for the owner (found while testing, 2026-11-17).** §3.3
+      puts everyone with an Outskirts job in the Outskirts all day. In an
+      early town every job is an Outskirts job (forager, farmer, woodcutter),
+      so the Town scene, where the player lands, has only the idle, children
+      and elders. It looks full when Home first opens only because the first
+      cast is made before the Outskirts' buildings are known; the next time
+      the cast is looked at (a new moment, a job change) they all walk off to
+      the Outskirts together. Suggested rule: at their workplace during their
+      working hours, in Town the rest of the day. Not changed: it is the
+      owner's design.
 17. **Upkeep** (Part E), server and scene, behind `upkeep.on`. Last on purpose: turn it on only after building time has been live long enough to know that players keep builders.
 
 **Part F, the town alive** (agreed 2026-11-17). These do not depend on building
