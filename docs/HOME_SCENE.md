@@ -139,6 +139,17 @@ Props keep their single click; only built buildings have the menu.
 - **See through** is a chip beside Names that minimises, or restores, every
   building at once.
 
+### 2.2b Full screens, and coming back (2026-11-17)
+
+The Tavern, the Market and Fishing are full screens over the Land, so Home
+closes for them. Home keeps a return ticket (which part of town, and how far
+along it the player had panned) and opens again right there when the screen is
+closed: from a Town building back to Town, from an Outskirts building back to
+the Outskirts. Going somewhere else with the place bar tears the ticket up.
+Every other building opens over Home and never leaves it. The village green
+and the Wonder site open a radial menu like buildings do (no "Who's here":
+they have no inside); a signpost is still walked through at once.
+
 ### 2.3 Build mode
 
 One **Build** button remains, top left. It replaces both Build and Edit:
@@ -268,7 +279,21 @@ Since the polish pass (2026-11-16):
   spread across families; a child only together with one of its parents;
   at least one elder if the town has one.
 - Town shows people who work in town buildings, the unemployed, children and
-  elders. The Outskirts show people who work in outskirts buildings.
+  elders. The Outskirts show people who work in outskirts buildings **while
+  they are at work**. *(Changed 2026-11-17, agreed with the owner: before,
+  Outskirts workers were in the Outskirts all day, which left an early town,
+  where every job is an Outskirts job, with an almost empty Town.)*
+  - An Outskirts worker is in Town when off work, on their breaks (§3.5a),
+    and now and then on an errand to town: about one worker in four, for
+    twenty minutes at a time. In Town they do what everyone does: wander,
+    visit buildings, chat, sit.
+  - By day Town never has fewer than its minimum of grown-ups (4, or 3 on a
+    phone): more workers are sent on an errand until it has them.
+  - Who is on an errand is seeded by the villager and the twenty minutes, so
+    a reload shows the same town.
+  - They come and go by the signpost between Town and the Outskirts.
+  - Home's first cast is made again as soon as its buildings are drawn
+    (nobody's workplace is known before that).
 - The cast changes slowly: every minute or so one villager walks into a
   building and a different one walks out. Nobody pops in or out of thin air,
   except when Home first opens (start them spread out, some indoors).
@@ -1326,16 +1351,9 @@ Each step ships on its own and is shown to the owner.
     - **Priority:** raid, then a death (its hush stops the festival ring),
       then a festival. No life scenes, emotes or chats while raiders are near.
     - Famine and night were built with mood and the working day.
-    - **Open question for the owner (found while testing, 2026-11-17).** §3.3
-      puts everyone with an Outskirts job in the Outskirts all day. In an
-      early town every job is an Outskirts job (forager, farmer, woodcutter),
-      so the Town scene, where the player lands, has only the idle, children
-      and elders. It looks full when Home first opens only because the first
-      cast is made before the Outskirts' buildings are known; the next time
-      the cast is looked at (a new moment, a job change) they all walk off to
-      the Outskirts together. Suggested rule: at their workplace during their
-      working hours, in Town the rest of the day. Not changed: it is the
-      owner's design.
+    - **Answered by the owner (2026-11-17):** who is in Town changed, see
+      §3.3: Outskirts workers are in Town off work, on their breaks and on
+      errands.
 17. **Upkeep** (Part E), server and scene, behind `upkeep.on`. Last on purpose: turn it on only after building time has been live long enough to know that players keep builders.
 
 **Part F, the town alive** (agreed 2026-11-17). These do not depend on building
