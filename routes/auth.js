@@ -121,9 +121,47 @@ router.post('/login', loginLimit, async (req, res) => {
   }
 });
 
-router.post('/logout', (req, res) => {
+router.post('/logout', async (req, res) => {
   res.clearCookie('token', OLD_COOKIE_OPTIONS);
-  res.json({ ok: true });
+  // A test account is deleted when it signs out (lib/test_accounts.js).
+  let deleted = false;
+  try {
+    const h = req.headers.authorization || '';
+    const payload = h.startsWith('Bearer ') ? jwt.verify(h.slice(7), JWT_SECRET) : null;
+    if (payload && payload.userId) deleted = await require('../lib/test_accounts').purge(payload.userId);
+  } catch (e) { if (e && e.name !== 'JsonWebTokenError' && e.name !== 'TokenExpiredError') console.error('[test accounts] purge on logout:', e.message); }
+  res.json({ ok: true, ...(deleted ? { test_account_deleted: true } : {}) });
+});
+
+// ── Test accounts (lib/test_accounts.js) ────────────────────────────────────
+//   GET  /api/auth/test-account           { available }  (is the button offered)
+//   POST /api/auth/test-account           a fresh account, signed in: { username, token, test: true }
+//   POST /api/auth/test-account/switch { on }   admins: offer the button or not
+const testLimit = rateLimit({
+  name: 'test-account', windowMs: 60 * 60 * 1000, max: 30,
+  keys: req => [req.ip],
+  message: 'Too many test accounts from this address. Please try again later.',
+});
+router.get('/test-account', async (req, res) => {
+  res.json({ ok: true, available: await require('../lib/test_accounts').available() });
+});
+router.post('/test-account', testLimit, async (req, res) => {
+  const TA = require('../lib/test_accounts');
+  try {
+    const a = await TA.create();
+    const token = jwt.sign({ userId: a.userId, username: a.username, species: 'pending' }, JWT_SECRET, { expiresIn: '12h' });
+    res.json({ ok: true, username: a.username, species: 'pending', token, test: true });
+  } catch (e) {
+    if (e instanceof TA.TestAccountError) return res.status(e.status).json({ error: e.message });
+    console.error('[test accounts] create:', e);
+    res.status(500).json({ error: 'Could not make a test account.' });
+  }
+});
+router.post('/test-account/switch', requireAuth, require('../middleware/admin').requireAdmin, async (req, res) => {
+  try {
+    await require('../lib/tuning').setSwitch('test_login.on', !!(req.body || {}).on);
+    res.json({ ok: true, available: await require('../lib/test_accounts').available() });
+  } catch (e) { console.error('[test accounts] switch:', e); res.status(500).json({ error: 'Could not change it.' }); }
 });
 
 router.get('/me', (req, res) => {
