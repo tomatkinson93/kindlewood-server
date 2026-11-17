@@ -45,6 +45,11 @@ const STARTER_BUILDINGS = {
   Hares:   ['granary', 'barracks', 'farm'],
 };
 
+// A sign-in lasts a week; without "Keep me signed in" (a shared computer:
+// the client sends remember: false) twelve hours, and the client ends it
+// sooner (js/session.js in the frontend).
+const tokenLife = body => (body && body.remember === false ? '12h' : '7d');
+
 router.post('/register', registerLimit, async (req, res) => {
   const body = req.body || {};
   const { password, species } = body;
@@ -84,7 +89,7 @@ router.post('/register', registerLimit, async (req, res) => {
 
 
     // The client stores this token and sends it as a Bearer header.
-    const token = jwt.sign({ userId, username, species }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ userId, username, species }, JWT_SECRET, { expiresIn: tokenLife(body) });
     res.json({ ok: true, username, species, token });
   } catch (err) {
     console.error(err);
@@ -107,7 +112,7 @@ router.post('/login', loginLimit, async (req, res) => {
 
     const token = jwt.sign(
       { userId: user.id, username: user.username, species: user.species },
-      JWT_SECRET, { expiresIn: '7d' }
+      JWT_SECRET, { expiresIn: tokenLife(req.body) }
     );
     res.json({ ok: true, username: user.username, species: user.species, token });
   } catch (err) {

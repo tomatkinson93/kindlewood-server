@@ -372,6 +372,11 @@ Frozen until after 1.0:
 - **Map layers** (`js/kwmap-*.js`) must not fetch or use randomness, and must leave the canvas untouched when there's nothing to draw (the proofs check this).
 - **Dev Tools** is `#cheat-modal` in `index.html`; its buttons call `KW*.dev*()` helpers.
 - **Animation loops pause when nothing shows them.** The Home scene covers the map without hiding it, so the map's IntersectionObservers still see it on screen. The map (`kwmap-core.js`), tile actions, the season particles and the welcome screen's embers also stop under Home (`window._svIsOpen()`, and the `kw:home` event on open and close). A new rAF loop needs the same gate. In a per-frame loop, read sizes once at the top, before any style write (`villager-engine.js` `S.size`), and write only values that changed (`villagers.js` `paint`).
+- **Signing in and idling** (`js/session.js`, 2026-11-17).
+  - **Keep me signed in** is a tick box on the sign-in and register forms, ticked by default. Unticked (a shared computer), the sign-in ends when the browser closes, when the page has been closed for 15 minutes, or after 15 minutes without input; the server also gives a 12-hour token instead of a week's (`routes/auth.js` `tokenLife`).
+  - **Away.** After 15 minutes without input, every `fetch` to `/api/` answers at once with status 499 and `{ paused: true }`, so background polling stops. A hidden tab closes its live stream; a showing tab keeps it and keeps animating. Any input, or returning to the tab, resumes and re-reads the stores, moments and citizens. New polling code needs nothing special, but must cope with a non-OK answer quietly.
+  - **Two devices at once** are allowed. The server settles who was first (row locks); `moment_resolved` tells the other device. There is no single-session rule.
+  - Not built: "Forgot password?" on the sign-in form is still a dead link.
 - **Music and when it stays silent** (`js/music.js`, `HOME_SCENE.md` §3.11). Browsers block sound until the player has pressed or typed something on the page. The loading and Home music never show an error: they wait silently and start on the first press or key.
 
   | Case | What you hear |
