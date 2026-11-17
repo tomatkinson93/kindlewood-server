@@ -300,6 +300,8 @@ router.get('/settlement', requireAuth, async (req, res) => {
         tile_r: settlement.tile_r,
         isNewSettlement: (settlement.tile_q == null),
         needsResettlement: (settlement.world_version || 0) < 2,
+        // Building time with builders (lib/construction.js) is on for this town.
+        building_time: await require('../lib/construction').enabled(settlement).catch(() => false),
         resources: resourcesLib.resourcesOf(settlement),
         discovered: discovered,
         new_discoveries: newDiscoveries,

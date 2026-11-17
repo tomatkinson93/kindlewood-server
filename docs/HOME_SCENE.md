@@ -563,6 +563,13 @@ finished when the work is done.
   Stonemason keeps the cost discount; builders are about speed, not price.
 - With nothing to build, builders **look after the town** (Part E). They do not
   gather resources.
+- *As built (step 12):* a builder's pace is the same multiplier every job
+  uses (their strength and endurance, their perks, 60 % for an elder), so an
+  ordinary builder does about one unit a minute. They earn the ordinary hourly
+  job XP rather than XP per unit of work: it is the same amount over time, it
+  needs no second XP path, and it keeps paying when Part E gives idle builders
+  the town to look after. The job is offered only in a town where building
+  time is on, and is never picked at random (a moment, an aptitude) elsewhere.
 
 ### D.3 Work and time
 
@@ -578,6 +585,14 @@ finished when the work is done.
   to)` that tests can call. It runs while the player is offline. Work left over
   when one site finishes carries on into the next.
 - Compare-and-swap the write, as the other ticks do.
+- *As built (step 12):* `lib/construction.js`. The sizes are in its `CONFIG`
+  (each building has its own; the first four a camp builds are 3), and the
+  live multiplier is the tuning key `build_work` (Dev Tools, 0 to 5; a site is
+  never less than 1). The work is done under the settlement's row lock (the
+  way moments and the Neighbourhood do it), with `construction_at` marking how
+  far it has been done, so the worker, a second device and a page asking for
+  the queue never count the same minute twice. The worker looks at towns with
+  an open site every 15 seconds; reading the queue does the work up to now.
 
 ### D.4 The queue
 
@@ -585,6 +600,10 @@ finished when the work is done.
 - Cost is paid when the site is ordered. Cancel before any work is done: full
   refund. After: half.
 - All present builders work on the first site.
+- *As built (step 12):* one open site per building (an upgrade to level 3
+  cannot be queued behind the upgrade to level 2), any number of houses up to
+  the five. What a building needs must be standing: a site does not count.
+  Demolishing a building cancels its upgrade as a cancel would.
 
 ### D.5 No builders means no progress (and the guard rails for that)
 
@@ -1201,6 +1220,32 @@ Each step ships on its own and is shown to the owner.
       the build panel and took its taps, in Town too. They now step aside
       while Build mode is on.
 12. **Construction on the server** (D.2 to D.7): the builder class, sites, the queue, the tick, the guard rails, Dev Tools, and the test helper. Ship behind the tuning switch `construction.on` so it can be turned on for the owner's town first.
+    **Built** (2026-11-17), off everywhere. `lib/construction.js`, table
+    `construction_sites`, `/api/construction` (`GET /`, `POST /reorder`, `POST
+    /sites/:id/cancel`, and for admins `/admin/town`, `/admin/switch`,
+    `/admin/finish`, `/admin/builders`); tests in `scripts/construction_test.js`.
+    - **Two switches.** `settlements.construction_on` turns it on for one town
+      (the owner's first); the tuning switch `construction.on` turns it on for
+      every town. `GET /api/game/settlement` says `building_time`.
+    - **Ordering.** `POST /api/buildings/build` and the Neighbourhood's place
+      route pay, then start a site and answer `queued: true` with
+      `no_builder` (so the screen can say at once that nobody is a builder).
+      A house's site holds its plot. The old instant path is unchanged where
+      building time is off.
+    - **Guard rails.** No builder: nothing moves, one news line, and the
+      queue says `waiting`. The funnel has "A building was finished". "Make
+      someone a builder" is the first of the first steps for such a town.
+    - **Tests.** `scripts/_build.js` is the one way through: order as a
+      player, then finish the site with the Dev Tools function. Suites that
+      build things still pass because the switch is off; **before turning the
+      switch on for everyone, move those suites onto the helper.**
+    - **Fixed while here.** The build route was not in a transaction: two
+      presses at once paid twice for one level. It now takes the settlement's
+      row lock (two presses are two honest builds, each at its own price).
+    - **Still to do in step 13:** the Dev Tools panel's buttons for the admin
+      routes, building positions on the server, and everything the player
+      sees. Until then do not turn it on for a town: the screens do not yet
+      show a site.
 13. **Construction in the scenes** (D.8): sites, working builders, the queue in the town card.
 14. **Mood** (§3.8).
 15. **Life events** (§3.9).
