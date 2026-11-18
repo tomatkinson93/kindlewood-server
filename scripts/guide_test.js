@@ -84,7 +84,7 @@ async function main() {
     const cost = { timber: 0, stone: 0 };
     for (let i = 0; i < 3; i++) for (const [r, n] of Object.entries(await N.nextCost(t.id, i))) cost[r] += n;
     check(v.just.length === 1 && v.just[0].beat === 'homes_gift' && v.just[0].given.timber === cost.timber && v.just[0].given.stone === cost.stone, 'the elder gives timber and stone for exactly three homes', v.just);
-    check(v.beat.gift && v.beat.gift.timber === cost.timber && v.beat.gift.stone === cost.stone && (await G.view(t.user)).beat.gift.timber === cost.timber, 'the beat says what was received, and still does when asked again', v.beat.gift);
+    check(v.beat.gift_at === 1 && /my gift/.test(v.beat.say[1]) && v.beat.gift && v.beat.gift.timber === cost.timber && v.beat.gift.stone === cost.stone && (await G.view(t.user)).beat.gift.timber === cost.timber, 'the beat says what was received, and still does when asked again', v.beat.gift);
     const now = await stock(t.id);
     check(now.timber === 300 + cost.timber && now.stone === 150 + cost.stone && before.timber === now.timber, 'and it is in the stores');
     v = await G.check(t.user);
