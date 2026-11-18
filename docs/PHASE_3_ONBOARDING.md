@@ -62,8 +62,12 @@ rest of the script is shared until the owner has heard how they feel.
 
 ### 4.2 The look
 As in the owner's reference picture: the character stands large at the lower
-left (up to 62 % of the screen's height), and a dark translucent box across
-the bottom carries their name, one line at a time, and an arrow for "next".
+left (up to 62 % of the screen's height), and a box across the bottom
+carries their name, one line at a time, and an arrow for "next". The layout
+is the picture's; the colours are the game's (owner, 2026-11-18): the box is
+aged parchment with brown ink, the same paper as the Scribe's Ledger, in the
+game's two typefaces, and the chip that waits is the game's dark wood and
+gold.
 The game stays visible and usable behind it; only the box and the character
 take clicks. On a phone the character stands above a full-width box. This is
 `KWSay.tell` in `js/say.js`, so anything else that should speak this way
