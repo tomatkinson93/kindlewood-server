@@ -88,6 +88,9 @@ router.post('/send', requireAuth, async (req, res) => {
       if ((await require('../lib/clan_quests').busyCitizenIds([citizen.id])).length) {
         return res.status(400).json({ error: `${citizen.name} is on a clan quest.` });
       }
+      if ((await require('../lib/dungeons').busyCitizenIds([citizen.id])).length) {
+        return res.status(400).json({ error: `${citizen.name} is in a dungeon.` });
+      }
       citizenName = citizen.name;
       // Careers: effective scouting (perks, gear) and travel perks.
       const prof = (await require('../lib/careers').profilesFor(null, settlement.id)).get(citizen.id);

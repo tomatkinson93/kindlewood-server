@@ -562,6 +562,8 @@ router.post('/accept', requireAuth, async (req, res) => {
       return res.status(400).json({ error: `${citizen.name} is already in a party.` });
     if ((await require('../lib/clan_quests').busyCitizenIds([citizen.id])).length)
       return res.status(400).json({ error: `${citizen.name} is on a clan quest.` });
+    if ((await require('../lib/dungeons').busyCitizenIds([citizen.id])).length)
+      return res.status(400).json({ error: `${citizen.name} is in a dungeon.` });
     if ((await require('../lib/market').merchantCitizenIds([citizen.id])).length)
       return res.status(400).json({ error: `${citizen.name} is busy at work (Market, workshop or outpost).` });
 
@@ -693,6 +695,11 @@ router.post('/accept-party', requireAuth, async (req, res) => {
     if (clanBusy.length) {
       const busy = citizenRes.rows.find(c => c.id === clanBusy[0]);
       return res.status(400).json({ error: `${busy?.name || 'A citizen'} is on a clan quest.` });
+    }
+    const dungeonBusy = await require('../lib/dungeons').busyCitizenIds(citizen_ids);
+    if (dungeonBusy.length) {
+      const busy = citizenRes.rows.find(c => c.id === dungeonBusy[0]);
+      return res.status(400).json({ error: `${busy?.name || 'A citizen'} is in a dungeon.` });
     }
     const tradeBusy = await require('../lib/market').merchantCitizenIds(citizen_ids);
     if (tradeBusy.length) {

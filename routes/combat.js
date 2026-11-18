@@ -326,6 +326,8 @@ router.post('/engage/:questRunId', requireAuth, async (req, res) => {
 
     // Mark in_progress (idempotent — re-engage is fine).
     await query(`UPDATE settlement_quests SET combat_status='in_progress' WHERE id=$1`, [runId]);
+    // A fight in a dungeon room: looking at it means the run is not idle.
+    if (run.dungeon_run_id) await require('../lib/dungeons').touch(run.dungeon_run_id);
 
     // Resume path: persisted state already exists, hand it back. The action
     // log is the canonical history — we replay rather than trusting the
@@ -369,6 +371,7 @@ router.post('/engage/:questRunId', requireAuth, async (req, res) => {
       seed: parseInt(run.combat_seed) || 1,
       battle,
       actions,
+      dungeon_run_id: run.dungeon_run_id || null,   // the battle screen offers Flee and returns to the path
     });
   } catch (e) {
     console.error('combat engage error', e);
@@ -463,6 +466,7 @@ router.post('/action/:questRunId', requireAuth, async (req, res) => {
       `UPDATE settlement_quests SET combat_state=$1, combat_actions=$2 WHERE id=$3`,
       [JSON.stringify(battle), JSON.stringify(nextActions), runId]
     );
+    if (run.dungeon_run_id) await require('../lib/dungeons').touch(run.dungeon_run_id);
 
     res.json({
       ok: true,
@@ -488,13 +492,21 @@ router.post('/forfeit/:questRunId', requireAuth, async (req, res) => {
     if (!sett) return res.status(404).json({ error: 'No settlement.' });
 
     const r = await query(
-      'SELECT id, combat_status FROM settlement_quests WHERE id=$1 AND settlement_id=$2',
+      'SELECT id, combat_status, dungeon_run_id FROM settlement_quests WHERE id=$1 AND settlement_id=$2',
       [runId, sett.id]
     );
     const run = r.rows[0];
     if (!run) return res.status(404).json({ error: 'Quest not found.' });
     if (!['rolled', 'pending', 'in_progress'].includes(run.combat_status)) {
       return res.status(400).json({ error: 'No battle to forfeit on that quest.' });
+    }
+    // Forfeiting a fight in a dungeon room is fleeing the dungeon: the run
+    // ends and half its loot is dropped (lib/dungeons.js).
+    if (run.dungeon_run_id) {
+      try {
+        const out = await require('../lib/dungeons').flee(req.user.userId);
+        return res.json({ ok: true, quest_failed: true, dungeon: out });
+      } catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
     }
 
     await query(
@@ -602,6 +614,15 @@ router.post('/resolve', requireAuth, async (req, res) => {
       serverFallen = replay.battle.units
         .filter(u => u.side === 'player' && u.flags.downed)
         .map(u => ({ id: u.citizen_id, name: u.name }));
+
+      // A fight in a dungeon room belongs to its run (lib/dungeons.js): the
+      // loot is held until the run ends, wounds carry to the next room, and
+      // injuries are rolled once at the end. None of the quest handling
+      // below applies.
+      if (questRun.dungeon_run_id) {
+        const out = await require('../lib/dungeons').onBattleResolved({ questRun, battle: replay.battle, settlement: sett, log: serverLog });
+        return res.json(out);
+      }
 
       // ── Hybrid acceptance: if the client claims worse-than-or-equal,
       //    accept silently; if the client claims better, log a warning.
