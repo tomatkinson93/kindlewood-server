@@ -143,8 +143,9 @@ take clicks. On a phone the character stands above a full-width box. This is
   (`lib/guide.js` `LATER`).
 - **Progressive unlock.** A town founded with the tour sees Home, Families
   and The Land; The Road appears when it has a Tavern and The Clan when it
-  has a Guild Hall. Towns from before this, and towns that asked for a
-  replay, see all five.
+  has a Guild Hall. Towns from before this see all five, and still do if
+  they ask for the tour in Help; a town founded with the tour keeps its
+  places as they are through a replay.
 
 ## 7. Rules it keeps
 
