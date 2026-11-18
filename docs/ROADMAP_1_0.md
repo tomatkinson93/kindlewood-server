@@ -172,7 +172,7 @@ Multi-species towns stay out of 1.0. To keep that door open, species will be rea
 ### Dungeons (after the 1.0 phases; started early, 2026-11-18)
 **The design is `docs/DUNGEONS.md`; the content plan is `docs/DUNGEON_CONTENT.md`** (agreed 2026-11-15, written with Fable; numbers from `scripts/dungeon_balance_sim.js`, which plays whole runs on the real combat engine).
 
-**The owner brought dungeons forward on 2026-11-18**, ahead of Phases 5 and 6. Build steps 1 and 2 are built (`DUNGEONS.md` §12): a party of four plays a test dungeon end to end, started from Dev Tools, behind the switch `dungeons.on`. The freeze on new building types still holds, so the class buildings and class cards wait.
+**The owner brought dungeons forward on 2026-11-18**, ahead of Phases 5 and 6. Build steps 1 to 3 are built (`DUNGEONS.md` §12): a party of four plays a dungeon end to end, a hand-written test one or one from the generator, started from Dev Tools, behind the switch `dungeons.on`. The freeze on new building types still holds, so the class buildings and class cards wait.
 - **Parties:** exactly four citizens; skull colours from green (3 fights, about a 90% clear) to purple (9 fights).
 - **Classes:** the first four are Guard, Archer, Wizard and Hearthkeeper. Class cards are drawn only by citizens who can play them.
 - **New buildings:** the Hearth Shrine from Village tier and the Wizard's Tower from Town tier.

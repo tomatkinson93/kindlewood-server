@@ -15,6 +15,7 @@
 //    GET  /admin/status          the switch, the test dungeons, free adults
 //    POST /admin/switch          { on }
 //    POST /admin/test            { story, citizen_ids? }  start a test dungeon
+//    POST /admin/generate        { tier, terrain, seed?, citizen_ids? }  generate a dungeon and start it
 //    POST /admin/sweep           { idle_run? } end idle runs now (optionally age this town's run first)
 //    POST /admin/heal            the party back to full health, everyone up
 //    POST /admin/win             win the open fight outright (to walk a path quickly)
@@ -61,7 +62,12 @@ router.post('/run/flee', requireAuth, gate, async (req, res) => {
 router.get('/admin/status', requireAuth, requireAdmin, async (req, res) => {
   try {
     const s = (await query('SELECT * FROM settlements WHERE user_id=$1', [req.user.userId])).rows[0];
-    res.json({ ok: true, on: await TU.switchOn('dungeons.on'), stories: D.stories(), free_adults: s ? (await D.freeAdults(s)).length : 0, party: D.PARTY, ...(await D.current(req.user.userId)) });
+    const DEFS = require('../lib/dungeon_defs');
+    res.json({
+      ok: true, on: await TU.switchOn('dungeons.on'), stories: D.stories(), free_adults: s ? (await D.freeAdults(s)).length : 0, party: D.PARTY,
+      tiers: DEFS.TIER_ORDER.map(k => ({ key: k, name: DEFS.TIERS[k].name, skull: DEFS.TIERS[k].skull })), lands: require('../lib/dungeon_gen').LANDS,
+      ...(await D.current(req.user.userId)),
+    });
   } catch (e) { fail(res, e); }
 });
 router.post('/admin/switch', requireAuth, requireAdmin, async (req, res) => {
@@ -69,6 +75,9 @@ router.post('/admin/switch', requireAuth, requireAdmin, async (req, res) => {
 });
 router.post('/admin/test', requireAuth, requireAdmin, async (req, res) => {
   try { const b = req.body || {}; res.json({ ok: true, ...(await D.startTest(req.user.userId, b.story, b.citizen_ids)) }); } catch (e) { fail(res, e); }
+});
+router.post('/admin/generate', requireAuth, requireAdmin, async (req, res) => {
+  try { const b = req.body || {}; res.json({ ok: true, ...(await D.startGenerated(req.user.userId, { tier: b.tier, terrain: b.terrain, seed: b.seed }, b.citizen_ids)) }); } catch (e) { fail(res, e); }
 });
 router.post('/admin/sweep', requireAuth, requireAdmin, async (req, res) => {
   try {

@@ -1,6 +1,6 @@
 # Dungeons (design spec)
 
-Status: **design agreed 2026-11-15 (three rounds of answers), with a fourth round on 2026-11-18. Build steps 1 and 2 are built (§12); the rest is not.** Classes, cards, creatures, events, treasure and the numbers behind the difficulty table are in `docs/DUNGEON_CONTENT.md`. The roadmap placed dungeons after the remaining 1.0 phases; the owner brought them forward on 2026-11-18. They are started from Dev Tools only and stay behind the switch `dungeons.on` until they are ready for players. The same file is in both repos.
+Status: **design agreed 2026-11-15 (three rounds of answers), with a fourth round on 2026-11-18. Build steps 1 to 3 are built (§12); the rest is not.** Classes, cards, creatures, events, treasure and the numbers behind the difficulty table are in `docs/DUNGEON_CONTENT.md`. The roadmap placed dungeons after the remaining 1.0 phases; the owner brought them forward on 2026-11-18. They are started from Dev Tools only and stay behind the switch `dungeons.on` until they are ready for players. The same file is in both repos.
 
 ## 1. What a dungeon is
 
@@ -177,6 +177,13 @@ Event rooms reuse the moments definition shape (text, options, a `choose` functi
 - Each floor is a grid of 3 lanes by N steps. Each step has 1–3 rooms; each room links to 1–2 rooms in the next step.
 - Rules for the generator: the first room is always a fight; never two rests in a row; an elite never before step 3; at least one rest or event on every route to the boss; every route reaches the boss.
 - The whole floor is visible from the start. A party with a scout career sees room contents one floor ahead.
+- Added when the generator was built (2026-11-18), so that a generated floor is always worth walking:
+  - one fight at the door, then two or three rooms at every step, then one last room; links never cross;
+  - **never three fights in a row** on any route (so two fights and then the boss never happens either);
+  - **treasure is never the safe road:** no two treasure rooms in a row, and two at most on any route through a floor;
+  - no step whose rooms are all rests or all treasure (that is no choice; rooms that are all fights still differ in who is in them);
+  - an **elite is always a choice**: every room that leads to it leads somewhere else too;
+  - the fights on a route through a floor are within one of the skull's figure, and never fewer than two.
 
 ### 5.2 Blessings and curses
 
@@ -203,7 +210,9 @@ Each needs a hook where the battle is built, frozen on the battle so replays mat
 
 ### 5.3 Generation
 
-Everything comes from one seed stored on the dungeon. The same seed always gives the same floors, rooms, enemy groups and events, so every town sees the same dungeon, and the server can rebuild it at any time. Battle seeds are derived from the dungeon seed, the town and the room, so two towns do not get identical card draws.
+Everything comes from one seed stored on the dungeon. The same seed, skull and land always give the same floors, rooms, enemy groups and events, so every town sees the same dungeon. Battle seeds are derived from the dungeon seed, the town and the room, so two towns do not get identical card draws.
+
+As built: the generator's result is **stored on the dungeon row** (`dungeons.layout`) when the dungeon is made, and read from there. Rebuilding from the seed each time would let a later edit to the creature list change a dungeon that towns are already walking through.
 
 ## 6. Map dungeons
 
@@ -355,9 +364,9 @@ This is the larger part of the work.
 
 The design questions are answered (§2). What remains is content and balance, in `docs/DUNGEON_CONTENT.md` §9: the costs of the class buildings, and the wealth a fight gives (§12 below, "Found while building").
 
-## 12. Built so far (2026-11-18): steps 1 and 2
+## 12. Built so far (2026-11-18): steps 1 to 3
 
-A party of four can be sent into a hand-written test dungeon from Dev Tools and play it to any ending. Nothing is offered to players yet.
+A party of four can be sent from Dev Tools into a hand-written test dungeon, or into one the generator makes for a skull, a land and a seed, and play it to any ending. Nothing is offered to players yet.
 
 **What works**
 
@@ -366,6 +375,7 @@ A party of four can be sent into a hand-written test dungeon from Dev Tools and 
 - Run loot held until the end; the five endings of §3.2; the single injury roll with the two tables; the chronicle line on a clear and a defeat; a line in the town news for every ending.
 - A run left idle for 24 hours ends by itself (§3.3).
 - The party is busy from setting out until the run ends, between rooms too.
+- **The generator** (step 3): a dungeon from a seed for each of the five skulls and seven lands. Floors and steps per skull as in §4; room types that obey §5.1; elites as a choice; creature groups from the land's creatures, harder the deeper the room; treasure, an elite's find and the boss chest from the land's materials.
 
 **Where**
 
@@ -373,15 +383,17 @@ A party of four can be sent into a hand-written test dungeon from Dev Tools and 
 |---|---|
 | Tables `dungeons`, `dungeon_runs`; `settlement_quests.dungeon_run_id`; the quest row `dungeon_room` | server `migrations/0NN_dungeons.sql` |
 | Skulls, the two test dungeons, the path rules of §5.1 (`checkFloor`, `checkStory`) | server `lib/dungeon_defs.js` |
-| The run: start, move, choose, leave, flee, the battle hook, endings, the idle sweep | server `lib/dungeons.js` |
+| The generator: `generate`, and `check` (every rule a generated dungeon must obey) | server `lib/dungeon_gen.js` |
+| The run: start, move, choose, leave, flee, the battle hook, endings, the idle sweep; `createGenerated` (make and store a dungeon) | server `lib/dungeons.js` |
 | Routes, and the Dev Tools routes | server `routes/dungeons.js` |
 | Carried health (`mods.dungeon.start`, frozen on the battle), the no-fatal roll, the run's injuries | server `lib/combat_resolver.js` |
 | A dungeon fight's resolve, forfeit and idle clock | server `routes/combat.js` |
 | The path screen, and the Dev Tools tab | frontend `js/dungeons.js`, `css/dungeons.css` |
 | Flee and the dungeon wording on the battle screen | frontend `js/combat-ui.js` |
-| Tests | server `scripts/dungeons_test.js` (112 checks), frontend `verify/dungeons_proofs.js` (66) |
+| Aiming a card on the battle screen (rings, the arrow, the line that names the target) | frontend `js/combat-ui.js`, `js/card-hand-ui.js`, `css/card-hand-ui.css` |
+| Tests | server `scripts/dungeons_test.js` (154 checks), frontend `verify/dungeons_proofs.js` (70), `verify/aim_proofs.js` (22) |
 
-**How to try it:** Dev Tools → 💀 Dungeons → Start. The town needs four free adults. "Win the open fight" walks a path without playing every battle. The numbers (creature health and strength per skull, rest healing, the share kept when fleeing, idle hours) are under Dev Tools → 👪 Life → Dungeons.
+**How to try it:** Dev Tools → 💀 Dungeons → Start a test dungeon, or choose a skull and a land under "Generated dungeons" (give a seed to get the same dungeon again; the run's line shows its seed). The town needs four free adults. "Win the open fight" walks a path without playing every battle. The numbers (creature health and strength per skull, rest healing, the share kept when fleeing, idle hours) are under Dev Tools → 👪 Life → Dungeons.
 
 **How it differs from §9**
 
@@ -390,7 +402,19 @@ A party of four can be sent into a hand-written test dungeon from Dev Tools and 
 - A test dungeon is a fresh `dungeons` row each time, so it can be played again; "once per town" is enforced per row.
 - Statuses: `active`, `cleared`, `left`, `fled`, `defeat`, `timed_out`. `travelling` arrives with map dungeons.
 
-**Not built, in order:** the generator and tiers on real content (3), map dungeons and "who has cleared it" (4), the draft (5), events, keepsakes, kin and bonds, reviving in battle and the rest room's second choice (6), quest dungeons (7), content and tuning (8), supplies (9). The rule changes to weak, vulnerable and Focus are their own piece of work: they touch both engine copies and every kind of battle.
+**What the generator makes, per skull** (2,500 seeds in the tests, 35,000 while building: every one obeys the rules, with no fallback layout):
+
+| Skull | Floors | Steps a floor | Elites | Fights on a way through, boss included (the table in §4) |
+|---|---|---|---|---|
+| 🟢 green | 1 | 5 | 0 | 3 or 4 (3) |
+| 🟡 yellow | 1 | 7 | 0 | 3 to 5 (4) |
+| 🟠 orange | 2 | 5 or 6 | 1 | 5 to 8 (6) |
+| 🔴 red | 2 | 6 or 7 | 1 | 5 to 9 (7) |
+| 🟣 purple | 3 | 5 or 6 | 2, on different floors | 7 to 12 (9) |
+
+The spread is the player's choice of route: a floor's routes hold one fewer or one more fight than the figure, and taking an elite is one of them.
+
+**Not built, in order:** map dungeons and "who has cleared it" (4), the draft (5), events, keepsakes, kin and bonds, reviving in battle and the rest room's second choice (6), quest dungeons (7), content and tuning (8), supplies (9). The rule changes to weak, vulnerable and Focus are their own piece of work: they touch both engine copies and every kind of battle.
 
 **Found while building**
 
@@ -398,3 +422,7 @@ A party of four can be sent into a hand-written test dungeon from Dev Tools and 
 2. **On a database with no card rows, cards do nothing in a server battle.** The code-defined fallback cards read `this.scaling`, which the dispatcher in `card_combat.js` does not bind, so every play is a silent no-op. The live game has card rows, so it is not affected; a fresh install or test database is. The dungeon test seeds four card rows for itself. Fixing it means changing both engine copies.
 3. **The test bosses are stand-ins**: a boosted Hill Ogre and company, from today's eleven creatures. Three of those creatures still have no move list, so block does nothing against them (`DUNGEON_CONTENT.md` §2 row 3); the test dungeons avoid them.
 4. **A citizen who dies of old age during a paused run** would still be brought into its fights. The 24-hour idle limit keeps this rare; the run should drop them when map dungeons make runs longer.
+5. **Generated dungeons are thin until the content exists** (step 8). No land has an elite or a boss, so its strongest creature stands in with a boost (`standin: true` on the room); when a creature carries `rank: 'elite'` or `'boss'` the generator uses it as it is (there is a test for this, but `enemy_definitions` has no `rank` column yet: rank is read from health). Lands are short of creatures: forest has no heavy, hills has one heavy and no minion, so the same groups come round often.
+6. **Event rooms are treasure for now.** The generator has their place; until step 6 builds events it puts treasure there, which is why the route rules keep treasure scarce.
+7. **Some of the plan's reward items may not be in a database.** Leather armour, the hunter's dagger and cloak, dragonscale armour, beast horn and dragon tooth are defined in `item_seed.js`, which nothing loads by itself (`seedItemTemplates` has no caller). The generator prefers them and, where the database lacks one, gives the next on its list (an item the migrations create), so a dungeon never promises something that is missing when it is paid. Boss trophies, named gear, cards and titles come with their own steps.
+8. **The two-click cards.** On a desktop that reports itself as touch-only (`(hover: none)`: a touch screen, some browsers), every card needed a first click only to lift it, so "click a card, then a creature" did nothing. The hand now follows the pointer in use (`js/card-hand-ui.js` `_isTouchInput`). A card played on oneself still takes a second click by design; its prompt now says so.

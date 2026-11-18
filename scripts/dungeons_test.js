@@ -7,9 +7,9 @@
 'use strict';
 
 let passed = 0, failed = 0;
-function check(cond, msg) {
+function check(cond, msg, detail) {
   if (cond) { passed++; console.log('  ok  ', msg); }
-  else { failed++; console.log('  FAIL', msg); }
+  else { failed++; console.log('  FAIL', msg + (detail ? ' — ' + detail : '')); }
 }
 
 function part1() {
@@ -45,6 +45,78 @@ function part1() {
   const rested = D._rest({ party_ids: [1, 2, 3], party_state: { 1: { hp: 10, max: 60 }, 2: { hp: 0, max: 60, down: true, was_down: true }, 3: { hp: 55, max: 60 } } });
   check(rested[1].hp === 28 && rested[2].hp === 18 && rested[2].down === false && rested[2].was_down === true && rested[3].hp === 60,
     'a rest gives back 30% of full health, stands the downed up with it, and never goes over full');
+
+  // ── The generator (lib/dungeon_gen.js) ──────────────────────────────────
+  console.log('The generator');
+  const GEN = require('../lib/dungeon_gen');
+  const CREATURES = [
+    ['marsh_rat', 22, ['marsh', 'river', 'plains']], ['river_pike', 28, ['river', 'marsh']], ['wild_fox', 30, ['forest', 'plains', 'hills']],
+    ['rot_shaman', 30, ['ruins']], ['mountain_harpy', 32, ['mountain', 'hills']], ['night_wolf', 34, ['forest', 'plains', 'hills']],
+    ['bog_lurker', 34, ['marsh', 'river']], ['withered_husk', 38, ['ruins', 'marsh']], ['fungal_toad', 42, ['marsh', 'forest']],
+    ['thornback_boar', 44, ['forest', 'plains']], ['hill_ogre', 60, ['hills']], ['r4_dummy', 1, ['ruins']],
+  ].map(([id, max_hp, biomes]) => ({ id, name: id.replace(/_/g, ' '), max_hp, biomes }));
+  const gen = (seed, tier, terrain, creatures = CREATURES) => GEN.generate({ seed, tier, terrain, creatures });
+  let made = 0, broken = 0, safeLayouts = 0, shortElites = 0, firstBroken = '';
+  const SEEDS = 500;
+  for (const tier of DEFS.TIER_ORDER) for (let seed = 1; seed <= SEEDS; seed++) {
+    const d = gen(seed, tier, GEN.LANDS[seed % GEN.LANDS.length]);
+    const p = GEN.check(d);
+    made++; if (p.length) { broken++; firstBroken = firstBroken || `${tier} seed ${seed}: ${p[0]}`; }
+    if (d.notes.safe_layout) safeLayouts++;
+    if (d.notes.elites !== GEN.SHAPES[tier].elites) shortElites++;
+  }
+  check(made === SEEDS * 5 && broken === 0, `${made} generated dungeons, every one obeys the path and route rules`, firstBroken);
+  check(safeLayouts === 0, 'none of them needed the last-resort layout');
+  check(shortElites === 0, 'and every one has its elites: none at green and yellow, one at orange and red, two at purple (on different floors)');
+  check(JSON.stringify(gen(41, 'orange', 'hills')) === JSON.stringify(gen(41, 'orange', 'hills')), 'the same seed, skull and land always give the same dungeon');
+  check(JSON.stringify(gen(41, 'orange', 'hills').floors) !== JSON.stringify(gen(42, 'orange', 'hills').floors), 'another seed gives another dungeon');
+  const shapeOf = (tier) => { const out = { floors: new Set(), steps: new Set(), elites: new Set() }; for (let s = 1; s <= 120; s++) { const d = gen(s, tier, 'forest'); out.floors.add(d.floors.length); d.floors.forEach(f => out.steps.add(Math.max(...f.rooms.map(r => r.step)))); out.elites.add(d.floors.flatMap(f => f.rooms).filter(r => r.type === 'elite').length); } return { floors: [...out.floors].sort().join(), steps: [...out.steps].sort().join(), elites: Math.max(...out.elites) }; };
+  const sg = shapeOf('green'), sy = shapeOf('yellow'), so = shapeOf('orange'), sr = shapeOf('red'), sp = shapeOf('purple');
+  check(sg.floors === '1' && sg.steps === '5' && sy.floors === '1' && sy.steps === '7', 'green: one floor of 5 steps; yellow: one floor of 7');
+  check(so.floors === '2' && so.steps === '5,6' && sr.floors === '2' && sr.steps === '6,7' && sp.floors === '3' && sp.steps === '5,6', 'orange: two floors of 5 or 6 steps; red: two of 6 or 7; purple: three of 5 or 6');
+  // Fights on every way through a whole dungeon, the boss and any elite included.
+  const routeFights = (d) => { let lo = 0, hi = 0; for (const f of d.floors) { const by = new Map(f.rooms.map(r => [r.id, r])); let a = 99, b = 0; const walk = (r, n) => { n += DEFS.FIGHTS.includes(r.type) ? 1 : 0; if (!r.next.length) { a = Math.min(a, n); b = Math.max(b, n); return; } r.next.forEach(x => walk(by.get(x), n)); }; f.rooms.filter(r => r.step === 1).forEach(r => walk(r, 0)); lo += a; hi += b; } return [lo, hi]; };
+  const span = (tier) => { let lo = 99, hi = 0; for (let s = 1; s <= 200; s++) { const [a, b] = routeFights(gen(s, tier, 'marsh')); lo = Math.min(lo, a); hi = Math.max(hi, b); } return lo + '-' + hi; };
+  check(span('green') === '3-4' && span('yellow') === '3-5', 'fights on a way through, boss included: 3 or 4 at green (the table says 3), 3 to 5 at yellow (4)', span('green') + ' ' + span('yellow'));
+  check(span('orange') === '5-8' && span('red') === '5-9' && span('purple') === '7-12', '5 to 8 at orange (the table says 6), 5 to 9 at red (7), 7 to 12 at purple (9): one fewer or one more on each floor, by the route taken', [span('orange'), span('red'), span('purple')].join(' '));
+  const forest = gen(9, 'yellow', 'forest'), keys = forest.floors.flatMap(f => f.rooms).flatMap(r => r.enemies || []);
+  check(keys.length > 0 && keys.every(k => ['wild_fox', 'night_wolf', 'fungal_toad', 'thornback_boar'].includes(k)), 'a forest dungeon holds forest creatures only');
+  check(!JSON.stringify(gen(3, 'green', 'ruins')).includes('r4_dummy'), 'a creature with next to no health is never used');
+  const every = (fn) => { for (const tier of DEFS.TIER_ORDER) for (let s = 1; s <= 60; s++) { const d = gen(s, tier, GEN.LANDS[s % 7]); for (const f of d.floors) if (!fn(f, d)) return false; } return true; };
+  check(every(f => f.rooms.filter(r => r.step === 1).length === 1 && f.rooms.filter(r => r.step === 1)[0].type === 'fight'), 'every floor opens on one fight at the door');
+  check(every(f => { const end = Math.max(...f.rooms.map(r => r.step)); return f.rooms.filter(r => r.step > 1 && r.step < end).every(r => true) && [...new Set(f.rooms.map(r => r.step))].filter(s => s > 1 && s < end).every(s => { const n = f.rooms.filter(r => r.step === s).length; return n === 2 || n === 3; }); }), 'every step between the door and the last room offers two or three rooms');
+  check(every(f => f.rooms.filter(r => r.type === 'elite').every(e => e.step >= 3 && f.rooms.filter(p => p.next.includes(e.id)).every(p => p.next.length === 2))), 'an elite is never before step 3 and always has another way on beside it');
+  check(every(f => f.rooms.filter(r => r.type === 'elite').every(e => e.loot && e.loot.items.length === 1 && e.loot.wealth > 0)), 'an elite always has its better find');
+  check(every(f => f.rooms.filter(r => r.type === 'treasure').every(t => t.loot.wealth >= 5 && t.loot.items.length === 1 && t.loot.items[0].qty >= 1)), 'every treasure room holds wealth and a material of the land');
+  check(every(f => f.rooms.filter(r => DEFS.FIGHTS.includes(r.type)).every(r => r.enemies.length >= 2 && r.enemies.length <= 4)), 'every fight has two to four creatures');
+  check(every((f, d) => f.rooms.filter(r => r.type === 'boss').every(r => r.enemies.length === 3 && r.standin === true && r.boost.hp === 1) && !!d.clear.wealth), 'the boss has two companions and stands at the back; today a boosted stand-in, with a chest behind it');
+  check(gen(5, 'green', 'forest').clear.items[0].item === 'rare_sap' && gen(5, 'purple', 'ruins').clear.items.some(i => i.item === 'ancient_blueprint' && i.qty === 2) && gen(5, 'orange', 'hills').clear.items.some(i => i.item === 'hunters_dagger')
+    && gen(5, 'purple', 'hills').clear.items.some(i => i.item === 'dragon_tooth') && gen(5, 'purple', 'hills').clear.items.some(i => i.item === 'dragonscale_armour'),
+    "the boss chest by skull and land, as the content plan has it: sap in a green forest, blueprints in purple ruins, a hunter's dagger at orange, dragon teeth and dragonscale in purple hills");
+  const few = GEN.generate({ seed: 5, tier: 'purple', terrain: 'hills', creatures: CREATURES, items: GEN.SURE_KEYS });
+  check(few.clear.items.some(i => i.item === 'cut_gem') && few.clear.items.some(i => i.item === 'steel_sword') && !JSON.stringify(few).includes('dragon') && !JSON.stringify(few).includes('beast_horn'),
+    'where a database lacks one of those items, the next on the list is given instead: nothing promised is missing');
+  check(GEN.LOOT_KEYS.every(k => GEN.WORTH[k] != null || Object.values(GEN.GEAR).flat().includes(k)) && Object.values(GEN.MATERIALS).every(m => Object.values(m).every(l => GEN.SURE_KEYS.includes(l[l.length - 1]))) && Object.values(GEN.GEAR).every(l => GEN.SURE_KEYS.includes(l[l.length - 1])),
+    'every preference list ends in an item every database has');
+  // With real elites and bosses in the creature list, no stand-ins and no boost.
+  const real = CREATURES.concat([{ id: 'stoat_captain', name: 'Stoat Captain', max_hp: 110, biomes: ['forest'], rank: 'elite' }, { id: 'old_greyfeather', name: 'Old Greyfeather', max_hp: 240, biomes: ['forest'], rank: 'boss' }]);
+  const withReal = gen(77, 'orange', 'forest', real), rr = withReal.floors.flatMap(f => f.rooms);
+  check(rr.find(r => r.type === 'boss').enemies[2] === 'old_greyfeather' && !rr.find(r => r.type === 'boss').boost && withReal.boss === 'an Old Greyfeather grown great and old' && rr.filter(r => r.type === 'elite').every(r => r.enemies.includes('stoat_captain') && !r.boost) && withReal.notes.standins === 0,
+    'once a land has a real elite and boss, they are used as they are');
+  check(!rr.filter(r => r.type === 'fight').some(r => r.enemies.includes('old_greyfeather') || r.enemies.includes('stoat_captain')), 'and never turn up in an ordinary fight');
+  check(GEN.linkings(1, 2).length === 1 && GEN.linkings(1, 3).length === 0 && GEN.linkings(3, 1).length === 1 && GEN.linkings(2, 3).length > 0
+    && [GEN.linkings(2, 3), GEN.linkings(3, 3), GEN.linkings(3, 2), GEN.linkings(2, 2)].every(sets => sets.every(l => l.every(([i, j], n) => n === 0 || (i >= l[n - 1][0] && j >= l[n - 1][1])) && [0, 1, 2].every(i => l.filter(x => x[0] === i).length <= 2))),
+    'links between steps never cross, reach every room, and no room leads to more than two');
+  const row = (id, step, lane, type, next) => ({ id, step, lane, type, next, enemies: ['x'] });
+  const three = { rooms: [row('a', 1, 2, 'fight', ['b']), row('b', 2, 2, 'fight', ['c1', 'c2']), row('c1', 3, 1, 'fight', ['d']), row('c2', 3, 3, 'rest', ['d']), row('d', 4, 2, 'rest', ['boss']), row('boss', 5, 2, 'boss', [])] };
+  check(GEN.checkRoutes(three, { fights: 2 }).some(p => /three fights in a row/.test(p)), 'three fights in a row on a route are refused');
+  const forced = { rooms: [row('a', 1, 2, 'fight', ['b']), row('b', 2, 2, 'fight', ['c']), row('c', 3, 2, 'fight', ['boss']), row('boss', 4, 2, 'boss', [])] };
+  check(GEN.checkRoutes(forced, { fights: 2 }).some(p => /no way round a third/.test(p)), 'two fights with nothing but a third ahead are refused');
+  const lone = { rooms: [row('a', 1, 2, 'fight', ['b']), row('b', 2, 2, 'rest', ['c']), row('c', 3, 2, 'elite', ['boss']), row('boss', 4, 2, 'boss', [])] };
+  check(GEN.checkRoutes(lone, { fights: 2 }).some(p => /an elite must be a choice/.test(p)), 'an elite with no other way on beside it is refused');
+  const rich = { rooms: [row('a', 1, 2, 'fight', ['b']), row('b', 2, 2, 'treasure', ['c']), row('c', 3, 2, 'treasure', ['d']), row('d', 4, 2, 'rest', ['e']), row('e', 5, 2, 'fight', ['f']), row('f', 6, 2, 'treasure', ['boss']), row('boss', 7, 2, 'boss', [])] };
+  check(GEN.checkRoutes(rich, { fights: 2 }).some(p => /two treasure rooms in a row/.test(p)) && GEN.checkRoutes(rich, { fights: 2 }).some(p => /3 treasure rooms/.test(p)), 'treasure is never the safe road: two in a row, or three on one route, are refused');
+  check(GEN.rankOf({ max_hp: 22 }) === 'minion' && GEN.rankOf({ max_hp: 44 }) === 'regular' && GEN.rankOf({ max_hp: 60 }) === 'heavy' && GEN.rankOf({ max_hp: 22, rank: 'boss' }) === 'boss', "a creature's rank is its own when it has one, else read from its health");
 
   const CR = require('../lib/combat_resolver');
   let fatal = 0, fatalSafe = 0;
@@ -378,6 +450,61 @@ async function part2() {
     r = await api(o, 'POST', '/api/dungeons/run/leave');
     check(r.body.run.status === 'left', 'and they can still turn back from there');
 
+    // ── Generated dungeons ──────────────────────────────────────────────
+    console.log('Generated dungeons');
+    const GEN = require('../lib/dungeon_gen');
+    const haveItems = (await q('SELECT item_key FROM item_templates WHERE item_key = ANY($1::text[])', [GEN.LOOT_KEYS])).rows.map(x => x.item_key);
+    check(GEN.SURE_KEYS.every(k => haveItems.includes(k)), 'the fall-back items every generated dungeon can rely on exist', GEN.SURE_KEYS.filter(k => !haveItems.includes(k)).join());
+    const worth = (await q('SELECT item_key, sell_value FROM item_templates WHERE item_key = ANY($1::text[])', [Object.keys(GEN.WORTH)])).rows;
+    check(worth.length >= GEN.SURE_KEYS.length - 3 && worth.every(x => Number(x.sell_value) === GEN.WORTH[x.item_key]), "and the generator's idea of what each is worth matches its sale value");
+    for (const [tier, land] of [['purple', 'hills'], ['orange', 'mountain'], ['yellow', 'plains']]) {
+      const row = await D.createGenerated({ tier, terrain: land, seed: 31, source: 'test' });
+      const keys = [...new Set(row.layout.floors.flatMap(f => f.rooms).flatMap(r => (r.loot && r.loot.items) || []).concat(row.layout.clear.items).map(i => i.item))];
+      const found = (await q('SELECT item_key FROM item_templates WHERE item_key = ANY($1::text[])', [keys])).rows.length;
+      if (found !== keys.length) check(false, `a stored ${tier} ${land} dungeon names an item this database lacks`, keys.join());
+      await q('DELETE FROM dungeons WHERE id=$1', [row.id]);
+    }
+    check(true, 'a dungeon as stored only ever names items this database has');
+    e = await D.createGenerated({ tier: 'pink', terrain: 'forest' }).catch(x => x);
+    check(e.status === 400, 'an unknown skull is refused');
+    e = await D.createGenerated({ tier: 'green', terrain: 'moon' }).catch(x => x);
+    check(e.status === 400, 'an unknown land is refused');
+    // Walk a run to its end: win every fight outright, rest where offered, go deeper at a landing, take the first way on.
+    async function walk(p) {
+      let view = (await api(p, 'GET', '/api/dungeons/run')).body.run, rooms = 0;
+      for (let guard = 0; view && view.status === 'active' && guard < 80; guard++) {
+        if (view.pending && view.pending.kind === 'battle') view = (await D.adminWin(p.id)).run;
+        else if (view.pending) view = (await api(p, 'POST', '/api/dungeons/run/choose', { option: view.pending.options[0].key === 'rest' ? 'rest' : 'deeper' })).body.run;
+        else { view = (await api(p, 'POST', '/api/dungeons/run/move', { room: view.moves[0] })).body.run; rooms++; }
+      }
+      return { view, rooms };
+    }
+    for (const [tier, land] of [['green', 'forest'], ['yellow', 'marsh'], ['orange', 'hills'], ['red', 'ruins'], ['purple', 'river']]) {
+      const gp = await player('Gen' + tier);
+      v = (await D.startGenerated(gp.id, { tier, terrain: land, seed: 1234 }, gp.cits.slice(0, 4))).run;
+      const made = GEN.generate({ seed: 1234, tier, terrain: land, creatures: (await q('SELECT id, name, max_hp, biomes, archived FROM enemy_definitions WHERE archived = FALSE')).rows });
+      const sameRooms = JSON.stringify(v.rooms.map(x => [x.id, x.type, x.next, x.enemies.map(en => en.key)])) === JSON.stringify(made.floors[0].rooms.map(x => [x.id, x.type, x.next, x.enemies || []]));
+      const gw = await wealth(gp);
+      const done = await walk(gp);
+      const steps = made.floors.reduce((n, f) => n + Math.max(...f.rooms.map(x => x.step)), 0);
+      check(v.dungeon.generated && v.dungeon.tier === tier && v.dungeon.name === made.name && v.dungeon.seed === 1234 && sameRooms && done.view.status === 'cleared' && done.rooms === steps
+        && done.view.result.kept.wealth >= made.clear.wealth && (await wealth(gp)) === gw + done.view.result.kept.wealth,
+        `a generated ${tier} ${land} dungeon (${made.name}, ${made.floors.length} floor${made.floors.length === 1 ? '' : 's'}) plays from the door to the boss chest`, `${done.view.status}, ${done.rooms} of ${steps} rooms`);
+    }
+    // One dungeon, two towns: the same rooms, different card draws.
+    const shared = await D.createGenerated({ tier: 'green', terrain: 'forest', seed: 99, source: 'test' });
+    const t1 = await player('Twin'), t2 = await player('Twin');
+    const v1 = (await D.start(t1.id, shared.id, t1.cits.slice(0, 4))).run, v2 = (await D.start(t2.id, shared.id, t2.cits.slice(0, 4))).run;
+    check(JSON.stringify(v1.rooms) === JSON.stringify(v2.rooms) && v1.dungeon.name === v2.dungeon.name, 'two towns in the same dungeon see the same rooms');
+    const b1 = (await api(t1, 'POST', '/api/dungeons/run/move', { room: v1.moves[0] })).body.quest_run_id, b2 = (await api(t2, 'POST', '/api/dungeons/run/move', { room: v2.moves[0] })).body.quest_run_id;
+    const seeds = (await q('SELECT combat_seed, combat_encounter FROM settlement_quests WHERE id = ANY($1::int[]) ORDER BY id', [[b1, b2]])).rows;
+    check(JSON.stringify(seeds[0].combat_encounter) === JSON.stringify(seeds[1].combat_encounter) && String(seeds[0].combat_seed) !== String(seeds[1].combat_seed), 'and meet the same creatures there, with their own card draws');
+    await q(`UPDATE enemy_definitions SET archived = TRUE WHERE id = 'night_wolf'`);
+    const again = (await api(t1, 'GET', '/api/dungeons/run')).body.run;
+    await q(`UPDATE enemy_definitions SET archived = FALSE WHERE id = 'night_wolf'`);
+    check(JSON.stringify(again.rooms.map(x => [x.id, x.type, x.enemies.map(en => en.key)])) === JSON.stringify(v1.rooms.map(x => [x.id, x.type, x.enemies.map(en => en.key)])), 'a later change to the creature list does not change a dungeon already made');
+    await api(t1, 'POST', '/api/dungeons/run/flee'); await api(t2, 'POST', '/api/dungeons/run/flee');
+
     // ── The switch ──────────────────────────────────────────────────────
     console.log('The switch');
     const g = await player('Gate');
@@ -387,7 +514,7 @@ async function part2() {
     check(r.status === 403, 'with the switch off, a player cannot play a run');
     r = await api(g, 'GET', '/api/dungeons/run');
     check(r.status === 200 && r.body.on === false && r.body.run === null, 'and is told dungeons are not open');
-    for (const p of [['GET', '/api/dungeons/admin/status'], ['POST', '/api/dungeons/admin/test'], ['POST', '/api/dungeons/admin/switch'], ['POST', '/api/dungeons/admin/sweep'], ['POST', '/api/dungeons/admin/heal'], ['POST', '/api/dungeons/admin/win']]) {
+    for (const p of [['GET', '/api/dungeons/admin/status'], ['POST', '/api/dungeons/admin/test'], ['POST', '/api/dungeons/admin/generate'], ['POST', '/api/dungeons/admin/switch'], ['POST', '/api/dungeons/admin/sweep'], ['POST', '/api/dungeons/admin/heal'], ['POST', '/api/dungeons/admin/win']]) {
       r = await api(g, p[0], p[1], p[0] === 'POST' ? {} : undefined);
       if (r.status !== 403) check(false, `${p[1]} should be admins only, got ${r.status}`);
     }
