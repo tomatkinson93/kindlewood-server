@@ -84,6 +84,13 @@ take clicks. On a phone the character stands above a full-width box. This is
   thing to press is ringed (`js/guide.js`: named targets, most exact first:
   a villager, then their menu's button once the menu is open; Build, then a
   plot once Build mode is on, then the choice once the panel is open).
+- **The ring only goes on what can be pressed.** Of several matches it takes
+  the first that is on the screen and not behind something else (a villager
+  standing behind a building is passed over). When none is on the screen it
+  leads the view there, scrolling only what a player could scroll, and rings
+  nothing less exact meanwhile. Villagers hide while building, so Done is
+  ringed first for anything that needs one. Behind an open window, the
+  window's close button is ringed. In a villager's page, the job chooser is.
 - **It never blocks.** Everything in the game works whatever the beat.
 - **Skip** at any time. Skipping gives every gift the tour would have given
   (the homes' timber and stone, the errand's reward, the parting gift), and
@@ -159,7 +166,8 @@ take clicks. On a phone the character stands above a full-width box. This is
 3. **The look and the guide** (built 2026-11-17): `KWSay.tell`,
    `js/guide.js`, `css/guide.css`.
 4. **Pointing** (built 2026-11-17, with step 3).
-5. **The first session** on a brand-new town, desktop and phone.
+5. **The first session** on a brand-new town, desktop and phone (followed
+   in a browser by pressing only what is ringed: 2026-11-18).
 6. **What next?** replaces the first-steps card; Help gets Replay.
 7. **Progressive unlock** (the server and the place bar are built; the
    one-off lines for Tavern and Guild Hall come with step 8).
