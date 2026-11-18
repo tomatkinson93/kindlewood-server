@@ -1,6 +1,6 @@
 # Dungeons (design spec)
 
-Status: **design agreed 2026-11-15 (three rounds of answers), not built.** Classes, cards, creatures, events, treasure and the numbers behind the difficulty table are in `docs/DUNGEON_CONTENT.md`. To be built **after the remaining 1.0 phases** (`docs/ROADMAP_1_0.md` §5). The same file is in both repos.
+Status: **design agreed 2026-11-15 (three rounds of answers), with a fourth round on 2026-11-18. Build steps 1 and 2 are built (§12); the rest is not.** Classes, cards, creatures, events, treasure and the numbers behind the difficulty table are in `docs/DUNGEON_CONTENT.md`. The roadmap placed dungeons after the remaining 1.0 phases; the owner brought them forward on 2026-11-18. They are started from Dev Tools only and stay behind the switch `dungeons.on` until they are ready for players. The same file is in both repos.
 
 ## 1. What a dungeon is
 
@@ -50,6 +50,20 @@ Rules that hold everywhere:
 | Revive strength | A healed citizen stands up with whatever was healed. No cap. |
 | Supplies in battle | As in For the King: an item can be used in a fight, and it takes that citizen's turn. Between rooms items are free to use. |
 
+Decided 2026-11-18 (the fourth round, when building started):
+
+| Question | Decision |
+|---|---|
+| Leaving a fight | **A Flee button in every dungeon fight.** Fleeing ends the run: the party keeps half the run loot (half the wealth and half of each kind of item, rounded down) and everyone who went down rolls for injury. A run left idle in the middle of a fight ends the same way. This closes a hole: as first written, an idle run kept all its loot even mid-battle, so a losing fight could be waited out. |
+| A citizen who went down and was stood back up | Rolls the injury table **without its fatal band** (crippling at worst). A citizen still down when the run ends, and everyone on a defeat, rolls the full table. Reviving then protects the family, not only the fight. This replaced "the full table for anyone who went down". |
+| Event options that test a citizen | **The right citizen is certain.** With the career, trait or stat in the party, the option always works. Without it the option is still offered where it makes sense, with its chance shown as a percentage. No hidden rolls. |
+| How the skull's scaling is stored | **One creature list, a multiplier per skull.** Creatures keep one set of stats; each skull's health and strength are tunable numbers (Dev Tools → Life → Dungeons), frozen on each battle. |
+| Weak, vulnerable and Focus | **Changed everywhere, for new battles**: weak and vulnerable wear off by 1 each turn, and Focus can be played once per battle. Battles already stored replay under the old rules. Not built yet (§12). |
+| Keepsakes | **Yes** (§5.2a): six to eight run-only items that change how a fight starts. Built with events (step 6). |
+| Kin and bonds in a fight | **Yes** (§3.1a). Built with events (step 6). |
+| Who has cleared it | **Yes**: the dungeon card shows how many towns have cleared a map dungeon and which was first (§6.3). Built with map dungeons (step 4). |
+| The draft and the walk | The party sets out and the player drafts while it walks, so the walk is never dead time. |
+
 ## 3. A run, step by step
 
 1. **Find it.** A map dungeon shows only on a tile the player has scouted (`fog_of_war`), and must be within range of the town (as camps are: `ASSAULT_RANGE` in `lib/raid_camps.js`).
@@ -71,7 +85,11 @@ Today every battle starts each unit at full health. In a dungeon:
 - A battle is lost when no party member is standing.
 - Block, buffs, debuffs and the deck's piles reset between battles. Only health and "down" carry.
 - A healed citizen comes back with exactly the health that was healed: no cap.
-- A citizen who went down at any point in the run rolls for injury at the end, even if they were healed back up.
+- A citizen who went down at any point in the run rolls for injury at the end, even if they were healed back up. Stood back up, they roll **without the fatal band**; still down at the end, they roll the full table (decided 2026-11-18).
+
+### 3.1a Kin and bonds in a fight (decided 2026-11-18; built with step 6)
+
+When a citizen goes down, each partner, relative or friend of theirs in the party gets **one extra energy on their next turn**, once per battle. Sending a family together is stronger and risks more of the family at once. It needs an engine change (both copies of the dual-engine files), frozen on the battle like `revive`.
 
 Today a heal does nothing to a downed unit (`card_combat.heal` returns early), and Mend is a starter card, so every town will be able to do this. Reviving is switched on for dungeon battles only, so quest and raid battles play and replay exactly as before.
 
@@ -81,10 +99,13 @@ Today a heal does nothing to a downed unit (`card_combat.heal` returns early), a
 |---|---|---|---|
 | **Cleared** (boss beaten) | all kept, plus the clear reward | only citizens who went down roll | done |
 | **Turned back** (between rooms) | all kept (agreed) | only citizens who went down roll | done: no second attempt |
+| **Fled** (left a fight) | **half kept**: half the wealth and half of each kind of item, rounded down | only citizens who went down roll | done |
 | **Defeat** (a battle lost) | **all lost** | **every citizen in the party rolls** | done |
-| **Timed out** (left paused too long, §3.3) | as turned back | as turned back | done |
+| **Timed out** (left paused too long, §3.3) | between rooms as turned back; in a fight as fled | as turned back | done |
 
-Injuries are rolled **once, when the run ends**, never per room. The injury table (`lib/injury_table.js`) has a 2% fatal band, so a defeat with four citizens has about an 8% chance of a death. That is the intended weight of losing, and it applies at every skull colour (agreed).
+Injuries are rolled **once, when the run ends**, never per room. The injury table (`lib/injury_table.js`) has a 2% fatal band, so a defeat with four citizens has about an 8% chance of a death. That is the intended weight of losing, and it applies at every skull colour (agreed). A citizen who went down and was stood back up before the end rolls without that band; one still down rolls with it.
+
+Combat skill: a won battle has a 50% chance to raise each survivor's combat skill by one. In a dungeon this is rolled **once per run**, on a kept ending, for citizens still standing, so a nine-fight dungeon does not raise it nine times. Career experience comes from every won fight, as now.
 
 ### 3.3 Leaving and coming back
 
@@ -95,7 +116,7 @@ A run that is left alone ends by itself as **turned back**:
 - 24 hours after the last action, or
 - when the map dungeon's 72 hours run out (a run in progress gets 2 extra hours to finish).
 
-If the party is in the middle of a battle when this happens, the battle is forfeited as a retreat, not a defeat. Being away never costs more than the rest of the dungeon.
+If the party is in the middle of a battle when this happens, the battle is forfeited as a retreat, not a defeat, **at the price of fleeing** (half the loot; decided 2026-11-18). Being away never costs more than a deliberate flee, and waiting gains nothing over fleeing. Opening the fight again or playing a card counts as an action.
 
 ### 3.4 Drafting the deck
 
@@ -165,6 +186,21 @@ An event can leave a mark that lasts until the run ends:
 - They are listed on the path screen beside the run loot, so the player always knows what the party carries.
 - Typical shape: a shrine offers a blessing at a price in health, or a curse comes with a better find.
 
+### 5.2a Keepsakes (decided 2026-11-18; built with step 6)
+
+A blessing changes a number; a keepsake changes how a fight starts, so the player notices it in play. Six to eight to begin with, found at elites and in treasure rooms, kept until the run ends and listed with the run loot. First proposals:
+
+| Keepsake | At the start of every fight |
+|---|---|
+| Hearthstone | Everyone has 5 block. |
+| Lucky Acorn | The first citizen to act draws one extra card. |
+| Whetted Edge | Every creature starts with vulnerable 1. |
+| Owl Feather | Every creature starts with weak 1. |
+| Travelling Kettle | Each rest gives back 10% more. |
+| Old Banner | The first card played costs no energy. |
+
+Each needs a hook where the battle is built, frozen on the battle so replays match.
+
 ### 5.3 Generation
 
 Everything comes from one seed stored on the dungeon. The same seed always gives the same floors, rooms, enemy groups and events, so every town sees the same dungeon, and the server can rebuild it at any time. Battle seeds are derived from the dungeon seed, the town and the room, so two towns do not get identical card draws.
@@ -186,7 +222,9 @@ Everything comes from one seed stored on the dungeon. The same seed always gives
 
 ### 6.3 Once per town
 
-A row per town per dungeon records the attempt. Any ending (cleared, turned back, defeat, timed out) uses it up. The dungeon card then shows the result and stays greyed out until the dungeon leaves.
+A row per town per dungeon records the attempt. Any ending (cleared, turned back, fled, defeat, timed out) uses it up. The dungeon card then shows the result and stays greyed out until the dungeon leaves.
+
+Every town sees the same layout, so the card also shows **how many towns have cleared it and which was first** (decided 2026-11-18). The first clear is a chronicle line.
 
 ### 6.4 Time of day
 
@@ -265,6 +303,7 @@ A battle inside a run is still a `settlement_quests` row with a `combat_encounte
 - `POST /api/dungeons/run/move` `{ room }`: enter a connected room. Returns a battle run id, an event, a rest choice or loot.
 - `POST /api/dungeons/run/choose` `{ option }`: answer an event or rest.
 - `POST /api/dungeons/run/leave`: turn back.
+- `POST /api/dungeons/run/flee`: leave a fight; the run ends and half the loot is kept. `POST /api/combat/forfeit/:id` on a dungeon fight does the same.
 
 The server holds all state. The client never decides what is in a room.
 
@@ -309,6 +348,53 @@ This is the larger part of the work.
 - An idle run times out as turned back, including mid-battle.
 - The spawner never uses an occupied tile and gives every town an easy dungeon in range.
 
+- Fleeing: half the wealth and half of each kind of item is kept; only citizens who went down roll. A run idle in a fight ends the same way and never as a defeat.
+- A citizen stood back up rolls without the fatal band; one still down, and everyone on a defeat, rolls the full table.
+
 ## 11. Open questions
 
-The design questions are answered (§2). What remains is about content and balance and is listed in `docs/DUNGEON_CONTENT.md` §9: how the creature scaling is stored, whether weak, vulnerable and Focus change, and the costs of the class buildings.
+The design questions are answered (§2). What remains is content and balance, in `docs/DUNGEON_CONTENT.md` §9: the costs of the class buildings, and the wealth a fight gives (§12 below, "Found while building").
+
+## 12. Built so far (2026-11-18): steps 1 and 2
+
+A party of four can be sent into a hand-written test dungeon from Dev Tools and play it to any ending. Nothing is offered to players yet.
+
+**What works**
+
+- Wounds and who is down carry from fight to fight; a downed citizen is brought along and takes no turn.
+- The path: a floor of rooms by step and lane, the ways on, fights, elites, treasure, rests, a landing between floors, the boss.
+- Run loot held until the end; the five endings of §3.2; the single injury roll with the two tables; the chronicle line on a clear and a defeat; a line in the town news for every ending.
+- A run left idle for 24 hours ends by itself (§3.3).
+- The party is busy from setting out until the run ends, between rooms too.
+
+**Where**
+
+| Piece | File |
+|---|---|
+| Tables `dungeons`, `dungeon_runs`; `settlement_quests.dungeon_run_id`; the quest row `dungeon_room` | server `migrations/0NN_dungeons.sql` |
+| Skulls, the two test dungeons, the path rules of §5.1 (`checkFloor`, `checkStory`) | server `lib/dungeon_defs.js` |
+| The run: start, move, choose, leave, flee, the battle hook, endings, the idle sweep | server `lib/dungeons.js` |
+| Routes, and the Dev Tools routes | server `routes/dungeons.js` |
+| Carried health (`mods.dungeon.start`, frozen on the battle), the no-fatal roll, the run's injuries | server `lib/combat_resolver.js` |
+| A dungeon fight's resolve, forfeit and idle clock | server `routes/combat.js` |
+| The path screen, and the Dev Tools tab | frontend `js/dungeons.js`, `css/dungeons.css` |
+| Flee and the dungeon wording on the battle screen | frontend `js/combat-ui.js` |
+| Tests | server `scripts/dungeons_test.js` (112 checks), frontend `verify/dungeons_proofs.js` (66) |
+
+**How to try it:** Dev Tools → 💀 Dungeons → Start. The town needs four free adults. "Win the open fight" walks a path without playing every battle. The numbers (creature health and strength per skull, rest healing, the share kept when fleeing, idle hours) are under Dev Tools → 👪 Life → Dungeons.
+
+**How it differs from §9**
+
+- Carried health needed **no engine change**: the resolver builds the party's units with their starting health before the battle is created, so `lib/combat_engine.js` and its frontend copy are untouched. Reviving in battle (step 6) will change both.
+- The two test dungeons are written in the story format of §7 (a list of floors of rooms), so story dungeons already have their shape. A landing is a room, the last of every floor but the deepest.
+- A test dungeon is a fresh `dungeons` row each time, so it can be played again; "once per town" is enforced per row.
+- Statuses: `active`, `cleared`, `left`, `fled`, `defeat`, `timed_out`. `travelling` arrives with map dungeons.
+
+**Not built, in order:** the generator and tiers on real content (3), map dungeons and "who has cleared it" (4), the draft (5), events, keepsakes, kin and bonds, reviving in battle and the rest room's second choice (6), quest dungeons (7), content and tuning (8), supplies (9). The rule changes to weak, vulnerable and Focus are their own piece of work: they touch both engine copies and every kind of battle.
+
+**Found while building**
+
+1. **The wealth from fights does not match the budget.** §8 says a fight gives its usual wealth (8 × reward weight) times the skull's health modifier; `DUNGEON_CONTENT.md` §8.2 budgets 40 wealth from all of a green dungeon's fights. Three green fights at the usual rate give about 200. The build uses a share per skull (`TIERS[…].wealth` in `lib/dungeon_defs.js`: 0.2 at green to 0.4 at purple), which lands near the budget. To be settled in tuning.
+2. **On a database with no card rows, cards do nothing in a server battle.** The code-defined fallback cards read `this.scaling`, which the dispatcher in `card_combat.js` does not bind, so every play is a silent no-op. The live game has card rows, so it is not affected; a fresh install or test database is. The dungeon test seeds four card rows for itself. Fixing it means changing both engine copies.
+3. **The test bosses are stand-ins**: a boosted Hill Ogre and company, from today's eleven creatures. Three of those creatures still have no move list, so block does nothing against them (`DUNGEON_CONTENT.md` §2 row 3); the test dungeons avoid them.
+4. **A citizen who dies of old age during a paused run** would still be brought into its fights. The 24-hour idle limit keeps this rare; the run should drop them when map dungeons make runs longer.

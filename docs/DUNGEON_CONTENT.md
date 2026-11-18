@@ -1,6 +1,6 @@
 # Dungeon content plan: classes, cards, creatures, floors, events and treasure
 
-Status: **proposal, 2026-11-15, with the owner's decisions of the same day (§9). Nothing here is built.** Companion to `docs/DUNGEONS.md`. The same file is in both repos.
+Status: **proposal, 2026-11-15, with the owner's decisions of the same day and of 2026-11-18 (§9). None of the content here is built;** the run itself is (`docs/DUNGEONS.md` §12). Companion to `docs/DUNGEONS.md`. The same file is in both repos.
 
 Every number below was produced by `scripts/dungeon_balance_sim.js` (server repo), which plays whole dungeon runs on the real combat engine with a card-playing bot. The proposed cards and creatures live as data in that script. To reproduce:
 
@@ -462,8 +462,15 @@ Decided 2026-11-15:
 | A new town and the party of four | A town always has four free adults, so green dungeons need no tier gate. |
 | Green | About a 90% clear rate for a player making sensible choices, not a certain win (§6.2: 93–95% in simulation). |
 
+Decided 2026-11-18:
+
+| Question | Decision |
+|---|---|
+| The scaling | **One creature list, a multiplier per skull**, tunable from Dev Tools (Life → Dungeons) and frozen on each battle. Built. |
+| Weak, vulnerable and Focus (§2, rows 5 and 6) | **Change them everywhere, for new battles.** Battles already stored replay under the old rules (a rules version stamped on the battle, as `party_v` is). Not built yet. |
+| Event checks (§7) | **The right citizen is certain.** Without them the option is still offered where it makes sense, with its chance shown. No hidden rolls. |
+
 Still open:
 
-1. **The scaling.** +50% to +175% health is a large correction. The alternative is to leave quest creatures as they are and give every dungeon creature its own, higher base stats. The result is the same; the question is which is easier to tune from the enemy editor.
-2. **Weak, vulnerable and Focus** (§2, rows 5 and 6): change them now, or watch how players use them first?
-3. **Costs** of the Wizard's Tower and Hearth Shrine and of their research lines.
+1. **Costs** of the Wizard's Tower and Hearth Shrine and of their research lines.
+2. **Wealth from fights** (§8.2): the rule "usual wealth times the skull's health modifier" gives about five times the budget at green. The build uses a share per skull instead (`docs/DUNGEONS.md` §12).
