@@ -539,6 +539,9 @@ router.post('/arrive', requireAuth, async (req, res) => {
       await require('../lib/life').recount(settlement.id);
     }
 
+    // A new town: the guide's tour begins (lib/guide.js). Never in the way of arriving.
+    await require('../lib/guide').start(req.user.userId).catch(e => console.error('[guide] start:', e.message));
+
     res.json({ ok: true, q: tile.q, r: tile.r, terrain: tile.terrain, species, zone });
   } catch (err) {
     console.error(err);

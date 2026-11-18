@@ -854,6 +854,60 @@ whole set is in one place.
 - **A repair under way** (step 17). Stand-in: the building's site sign. The
   construction-site art (batch E) covers it.
 
+**T. The six elders** (Phase 3, the guide; `assets/images/guide/`). Stand-in:
+the species' emoji in a round badge. These are the characters who greet every
+new player, shown large at the lower left with the dialogue box across the
+bottom (the layout of the owner's reference picture), so they are worth doing
+well. One chat per elder; attach the unlit Library for the palette and
+outline, and say the character is to stand beside it in the same world.
+
+What the game needs from each picture:
+- **File:** `mice.webp`, `badgers.webp`, `otters.webp`, `moles.webp`,
+  `foxes.webp`, `hares.webp` (PNG is fine to hand over; it is converted).
+- **Framing:** from the waist up, cut off straight at the bottom edge (the
+  bottom of the picture sits on the bottom of the screen). The figure fills
+  the height. Body turned a little to the viewer's right, towards where the
+  dialogue box is, face to the viewer.
+- **Size:** portrait, about 900 wide by 1100 tall or larger. On screen it is
+  up to 62 % of the screen's height and at most 520 px wide.
+- **Background:** fully transparent. No ground, no shadow, no frame, no text.
+- **Keep the lower right quiet:** the dialogue box overlaps that corner, so no
+  hands, props or detail that matters there.
+
+The opener, for every elder:
+> A character illustration for a cosy storybook village game: an elderly
+> anthropomorphic [ANIMAL], shown from the waist up, body turned slightly to
+> the right and face to the viewer, standing as if greeting a newcomer. Warm,
+> friendly and full of character. Clean deep-brown outlines and flat
+> cel-style shading in 3 to 4 tones per colour, in the same warm palette and
+> chunky rounded style as the attached building, but drawn with more care in
+> the face and hands, as a main character would be. Simple woodland-village
+> clothes in muted natural colours. Portrait format, the figure filling the
+> height and cut off straight at the waist by the bottom edge. Output a PNG
+> with a fully transparent background (real alpha, not white or checkerboard):
+> no ground, no shadow, no frame, no text.
+
+Then one of these:
+
+| File | [ANIMAL] and the rest of the description |
+|---|---|
+| `mice.webp` | "mouse. Old Bramble: small and round, grey whiskers, tiny round spectacles on the end of the nose, a knitted shawl, and an abacus or a little notebook tucked under one arm. Fussy and kind; one finger raised as if counting." |
+| `badgers.webp` | "badger. Gran Holt: broad and sturdy, a striped face gone grey at the muzzle, rolled sleeves, a leather work apron, arms folded. Blunt and proud; the smallest of smiles." |
+| `otters.webp` | "otter. Uncle Reedy: sleek and cheerful, a floppy fishing hat with a hook stuck in it, a patched waistcoat, a net over one shoulder. Mid-laugh, glancing off to one side as if he has just seen the river." |
+| `moles.webp` | "mole. Deepa Loam: small, velvety and calm, half-closed eyes behind thick round glasses, a miner's cloth cap, big soft digging hands folded in front. Patient and still." |
+| `foxes.webp` | "fox. Aunt Russet: lean and elegant, a white-tipped ear, a fine embroidered scarf, a single earring, one eyebrow raised. Sly and amused, holding a coin between two fingers (held high, near the shoulder)." |
+| `hares.webp` | "hare. Thistle the Elder: tall and wiry, long ears with one bent, a runner's short cloak pinned at the shoulder, leaning forward a little as if about to dash off. Brisk and a little out of breath." |
+
+When the first one is right, attach it to the other five chats and add "in
+exactly the same style, line weight and level of detail as the attached
+character", so the six look like one cast.
+
+They go in `assets/images/guide/` under those names and the game uses each
+as soon as the file is there (`js/guide.js` `characterUrl`); nothing else
+changes. Later, if wanted: a second and third expression per elder
+(`<species>_happy.webp`, `<species>_worried.webp`) for the lines that call
+for them. Those are not wired yet.
+
 ### How a picture replaces a drawing
 
 For everything in Part F the rule is the same: the picture goes in
@@ -890,6 +944,8 @@ how much each improves what the player sees.
 | 12 | F, G, L | Clouds, smoke, puddles | ChatGPT | weather reads well without them |
 | 13 | R, K, O | Fire, bush and small cart; butterflies and leaves; the bell animation | ChatGPT, PixelLab | rare or tiny |
 | 14 | — | The other six species of villager | PixelLab | the largest job; last |
+
+Ahead of all of these, now that the guide is built: **batch T, the six elders** (ChatGPT). Every new player meets one in their first minute.
 
 Not worth making (code does it well enough): snowy buildings, worn and broken
 buildings, rain and snow, sparks and sawdust.

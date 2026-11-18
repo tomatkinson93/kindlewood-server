@@ -1522,7 +1522,9 @@ its size.
       10 timber; two per town) and a pond (20 stone; two per town). Sixty
       decorations per town. Placing is at once (no builders, no wait); moving
       is free; removing gives half back.
-    - **How:** Build mode has a Decorate bar along the bottom. Pick a thing,
+    - **How:** in Build mode a Decorate chip beside Build opens a bar along the
+      bottom (shut by default, so it never covers the front row of plots;
+      changed 2026-11-18). Pick a thing,
       tap open ground (as many times as wanted; Esc or the button again
       stops). Drag a decoration to move it; press it to get Remove. On a
       phone the bar scrolls sideways.
