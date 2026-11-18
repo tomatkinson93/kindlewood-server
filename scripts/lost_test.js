@@ -42,11 +42,11 @@ async function main() {
   const BASE = process.env.QUEST_TEST_BASE || 'http://localhost:3000';
   const SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
   const q = (t, p) => pool.query(t, p);
-  const mkTown = async () => {
+  const mkTown = async (tier = 'village') => {
     const RUN = Math.random().toString(36).slice(2, 8), username = `lo_${RUN}`;
     const u = (await q("INSERT INTO users (username, email, password_hash, species) VALUES ($1,$2,'x','Mice') RETURNING id", [username, `${username}@t.l`])).rows[0];
     const tq = -130000 - Math.floor(Math.random() * 5000) * 20;
-    const s = (await q(`INSERT INTO settlements (user_id, name, world_version, tier, tile_q, tile_r, last_tick) VALUES ($1,$2,2,'camp',$3,0,NOW()) RETURNING id`, [u.id, username, tq])).rows[0];
+    const s = (await q(`INSERT INTO settlements (user_id, name, world_version, tier, tile_q, tile_r, last_tick) VALUES ($1,$2,2,$4,$3,0,NOW()) RETURNING id`, [u.id, username, tq, tier])).rows[0];
     const token = jwt.sign({ userId: u.id, username, species: 'Mice' }, SECRET);
     const api = async (method, pth, body) => {
       const r = await fetch(BASE + pth, { method, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
@@ -130,6 +130,15 @@ async function main() {
     check(x.status === 200 && x.body.thing === null, 'a town with nobody: nothing');
     x = await empty.api('POST', '/api/lost/return');
     check(x.status === 404, 'and nothing to return');
+    // A camp is too new for lost things: from a village on.
+    const camp = await mkTown('camp'); const cc = await mk(camp.id, 'Fen Oak');
+    x = await camp.api('GET', '/api/lost');
+    check(x.status === 200 && x.body.thing === null, 'a camp: nothing is lost yet');
+    x = await camp.api('POST', '/api/lost/return');
+    check(x.status === 404, 'and nothing to return there');
+    await q("UPDATE settlements SET tier = 'village' WHERE id = $1", [camp.id]);
+    x = await camp.api('GET', '/api/lost');
+    check(x.status === 200 && x.body.thing && x.body.thing.owner_id === cc, 'once it is a village, the day has its lost thing');
     const anon = await fetch(BASE + '/api/lost'); check(anon.status === 401, 'signed-out callers are refused');
   }
 
