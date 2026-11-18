@@ -15,16 +15,16 @@ function pure() {
   const G = require('../lib/guide');
   console.log('The script');
   const off = G.beatsFor({ building_time: false }).map(b => b.key), on = G.beatsFor({ building_time: true }).map(b => b.key);
-  check(off.join() === 'arrival,look,family,homes_gift,first_home,more_homes,move_in,lumber,job,errand,families,collect,moment,goodbye', 'the first session, beat by beat', off);
+  check(off.join() === 'arrival,look,family,homes_gift,first_home,more_homes,move_in,scout_post,scout_job,send,families,away,back,moment,goodbye', 'the first session, beat by beat', off);
   check(on.length === off.length + 1 && on[3] === 'builder' && !off.includes('builder'), 'with building time on, "make someone a builder" comes before any building');
-  check(G.BEATS.every(b => b.say.length >= 1 && b.say.length <= 3 && b.say.every(l => l.length <= 140)), 'every beat is one to three short lines');
-  check(G.BEATS.filter(b => b.until).every(b => b.hint && b.point), 'every beat with something to do says what, and what to ring');
-  check(G.BEATS.filter(b => b.area).map(b => b.key + ':' + b.area).join() === 'first_home:neighbourhood,more_homes:neighbourhood,move_in:neighbourhood,lumber:town', 'the beats that happen in one part of Home say which, so the screen can lead there');
-  check(G.BEATS.filter(b => b.until && b.until.startsWith('client:')).map(b => b.key).join() === 'look,family,homes_gift,families', 'only looking, opening and walking are left to the screen to report; the rest the server checks');
+  check(G.BEATS.every(b => b.say.length <= 3 && b.say.every(l => l.length <= 140)) && G.BEATS.filter(b => !b.say.length).map(b => b.key).join() === 'away', 'every beat is one to three short lines; one is a quiet wait with none');
+  check(G.BEATS.filter(b => b.until).every(b => b.hint && (b.point || !b.say.length)), 'every beat with something to do says what, and what to ring; a wait says what is being waited for');
+  check(G.BEATS.filter(b => b.area).map(b => b.key + ':' + b.area).join() === 'first_home:neighbourhood,more_homes:neighbourhood,move_in:neighbourhood,scout_post:town', 'the beats that happen in one part of Home say which, so the screen can lead there');
+  check(G.BEATS.filter(b => b.until && b.until.startsWith('client:')).map(b => b.key).join() === 'look,family,homes_gift,families,back', 'only looking, opening and walking are left to the screen to report; the rest the server checks');
   check(G.nextBeat(null, {}).key === 'arrival' && G.nextBeat('arrival', {}).key === 'look' && G.nextBeat('family', {}).key === 'homes_gift' && G.nextBeat('family', { building_time: true }).key === 'builder' && G.nextBeat('goodbye', {}) === null, 'each beat leads to the next, and the last to none');
-  check(G.fill('Press {b}, {town}.', { b: 'Ash', town: 'Oakmere' }) === 'Press Ash, Oakmere.' && G.fill('Press {b}.', {}) === 'Press one of them.' && G.fill('{errand} is back.', { errand: '' }) === 'Your villager is back.', 'lines name real villagers, and read plainly when there is nobody to name');
-  check(Object.keys(G.ELDERS).join() === 'Mice,Badgers,Otters,Moles,Foxes,Hares' && Object.values(G.ELDERS).every(e => e.name && e.hello && e.bye) && G.elderOf('Dragons').name === 'Old Bramble', 'an elder for each species, each with their own greeting and goodbye');
-  check(JSON.stringify(G.owed(['homes'], { homes: { timber: 100 }, errand: { wealth: 30, food: 40 }, parting: { wealth: 100, food: 100 } })) === '{"wealth":130,"food":140}' && JSON.stringify(G.owed(['homes', 'errand', 'parting'], { homes: { timber: 1 }, errand: { wealth: 1 }, parting: { food: 1 } })) === '{}', 'a skip gives exactly what has not been given yet');
+  check(G.fill('Press {b}, {town}.', { b: 'Ash', town: 'Oakmere' }) === 'Press Ash, Oakmere.' && G.fill('Press {b}.', {}) === 'Press one of them.' && G.fill('{scout} is back.', { scout: '' }) === 'Your scout is back.', 'lines name real villagers, and read plainly when there is nobody to name');
+  check(Object.keys(G.ELDERS).join() === 'Mice,Badgers,Otters,Moles,Foxes,Hares' && Object.values(G.ELDERS).every(e => e.name && e.hello && e.roofs && e.bye && !/roof|homes/i.test(e.hello)) && G.elderOf('Dragons').name === 'Old Bramble', 'an elder for each species, each with their own greeting and goodbye');
+  check(JSON.stringify(G.owed(['homes'], { homes: { timber: 100 }, scout: { wealth: 30, food: 40 }, parting: { wealth: 100, food: 100 } })) === '{"wealth":130,"food":140}' && JSON.stringify(G.owed(['homes', 'scout', 'parting'], { homes: { timber: 1 }, scout: { wealth: 1 }, parting: { food: 1 } })) === '{}', 'a skip gives exactly what has not been given yet');
   check(Object.values(G.LATER).every(l => l.length === 1 && l[0].length <= 140), 'the later one-off lines are a line each');
 }
 
@@ -60,8 +60,8 @@ async function main() {
   const t = await mkTown();
   check((await G.view(t.user)).state === 'none' && (await G.view(t.user)).unlock.road === true, 'a town from before the tour has none, and nothing is hidden from it');
   let v = await G.start(t.user);
-  check(v.state === 'active' && v.beat.key === 'arrival' && v.beat.n === 1 && v.beat.of === 14 && v.elder.name === 'Old Bramble', 'founding a town starts the tour at the first beat', v.beat);
-  check(/ten, and not one roof/.test(v.beat.say[0]) && /Welcome to Oakmere\. I am Old Bramble/.test(v.beat.say[1]), 'the elder greets the player in their own voice, by the town\'s name', v.beat.say);
+  check(v.state === 'active' && v.beat.key === 'arrival' && v.beat.n === 1 && v.beat.of === 15 && v.elder.name === 'Old Bramble', 'founding a town starts the tour at the first beat', v.beat);
+  check(/Welcome, welcome/.test(v.beat.say[0]) && !/roof/.test(v.beat.say.join(' ')) && /This is Oakmere\. I am Old Bramble/.test(v.beat.say[1]), 'the elder welcomes the player in their own voice, by the town\'s name, before any talk of roofs', v.beat.say);
   check(v.unlock.road === false && v.unlock.clan === false, 'a town founded with the tour sees The Road and The Clan when it has a Tavern and a Guild Hall');
   check((await G.start(t.user)).beat.key === 'arrival', 'starting twice changes nothing');
 
@@ -76,7 +76,7 @@ async function main() {
   check(v.beat.key === 'look', 'nor by reporting the wrong thing');
   v = await G.advance(t.user, 'look', 'selected:villager');
   v = await G.advance(t.user, 'family', 'opened:families');
-  check(v.beat.key === 'homes_gift', 'the screen reports a villager pressed and their family opened', v.beat.key);
+  check(v.beat.key === 'homes_gift' && /not one roof/.test(v.beat.say[0]), 'the screen reports a villager pressed and their family opened; now the elder speaks of roofs', v.beat.say);
 
   console.log('Homes: the gift, the building, the moving in');
   {
@@ -84,12 +84,13 @@ async function main() {
     const cost = { timber: 0, stone: 0 };
     for (let i = 0; i < 3; i++) for (const [r, n] of Object.entries(await N.nextCost(t.id, i))) cost[r] += n;
     check(v.just.length === 1 && v.just[0].beat === 'homes_gift' && v.just[0].given.timber === cost.timber && v.just[0].given.stone === cost.stone, 'the elder gives timber and stone for exactly three homes', v.just);
+    check(v.beat.gift_at === 1 && /my gift/.test(v.beat.say[1]) && v.beat.gift && v.beat.gift.timber === cost.timber && v.beat.gift.stone === cost.stone && (await G.view(t.user)).beat.gift.timber === cost.timber, 'the beat says what was received, and still does when asked again', v.beat.gift);
     const now = await stock(t.id);
     check(now.timber === 300 + cost.timber && now.stone === 150 + cost.stone && before.timber === now.timber, 'and it is in the stores');
     v = await G.check(t.user);
     check(v.beat.key === 'homes_gift', 'walking to the Neighbourhood is for the screen to report; a check does not pass it');
     v = await G.advance(t.user, 'homes_gift', 'area:neighbourhood');
-    check(v.beat.key === 'first_home' && v.just.length === 0, 'the gift is given once', v.just);
+    check(v.beat.key === 'first_home' && v.just.length === 0 && !v.beat.gift, 'the gift is given once', v.just);
     const h = await hood(t.id);
     await N.place(t.id, { neighbourhoodId: h.nid, plot: h.open[0] });
     v = await G.check(t.user);
@@ -97,68 +98,71 @@ async function main() {
     await N.place(t.id, { neighbourhoodId: h.nid, plot: h.open[1] }); await N.place(t.id, { neighbourhoodId: h.nid, plot: h.open[2] });
     v = await G.check(t.user);
     check(v.beat.key === 'move_in' && (await stock(t.id)).timber === 300 && (await stock(t.id)).stone === 150, 'three homes: the gift is spent and the town\'s own stores are untouched', await stock(t.id));
+    const housed = async sid => (await q("SELECT COUNT(*)::int AS n FROM citizens WHERE settlement_id = $1 AND house_id IS NOT NULL", [sid])).rows[0].n;
+    check(await G.holdsBeds(t.id) === true && await housed(t.id) === 0, 'while the tour teaches moving in, the new homes are left empty for the player', await housed(t.id));
+    check((await require('../lib/life').autoHouse(t.id)).length === 0, 'and nothing else fills them meanwhile');
     v = await G.check(t.user);
-    check(v.beat.key === 'move_in', 'moving someone in has to be done; it is not passed by asking');
+    check(v.beat.key === 'move_in' && /nobody under them yet/.test(v.beat.say[0]), 'moving someone in has to be done; it is not passed by asking', v.beat.say);
     const house = (await q('SELECT id FROM houses WHERE settlement_id = $1 ORDER BY id DESC LIMIT 1', [t.id])).rows[0].id;
     const x = await t.api('POST', '/api/housing/assign', { citizen_id: t.ids[2], house_id: house });
+    check(x.status === 200 && await G.holdsBeds(t.id) === false, 'someone is moved in by hand, through the house\'s own window');
     v = await G.check(t.user);
-    check(x.status === 200 && v.beat.key === 'lumber', 'someone is moved into a home through the house\'s own window: on to the Lumber Camp', [x.status, v.beat.key]);
+    check(v.beat.key === 'scout_post' && /found beds of their own/.test(v.beat.say[0]) && await housed(t.id) === 5, 'on to the Scout Post, and the rest have found their own beds', [v.beat.key, await housed(t.id)]);
+    const old = await mkTown(); await N.place(old.id, { neighbourhoodId: (await hood(old.id)).nid, plot: (await hood(old.id)).open[0] });
+    check(await G.holdsBeds(old.id) === false && await housed(old.id) > 0, 'a town without the tour fills its homes as it always did');
+    const stale = await mkTown(); await G.start(stale.user);
+    await q("UPDATE guide_progress SET started_at = NOW() - INTERVAL '3 days' WHERE user_id = $1", [stale.user]);
+    check(await G.holdsBeds(stale.id) === false, 'a tour left half-way does not hold the beds for ever');
   }
 
-  console.log('The Lumber Camp and the first job');
+  console.log('The Scout Post, the scout, and The Land');
   {
-    await q("INSERT INTO buildings (settlement_id, type, level) VALUES ($1,'lumber_camp',1)", [t.id]);
+    await q("INSERT INTO buildings (settlement_id, type, level) VALUES ($1,'scout_post',1)", [t.id]);
     v = await G.check(t.user);
-    check(v.beat.key === 'job' && /Press Cob, choose Work/.test(v.beat.say[0]) && v.beat.who.b === t.ids[2], 'the elder names a real forager for the job (not the couple it introduced)', v.beat.say);
-    await q("UPDATE citizens SET role = 'woodcutter' WHERE id = $1", [t.ids[2]]);
+    check(v.beat.key === 'scout_job' && /Press Cob, choose Work/.test(v.beat.say[0]) && v.beat.who.b === t.ids[2], 'the elder names a real forager for the job (not the couple it introduced)', v.beat.say);
+    await q("UPDATE citizens SET role = 'scout' WHERE id = $1", [t.ids[2]]);
     v = await G.check(t.user);
-    check(v.beat.key === 'errand', 'someone is a woodcutter: on to the errand');
-  }
-
-  console.log('The first errand');
-  {
-    let e = await G.sendErrand(t.user, t.ids[4]).then(() => null, x => x);
-    check(e instanceof G.GuideError && /too young/.test(e.message), 'a child is not sent');
-    const other = await mkTown();
-    e = await G.sendErrand(t.user, other.ids[0]).then(() => null, x => x);
-    check(e && e.status === 404, 'nor someone from another town');
-    const NOW = Date.now();
-    v = await G.sendErrand(t.user, t.ids[3], NOW);
-    check(v.beat.key === 'families' && v.errand.citizen_id === t.ids[3] && !v.errand.collected && /Dot will be back in two minutes/.test(v.beat.say[0]), 'Dot sets off, and the elder says when she will be back', v.beat.say);
-    const away = await require('../lib/careers').awayMap(null, t.id);
-    check(away.has(t.ids[3]), 'she is away from town meanwhile');
-    e = await G.sendErrand(t.user, t.ids[0], NOW).then(() => null, x => x);
-    check(e && e.status === 409, 'one errand, once');
+    check(v.beat.key === 'send' && v.beat.point === 'land:fog' && !v.beat.client, 'someone is a scout: on to The Land, and the server checks that a scout really went');
+    v = await G.check(t.user);
+    check(v.beat.key === 'send', 'it waits for a scout to be sent');
+    const ex = (await q(`INSERT INTO expeditions (settlement_id, user_id, target_q, target_r, completes_at, path, citizen_id) VALUES ($1,$2,$3,0,NOW() + INTERVAL '40 seconds','[]',$4) RETURNING id`, [t.id, t.user, 3, t.ids[2]])).rows[0].id;
+    v = await G.check(t.user);
+    check(v.beat.key === 'families' && /Cob is on the way/.test(v.beat.say[0]), 'a scout sent through the game\'s own map: the elder names them', v.beat.say);
     v = await G.advance(t.user, 'families', 'place:families');
-    check(v.beat.key === 'collect', 'the player looks in on the Families while they wait');
-    e = await G.collectErrand(t.user, NOW + 30e3).then(() => null, x => x);
-    check(e && e.status === 409 && /not back yet/.test(e.message), 'she cannot be collected before she is back');
+    check(v.beat.key === 'away' && v.beat.say.length === 0 && v.beat.hint === 'Cob is out scouting' && v.beat.wait_until && new Date(v.beat.wait_until).getTime() > Date.now(), 'while the scout is out the elder says nothing: the chip says who is out and until when', v.beat);
     const before = await stock(t.id);
-    v = await G.collectErrand(t.user, NOW + 121e3);
+    v = await G.check(t.user);
+    check(v.beat.key === 'away' && JSON.stringify(await stock(t.id)) === JSON.stringify(before), 'nothing is said or given before they are back');
+    await q("UPDATE expeditions SET completes_at = NOW() - INTERVAL '1 second' WHERE id = $1", [ex]);
+    v = await G.check(t.user);
     const after = await stock(t.id);
-    check(after.wealth - before.wealth === 30 && after.food - before.food === 40 && v.just[0].given.wealth === 30, 'back after two minutes with a small reward', v.just);
-    check(!(await require('../lib/careers').awayMap(null, t.id)).has(t.ids[3]), 'and home again');
+    check(v.beat.key === 'back' && /Cob is back/.test(v.beat.say[0]) && after.wealth - before.wealth === 30 && after.food - before.food === 40 && v.beat.gift.wealth === 30, 'back: only now does the elder say so, with what they brought', [v.beat.key, v.beat.gift]);
+    check((await q("SELECT status FROM expeditions WHERE id = $1", [ex])).rows[0].status === 'complete' && (await q('SELECT COUNT(*)::int AS n FROM fog_of_war WHERE user_id = $1', [t.user])).rows[0].n > 0, 'the trip was finished by the game\'s own rules: the mist has lifted there');
+    v = await G.check(t.user);
+    check(v.beat.key === 'back', 'seeing it on The Land is for the screen to report');
+    v = await G.advance(t.user, 'back', 'place:land');
     check(v.beat.key === 'moment', 'on to the first moment');
-    e = await G.collectErrand(t.user, NOW + 200e3).then(() => null, x => x);
-    check(e && e.status === 409, 'the reward is given once');
-    const ms = (await q("SELECT key FROM player_milestones WHERE user_id = $1 AND key IN ('first_quest_sent','first_quest_collected')", [t.user])).rows.length;
-    check(ms === 2, 'the funnel counts it as a first quest sent and collected');
   }
 
   console.log('The first moment, and goodbye');
   {
     const open = (await q('SELECT id, kind FROM moments WHERE settlement_id = $1 AND resolved_at IS NULL', [t.id])).rows;
-    check(open.length === 1 && require('../lib/moments').DEFS[open[0].kind].gentle === true, 'reaching the beat starts a gentle moment at once, if none was waiting', open);
+    check(open.length === 1 && open[0].kind === 'guide_first_evening', 'reaching the beat starts the tour\'s own gentle moment at once, if none was waiting', open);
+    const shown = (await require('../lib/moments').open(t.id))[0];
+    check(shown && shown.options.length === 3 && shown.fallback === 'early' && /Our first evening here/.test(shown.text) && shown.subject.citizen_ids[0] === t.ids[0], 'it is asked by the villager the tour introduced, with three answers and none of them wrong', shown && shown.text);
     v = await G.check(t.user);
     check(v.beat.key === 'moment', 'it waits for the player\'s answer');
     await q("UPDATE moments SET resolved_at = NOW(), choice = 'x', outcome = 'x', auto = TRUE WHERE id = $1", [open[0].id]);
     check((await G.check(t.user)).beat.key === 'moment', 'a default taken for them does not count');
-    await q('UPDATE moments SET auto = FALSE WHERE id = $1', [open[0].id]);
+    const again = (await q('SELECT id, kind FROM moments WHERE settlement_id = $1 AND resolved_at IS NULL', [t.id])).rows;
+    check(again.length === 1 && again[0].kind === 'guide_first_evening', 'and another is waiting at once: there is always one to answer', again);
+    const ans = await require('../lib/moments').choose(t.id, again[0].id, 'stories');
+    check(ans && /Stories until the fire burned low/.test(ans.outcome), 'answered through the moments system itself', ans);
     const before = await stock(t.id);
     v = await G.check(t.user);
     const after = await stock(t.id);
     check(v.beat.key === 'goodbye' && after.wealth - before.wealth === 100 && after.food - before.food === 100, 'answered: goodbye, with a parting gift', v.beat.say);
-    check(/I do like a tidy number/.test(v.beat.say[0]) && /^By tomorrow: .+\.$/.test(v.beat.say[1]) && /Lumber Camp will have filled/.test(v.beat.say[1]), 'the goodbye says what will have happened by tomorrow, from the real town', v.beat.say);
+    check(/I do like a tidy day/.test(v.beat.say[0]) && /^By tomorrow: .+\.$/.test(v.beat.say[1]) && /a Lumber Camp would fill them faster/.test(v.beat.say[1]), 'the goodbye says what will have happened by tomorrow, from the real town', v.beat.say);
     v = await G.advance(t.user, 'goodbye');
     check(v.state === 'done' && v.finished === true && !v.beat, 'and the tour is done');
     check((await G.advance(t.user, 'goodbye')).state === 'done' && (await G.check(t.user)).state === 'done', 'a finished tour stays finished');
@@ -174,7 +178,7 @@ async function main() {
     for (let i = 0; i < 3; i++) for (const [r, n] of Object.entries(await N.nextCost(s.id, i))) cost[r] += n;
     v = await G.skip(s.user);
     const after = await stock(s.id);
-    check(v.state === 'skipped' && v.skipped === true && after.timber - before.timber === cost.timber && after.stone - before.stone === cost.stone && after.wealth - before.wealth === 130 && after.food - before.food === 140, 'skipped at the first beat: the homes\' timber and stone, the errand\'s reward and the parting gift are all given', { before, after });
+    check(v.state === 'skipped' && v.skipped === true && after.timber - before.timber === cost.timber && after.stone - before.stone === cost.stone && after.wealth - before.wealth === 130 && after.food - before.food === 140, 'skipped at the first beat: the homes\' timber and stone, the scout\'s reward and the parting gift are all given', { before, after });
     check(JSON.stringify(await stock(s.id)) === JSON.stringify((await G.skip(s.user), await stock(s.id))), 'skipping twice gives nothing more');
     const m = await mkTown(); await G.start(m.user);
     await G.advance(m.user, 'arrival'); await G.advance(m.user, 'look', 'selected:villager'); await G.advance(m.user, 'family', 'opened:families');
@@ -183,10 +187,11 @@ async function main() {
     const end = await stock(m.id);
     check(end.timber === mid.timber && end.stone === mid.stone && end.wealth - mid.wealth === 130, 'skipped after the homes gift: that one is not given again', { mid, end });
     const e = await mkTown(); await G.start(e.user);
-    await q("UPDATE guide_progress SET step = 'errand' WHERE user_id = $1", [e.user]);
-    await G.sendErrand(e.user, e.ids[0]);
+    await N.place(e.id, { neighbourhoodId: (await hood(e.id)).nid, plot: (await hood(e.id)).open[0] });
+    const none = (await q('SELECT COUNT(*)::int AS n FROM citizens WHERE settlement_id = $1 AND house_id IS NOT NULL', [e.id])).rows[0].n;
     await G.skip(e.user);
-    check(!(await require('../lib/careers').awayMap(null, e.id)).has(e.ids[0]), 'someone out on the errand comes home when the tour is skipped');
+    const some = (await q('SELECT COUNT(*)::int AS n FROM citizens WHERE settlement_id = $1 AND house_id IS NOT NULL', [e.id])).rows[0].n;
+    check(none === 0 && some === 4, 'homes held for the player are filled when the tour is skipped', [none, some]);
   }
 
   console.log('Replay');
@@ -207,7 +212,7 @@ async function main() {
   console.log('Building time: a builder first, and Finish now');
   {
     const b = await mkTown({ bt: true }); v = await G.start(b.user);
-    check(v.beat.of === 15, 'fifteen beats with building time on');
+    check(v.beat.of === 16, 'sixteen beats with building time on');
     await G.advance(b.user, 'arrival'); await G.advance(b.user, 'look', 'selected:villager');
     v = await G.advance(b.user, 'family', 'opened:families');
     check(v.beat.key === 'builder' && /Press Ash/.test(v.beat.say[1]), 'the first thing to do is make someone a builder', v.beat.say);
@@ -248,7 +253,7 @@ async function main() {
     x = await r.api('POST', '/api/guide/check');
     check(x.status === 200 && x.body.guide.beat.key === 'look', 'POST /api/guide/check');
     x = await r.api('POST', '/api/guide/errand', { citizen_id: r.ids[0] });
-    check(x.status === 409, 'the errand cannot be sent before its beat');
+    check(x.status === 404, 'the stand-in errand is gone: scouting is done on The Land');
     x = await r.api('POST', '/api/guide/later', { key: 'nope' });
     check(x.status === 404, 'an unknown later line is refused');
     x = await r.api('POST', '/api/guide/skip');
