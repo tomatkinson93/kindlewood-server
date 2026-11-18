@@ -17,6 +17,7 @@
         <button class="cheat-tab" onclick="cheatSwitchTab('ct-citizens',this)">👤 Citizens</button>
         <button class="cheat-tab" onclick="cheatSwitchTab('ct-family',this)">🍼 Family</button>
         <button class="cheat-tab" onclick="cheatSwitchTab('ct-life',this);KWLifeDev.open()">👪 Life</button>
+        <button class="cheat-tab" onclick="cheatSwitchTab('ct-dungeons',this);KWDungeon.devOpen()">💀 Dungeons</button>
         <button class="cheat-tab" onclick="cheatSwitchTab('ct-world',this);loadDiplomacyDebugNpcs()">🌍 World</button>
         <button class="cheat-tab" onclick="cheatSwitchTab('ct-quests',this);loadQuestAdmin()">📜 Quests</button>
         <button class="cheat-tab" onclick="cheatSwitchTab('ct-items',this);loadItemAdmin()">🗡 Items</button>
@@ -279,6 +280,11 @@
       <!-- ── TAB: Life (js/life-admin.js) ── -->
       <div class="cheat-tab-panel" id="ct-life" style="display:none">
         <div id="ct-life-body"></div>
+      </div>
+
+      <!-- ── TAB: Dungeons (js/dungeons.js) ── -->
+      <div class="cheat-tab-panel" id="ct-dungeons" style="display:none">
+        <div id="ct-dungeons-body"></div>
       </div>
 
       <!-- ── TAB: World ── -->

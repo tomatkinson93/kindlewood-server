@@ -124,6 +124,15 @@ router.get('/', requireAuth, async (req, res) => {
       hRes.rows.forEach(h => { haulByCitizen[h.citizen_id] = { outpost_id: h.outpost_id, outpost_name: (OUTPOST_CONFIG[h.terrain] || {}).name || 'Outpost', status: h.status, standing: !!h.standing, kind: h.kind || 'haul', completes_at: h.kind === 'return' ? h.returns_at : h.completes_at }; });
     } catch (e) { /* pre-migration */ }
 
+    // In a dungeon (lib/dungeons): away from setting out until the run ends.
+    const dungeonByCitizen = {};
+    try {
+      const dRes = await query(`SELECT r.id, r.party_ids, d.story_key FROM dungeon_runs r JOIN dungeons d ON d.id = r.dungeon_id
+                                 WHERE r.settlement_id = $1 AND r.status IN ('travelling','active')`, [settlement.id]);
+      const STORIES = require('../lib/dungeon_defs').STORIES;
+      dRes.rows.forEach(r => (r.party_ids || []).forEach(id => { dungeonByCitizen[id] = { run_id: r.id, name: (STORIES[r.story_key] || {}).name || 'a dungeon' }; }));
+    } catch (e) { /* pre-migration */ }
+
     // Build lookup maps for happiness context
     const season = getCurrentSeason();
     // Happening modifiers right now (real clock; happiness + birth chance).
@@ -289,6 +298,7 @@ router.get('/', requireAuth, async (req, res) => {
         trade: tradeByCitizen[c.id] || null,
         outpost: outpostByCitizen[c.id] || null,
         haul: haulByCitizen[c.id] || null,
+        dungeon: dungeonByCitizen[c.id] || null,
         happiness_factors: factors,
         happiness_computed: computed,
         breeding_status: breedingStatus,
@@ -427,6 +437,7 @@ router.patch('/:id/role', requireAuth, async (req, res) => {
     const AWAY_MSG = {
       expedition: 'is out scouting', quest: 'is on a quest', clan_quest: 'is on a clan quest',
       porter: 'is out carrying goods', trade: 'is on a trade run', envoy: 'is away as an envoy', helping: 'is away helping a village',
+      dungeon: 'is in a dungeon',
     };
     if (away) return res.status(400).json({ error: `${cit.name} ${AWAY_MSG[away] || 'is away'} and can't be reassigned until they return.` });
     if ((await require('../lib/crafting').busyCitizenIds([cit.id])).length)

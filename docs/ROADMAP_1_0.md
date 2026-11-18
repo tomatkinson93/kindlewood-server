@@ -169,17 +169,17 @@ Multi-species towns stay out of 1.0. To keep that door open, species will be rea
 - Members contribute goods, porters and guards; progress shows on the map; finishing it changes the map for everyone in the clan and is recorded in each family's chronicle.
 - Existing boons, goals and Signal Towers feed into it instead of standing alone.
 
-### Dungeons (after the 1.0 phases)
+### Dungeons (after the 1.0 phases; started early, 2026-11-18)
 **The design is `docs/DUNGEONS.md`; the content plan is `docs/DUNGEON_CONTENT.md`** (agreed 2026-11-15, written with Fable; numbers from `scripts/dungeon_balance_sim.js`, which plays whole runs on the real combat engine).
+
+**The owner brought dungeons forward on 2026-11-18**, ahead of Phases 5 and 6. Build steps 1 and 2 are built (`DUNGEONS.md` §12): a party of four plays a test dungeon end to end, started from Dev Tools, behind the switch `dungeons.on`. The freeze on new building types still holds, so the class buildings and class cards wait.
 - **Parties:** exactly four citizens; skull colours from green (3 fights, about a 90% clear) to purple (9 fights).
 - **Classes:** the first four are Guard, Archer, Wizard and Hearthkeeper. Class cards are drawn only by citizens who can play them.
 - **New buildings:** the Hearth Shrine from Village tier and the Wizard's Tower from Town tier.
 - **Creatures:** dungeon creatures need far more health than quest creatures (+50% at green to +175% at purple), plus a boss for each kind of land.
 - **Events and treasure** budgeted per clear.
-- **Still open** (`DUNGEON_CONTENT.md` §9):
-  - scale today's creatures, or give dungeon creatures their own stats;
-  - whether to change weak, vulnerable and Focus now;
-  - the costs of the two buildings and their research.
+- **Decided 2026-11-18** (`DUNGEONS.md` §2): a Flee button at half the loot; no fatal result for a citizen stood back up; one creature list with a multiplier per skull; weak, vulnerable and Focus change everywhere for new battles; keepsakes; kin and bonds in a fight; "who has cleared it" on the dungeon card.
+- **Still open** (`DUNGEON_CONTENT.md` §9): the costs of the two buildings and their research; the wealth a fight gives.
 
 ### After 1.0
 - Outpost specialisations, cut down to three or four charters and two new resources.

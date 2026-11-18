@@ -155,6 +155,9 @@ async function loadAvailableCitizen(citizenId, settlementId) {
   if ((await require('../lib/clan_quests').busyCitizenIds([citizenId])).length) {
     return { ok: false, error: cit.name + ' is on a clan quest.' };
   }
+  if ((await require('../lib/dungeons').busyCitizenIds([citizenId])).length) {
+    return { ok: false, error: cit.name + ' is in a dungeon.' };
+  }
   if ((await require('../lib/market').merchantCitizenIds([citizenId])).length) {
     return { ok: false, error: cit.name + ' is busy at work (Market, workshop or outpost).' };
   }
