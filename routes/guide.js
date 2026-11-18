@@ -9,8 +9,6 @@ const G = require('../lib/guide');
 //   POST /api/guide/check              has the town done what the beat asks?
 //   POST /api/guide/skip               end the tour; every gift it would have given is given
 //   POST /api/guide/replay             again from the start (Help)
-//   POST /api/guide/errand { citizen_id }   send someone on the guide's first errand
-//   POST /api/guide/errand/collect     hear what they brought
 //   POST /api/guide/finish { site_id? }     free "Finish now" while the tour runs (building time)
 //   POST /api/guide/later { key }      a one-off line the first time something happens
 //
@@ -33,8 +31,6 @@ router.post('/advance', requireAuth, run((u, b) => G.advance(u, String(b.key || 
 router.post('/check', requireAuth, run(u => G.check(u)));
 router.post('/skip', requireAuth, run(u => G.skip(u)));
 router.post('/replay', requireAuth, run(u => G.replay(u)));
-router.post('/errand', requireAuth, run((u, b) => G.sendErrand(u, b.citizen_id)));
-router.post('/errand/collect', requireAuth, run(u => G.collectErrand(u)));
 router.post('/finish', requireAuth, run((u, b) => G.finishNow(u, b.site_id)));
 router.post('/later', requireAuth, async (req, res) => {
   try { res.json({ ok: true, ...(await G.later(req.user.userId, String((req.body || {}).key || ''))) }); }
