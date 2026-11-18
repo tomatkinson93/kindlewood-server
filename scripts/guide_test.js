@@ -19,6 +19,7 @@ function pure() {
   check(on.length === off.length + 1 && on[3] === 'builder' && !off.includes('builder'), 'with building time on, "make someone a builder" comes before any building');
   check(G.BEATS.every(b => b.say.length >= 1 && b.say.length <= 3 && b.say.every(l => l.length <= 140)), 'every beat is one to three short lines');
   check(G.BEATS.filter(b => b.until).every(b => b.hint && b.point), 'every beat with something to do says what, and what to ring');
+  check(G.BEATS.filter(b => b.area).map(b => b.key + ':' + b.area).join() === 'first_home:neighbourhood,more_homes:neighbourhood,move_in:neighbourhood,lumber:town', 'the beats that happen in one part of Home say which, so the screen can lead there');
   check(G.BEATS.filter(b => b.until && b.until.startsWith('client:')).map(b => b.key).join() === 'look,family,homes_gift,families', 'only looking, opening and walking are left to the screen to report; the rest the server checks');
   check(G.nextBeat(null, {}).key === 'arrival' && G.nextBeat('arrival', {}).key === 'look' && G.nextBeat('family', {}).key === 'homes_gift' && G.nextBeat('family', { building_time: true }).key === 'builder' && G.nextBeat('goodbye', {}) === null, 'each beat leads to the next, and the last to none');
   check(G.fill('Press {b}, {town}.', { b: 'Ash', town: 'Oakmere' }) === 'Press Ash, Oakmere.' && G.fill('Press {b}.', {}) === 'Press one of them.' && G.fill('{errand} is back.', { errand: '' }) === 'Your villager is back.', 'lines name real villagers, and read plainly when there is nobody to name');
