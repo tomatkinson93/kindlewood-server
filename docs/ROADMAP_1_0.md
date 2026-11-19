@@ -178,6 +178,7 @@ Multi-species towns stay out of 1.0. To keep that door open, species will be rea
 - **New buildings:** the Hearth Shrine from Village tier and the Wizard's Tower from Town tier.
 - **Creatures:** dungeon creatures need far more health than quest creatures (+50% at green to +175% at purple), plus a boss for each kind of land.
 - **Events and treasure** budgeted per clear.
+- **Decided 2026-11-19:** one deck per citizen, from a base pack for their class, in place of the shared drafted deck (`DUNGEON_CLASS_DECKS.md`). This is the roadmap's "a default deck follows the party's careers" made the whole design.
 - **Decided 2026-11-18** (`DUNGEONS.md` §2): a Flee button at half the loot; no fatal result for a citizen stood back up; one creature list with a multiplier per skull; weak, vulnerable and Focus change everywhere for new battles; keepsakes; kin and bonds in a fight; "who has cleared it" on the dungeon card.
 - **Still open** (`DUNGEON_CONTENT.md` §9): the costs of the two buildings and their research; the wealth a fight gives.
 

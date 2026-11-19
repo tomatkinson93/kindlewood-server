@@ -563,12 +563,16 @@ function reportRules(n) {
   row('default deck (5 Strike, 5 Defend, 2 Jab, 1 Rally)', trial('orange', { homeDeck: { strike: 5, defend: 5, quick_jab: 2, rally: 1 } }, n));
 }
 
-if (cmd0() === 'quick') { loadCards(DEFAULT_RULES); HEAD(); for (const t of Object.keys(PLANS)) { row(t + ' suggested', trial(t, { unlocks: true }, parseInt(process.argv[3], 10) || 200)); row(t + ' classes', trial(t, { unlocks: true, classes: ['guard', 'archer', 'hearthkeeper', 'wizard'].slice(0, PLANS[t].party[1]) }, parseInt(process.argv[3], 10) || 200)); } process.exit(0); }
 function cmd0() { return process.argv[2]; }
-const cmd = process.argv[2] || 'tiers', n = parseInt(process.argv[3], 10) || 300;
-if (cmd === 'cards') reportCards();
-else if (cmd === 'monsters') reportMonsters();
-else if (cmd === 'rules') reportRules(n);
-else reportTiers(n);
+// Run as a script; when required (scripts/class_deck_sim.js builds on it) it only lends its parts.
+if (require.main === module) {
+  if (cmd0() === 'quick') { loadCards(DEFAULT_RULES); HEAD(); for (const t of Object.keys(PLANS)) { row(t + ' suggested', trial(t, { unlocks: true }, parseInt(process.argv[3], 10) || 200)); row(t + ' classes', trial(t, { unlocks: true, classes: ['guard', 'archer', 'hearthkeeper', 'wizard'].slice(0, PLANS[t].party[1]) }, parseInt(process.argv[3], 10) || 200)); } process.exit(0); }
+  const cmd = process.argv[2] || 'tiers', n = parseInt(process.argv[3], 10) || 300;
+  if (cmd === 'cards') reportCards();
+  else if (cmd === 'monsters') reportMonsters();
+  else if (cmd === 'rules') reportRules(n);
+  else reportTiers(n);
+}
 
-module.exports = { ALL_CARDS, CLASS_CARDS, MONSTERS, CLASSES, TIERS, PLANS };
+module.exports = { ALL_CARDS, BASE_CARDS, CLASS_CARDS, STARTER, UNLOCKS, MONSTERS, MON, CLASSES, LEVELS, TIERS, PLANS, REST, DEFAULT_RULES,
+  E, REG, FM, DECK, C, mv, citizen, unitOf, installRoster, encounter, cardValue, bestPlay, side, alive, rng32, trial, loadCards, pct, pad };

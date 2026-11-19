@@ -1,6 +1,6 @@
 # Dungeons (design spec)
 
-Status: **design agreed 2026-11-15 (three rounds of answers), with a fourth round on 2026-11-18. Build steps 1 to 3 are built (§12); the rest is not.** Classes, cards, creatures, events, treasure and the numbers behind the difficulty table are in `docs/DUNGEON_CONTENT.md`. The roadmap placed dungeons after the remaining 1.0 phases; the owner brought them forward on 2026-11-18. They are started from Dev Tools only and stay behind the switch `dungeons.on` until they are ready for players. The same file is in both repos.
+Status: **design agreed 2026-11-15 (three rounds of answers), with a fourth round on 2026-11-18. Build steps 1 to 3 are built (§12); the rest is not. On 2026-11-19 the door draft (§3.4) was replaced by a deck for each citizen: `docs/DUNGEON_CLASS_DECKS.md`.** Classes, cards, creatures, events, treasure and the numbers behind the difficulty table are in `docs/DUNGEON_CONTENT.md`. The roadmap placed dungeons after the remaining 1.0 phases; the owner brought them forward on 2026-11-18. They are started from Dev Tools only and stay behind the switch `dungeons.on` until they are ready for players. The same file is in both repos.
 
 ## 1. What a dungeon is
 
@@ -64,6 +64,17 @@ Decided 2026-11-18 (the fourth round, when building started):
 | Who has cleared it | **Yes**: the dungeon card shows how many towns have cleared a map dungeon and which was first (§6.3). Built with map dungeons (step 4). |
 | The draft and the walk | The party sets out and the player drafts while it walks, so the walk is never dead time. |
 
+Decided 2026-11-19 (`docs/DUNGEON_CLASS_DECKS.md`), after the owner asked players of roguelite card games:
+
+| Question | Decision |
+|---|---|
+| The deck | **One deck per citizen**, from their class's base pack. This replaces the shared drafted deck, deck size by skull, the "not for drafts" toggle and the rule that set aside class cards a citizen could not play. |
+| Citizens with no fighting class | A **Villager pack** with one trade card from their job, so any four adults can still enter a green dungeon. |
+| At the door | Each citizen keeps **one card of three**. No draft. |
+| Cards found inside | After each fight but the last, **three cards, each for a different citizen; the party keeps one**. |
+| Healing | A heal is **spent until the party rests**, and a deck holds one of each healing card. Healing proved worth more than anything else when wounds carry over. |
+| Where | Dungeons first; quests, camps and raids later, replacing the home deck. |
+
 ## 3. A run, step by step
 
 1. **Find it.** A map dungeon shows only on a tile the player has scouted (`fog_of_war`), and must be within range of the town (as camps are: `ASSAULT_RANGE` in `lib/raid_camps.js`).
@@ -119,6 +130,8 @@ A run that is left alone ends by itself as **turned back**:
 If the party is in the middle of a battle when this happens, the battle is forfeited as a retreat, not a defeat, **at the price of fleeing** (half the loot; decided 2026-11-18). Being away never costs more than a deliberate flee, and waiting gains nothing over fleeing. Opening the fight again or playing a card counts as an action.
 
 ### 3.4 Drafting the deck
+
+> **Superseded on 2026-11-19 by `docs/DUNGEON_CLASS_DECKS.md`.** Every citizen now brings their own deck, built from their class's base pack (a Villager pack for a citizen with no fighting class). There is no draft: each citizen keeps one card of three at the door, and the party keeps one card of three after each fight. The rest of this section is kept as the record of the earlier design; it was never built.
 
 Before the party walks in, the player builds the deck for this run.
 
