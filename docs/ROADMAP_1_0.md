@@ -72,7 +72,7 @@ Mail, rankings, help and settings move under the profile menu. Fishing and the t
 | Combat is a separate game | Battles write to the family: scars, bonds, titles and heirlooms (Phase 2). Deck building stays optional; a default deck follows the party's careers. |
 | Clans only give +5% | One shared seasonal project (Phase 6). |
 
-**Freeze list** (no new work until after 1.0): outpost specialisations, new resources, new minigames, new building types, new market features.
+**Freeze list** (no new work until after 1.0): outpost specialisations, new resources, new minigames, new building types, new market features. **One exception, at the owner's word (2026-11-19):** the Hearth Shrine and the Wizard's Tower, which dungeons need for their Hearthkeeper and Wizard classes. They are built.
 
 ## 5. Phases
 
@@ -172,14 +172,15 @@ Multi-species towns stay out of 1.0. To keep that door open, species will be rea
 ### Dungeons (after the 1.0 phases; started early, 2026-11-18)
 **The design is `docs/DUNGEONS.md`; the content plan is `docs/DUNGEON_CONTENT.md`** (agreed 2026-11-15, written with Fable; numbers from `scripts/dungeon_balance_sim.js`, which plays whole runs on the real combat engine).
 
-**The owner brought dungeons forward on 2026-11-18**, ahead of Phases 5 and 6. Build steps 1 and 2 are built (`DUNGEONS.md` §12): a party of four plays a test dungeon end to end, started from Dev Tools, behind the switch `dungeons.on`. The freeze on new building types still holds, so the class buildings and class cards wait.
+**The owner brought dungeons forward on 2026-11-18**, ahead of Phases 5 and 6. Build steps 1 to 3 are built (`DUNGEONS.md` §12): a party of four plays a dungeon end to end, a hand-written test one or one from the generator, started from Dev Tools, behind the switch `dungeons.on`. On 2026-11-19 class decks, the Wizard and Hearthkeeper careers and their two buildings were built as well (`DUNGEON_CLASS_DECKS.md`).
 - **Parties:** exactly four citizens; skull colours from green (3 fights, about a 90% clear) to purple (9 fights).
-- **Classes:** the first four are Guard, Archer, Wizard and Hearthkeeper. Class cards are drawn only by citizens who can play them.
-- **New buildings:** the Hearth Shrine from Village tier and the Wizard's Tower from Town tier.
-- **Creatures:** dungeon creatures need far more health than quest creatures (+50% at green to +175% at purple), plus a boss for each kind of land.
+- **Classes:** the first four are Guard, Archer, Wizard and Hearthkeeper, each with its own deck; a citizen with no fighting class brings a Villager pack with a card from their trade. **Built.**
+- **New buildings:** the Hearth Shrine from Village tier and the Wizard's Tower from Town tier; each level unlocks cards for its class. **Built** (placeholder art).
+- **Creatures:** dungeon creatures need far more health than quest creatures (+50% at green to +200% at purple, retuned 2026-11-19), plus a boss for each kind of land.
 - **Events and treasure** budgeted per clear.
+- **Decided 2026-11-19:** one deck per citizen, from a base pack for their class, in place of the shared drafted deck (`DUNGEON_CLASS_DECKS.md`). This is the roadmap's "a default deck follows the party's careers" made the whole design. With it: the player ticks which unlocked cards are **prepared** (offered); cards can be **honed** (the game's word for upgrading, marked ✦) at a rest room or in place of a fight's card.
 - **Decided 2026-11-18** (`DUNGEONS.md` §2): a Flee button at half the loot; no fatal result for a citizen stood back up; one creature list with a multiplier per skull; weak, vulnerable and Focus change everywhere for new battles; keepsakes; kin and bonds in a fight; "who has cleared it" on the dungeon card.
-- **Still open** (`DUNGEON_CONTENT.md` §9): the costs of the two buildings and their research; the wealth a fight gives.
+- **Still open** (`DUNGEON_CONTENT.md` §9, `DUNGEON_CLASS_DECKS.md` §8): tuning the two buildings' costs and whether they get research; the wealth a fight gives; a limit on prepared cards; the rule change to weak and vulnerable.
 
 ### After 1.0
 - Outpost specialisations, cut down to three or four charters and two new resources.

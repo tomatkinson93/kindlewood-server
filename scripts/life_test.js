@@ -361,7 +361,7 @@ async function main() {
     const ap = await api('POST', `/api/citizens/${y1}/apprentice`, { class: 'miner', mentor_id: miner });
     check(ap.status === 200 && ap.body.apprentice.class_key === 'miner' && ap.body.apprentice.mentor_id === miner, 'a youth takes up mining with Flint as mentor');
     check((await api('POST', `/api/citizens/${miner}/apprentice`, { class: 'miner' })).status === 400, 'an adult cannot become an apprentice');
-    check((await api('POST', `/api/citizens/${y2}/apprentice`, { class: 'wizard' })).status === 400, 'an unknown trade is refused');
+    check((await api('POST', `/api/citizens/${y2}/apprentice`, { class: 'alchemist' })).status === 400, 'an unknown trade is refused');
     check((await api('POST', `/api/citizens/${y2}/apprentice`, { class: 'farmer', mentor_id: miner })).status === 400, 'a mentor must work that trade');
     await require('../lib/careers').settle(s.id, { force: true });
     const xp = (await q("SELECT citizen_id, xp FROM citizen_classes WHERE class_key = 'miner' AND citizen_id = ANY($1)", [[y1, y2, y3]])).rows;

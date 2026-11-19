@@ -105,7 +105,7 @@ router.get('/', requireAuth, async (req, res) => {
     // every available card with its cost/type/target/art.
     const all = _allCards();
     const catalog = {};
-    Object.keys(all).forEach((k) => {
+    Object.keys(all).filter(require('../lib/cards').isHomeCard).forEach((k) => {   // class-deck cards are not for home decks
       const c = all[k];
       catalog[k] = { key: c.key, name: c.name, cost: c.cost, type: c.type, target: c.target, desc: c.desc, rarity: c.rarity, art_url: c.art_url || null,
                      owned: unlocked.has(k), starter: require('../lib/cards').STARTER.includes(k) };

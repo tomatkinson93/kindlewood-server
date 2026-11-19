@@ -1,6 +1,6 @@
 # Dungeons (design spec)
 
-Status: **design agreed 2026-11-15 (three rounds of answers), with a fourth round on 2026-11-18. Build steps 1 and 2 are built (§12); the rest is not.** Classes, cards, creatures, events, treasure and the numbers behind the difficulty table are in `docs/DUNGEON_CONTENT.md`. The roadmap placed dungeons after the remaining 1.0 phases; the owner brought them forward on 2026-11-18. They are started from Dev Tools only and stay behind the switch `dungeons.on` until they are ready for players. The same file is in both repos.
+Status: **design agreed 2026-11-15 (three rounds of answers), with a fourth round on 2026-11-18. Build steps 1 to 3 are built (§12); the rest is not. On 2026-11-19 the door draft (§3.4) was replaced by a deck for each citizen: `docs/DUNGEON_CLASS_DECKS.md`.** Classes, cards, creatures, events, treasure and the numbers behind the difficulty table are in `docs/DUNGEON_CONTENT.md`. The roadmap placed dungeons after the remaining 1.0 phases; the owner brought them forward on 2026-11-18. They are started from Dev Tools only and stay behind the switch `dungeons.on` until they are ready for players. The same file is in both repos.
 
 ## 1. What a dungeon is
 
@@ -64,6 +64,21 @@ Decided 2026-11-18 (the fourth round, when building started):
 | Who has cleared it | **Yes**: the dungeon card shows how many towns have cleared a map dungeon and which was first (§6.3). Built with map dungeons (step 4). |
 | The draft and the walk | The party sets out and the player drafts while it walks, so the walk is never dead time. |
 
+Decided 2026-11-19 (`docs/DUNGEON_CLASS_DECKS.md`), after the owner asked players of roguelite card games:
+
+| Question | Decision |
+|---|---|
+| The deck | **One deck per citizen**, from their class's base pack. This replaces the shared drafted deck, deck size by skull, the "not for drafts" toggle and the rule that set aside class cards a citizen could not play. |
+| Citizens with no fighting class | A **Villager pack** with one trade card from their job, so any four adults can still enter a green dungeon. |
+| At the door | Each citizen keeps **one card of three**. No draft. |
+| Cards found inside | After each fight but the last, **three cards, each for a different citizen; the party keeps one**. |
+| Healing | A heal is **spent until the party rests**, and a deck holds one of each healing card. Healing proved worth more than anything else when wounds carry over. |
+| Where | Dungeons first; quests, camps and raids later, replacing the home deck. |
+| Unlocked cards | They **widen what a citizen can be offered**, and the player ticks which of the town's cards are **prepared** (offered) and which are set aside. |
+| The Wizard and Hearthkeeper | **Built now, with their buildings.** The owner lifted the 1.0 freeze on new building types for the Hearth Shrine and the Wizard's Tower. |
+| Upgrading a card | **Honing** (the game's own word; a honed card is marked ✦): about a third stronger until the run ends. A rest room rests the party and hones a card; after a fight the party may hone a card in place of the one on offer. |
+| The skulls | **Retuned for class decks** (§4): orange, red and purple are harder than first set, because a healer and the class cards made them too easy for the party each is meant for. |
+
 ## 3. A run, step by step
 
 1. **Find it.** A map dungeon shows only on a tile the player has scouted (`fog_of_war`), and must be within range of the town (as camps are: `ASSAULT_RANGE` in `lib/raid_camps.js`).
@@ -120,6 +135,8 @@ If the party is in the middle of a battle when this happens, the battle is forfe
 
 ### 3.4 Drafting the deck
 
+> **Superseded on 2026-11-19 by `docs/DUNGEON_CLASS_DECKS.md`.** Every citizen now brings their own deck, built from their class's base pack (a Villager pack for a citizen with no fighting class). There is no draft: each citizen keeps one card of three at the door, and the party keeps one card of three after each fight. The rest of this section is kept as the record of the earlier design; it was never built.
+
 Before the party walks in, the player builds the deck for this run.
 
 - The game shows **three different cards** drawn at random from the cards the town owns (the starter set plus every unlock, `lib/cards.ownedSet`). The player keeps one. This repeats until the deck is full.
@@ -143,15 +160,15 @@ Things to watch:
 
 Fixed when the dungeon is created. The skull is the map icon and heads the dungeon card.
 
-| Skull | Name | Floors | Fights | Of which | Deck | Party of four, expected level | Creatures' health / strength |
+| Skull | Name | Floors | Fights | Of which | Party of four, expected | Creatures' health / strength | Clears in simulation |
 |---|---|---|---|---|---|---|---|
-| 🟢 green | Easy | 1 | 3 | boss | 12 | villagers | +50% / +40% |
-| 🟡 yellow | Moderate | 1 | 4 | boss | 12 | novices | +75% / +60% |
-| 🟠 orange | Hard | 2 | 6 | 1 elite, boss | 14 | trained | +100% / +80% |
-| 🔴 deep red | Deadly | 2 | 7 | 1 elite, boss | 14 | trained, with classes | +125% / +100% |
-| 🟣 purple | Nightmare | 3 | 9 | 2 elites, boss | 16 | veterans, with classes | +175% / +140% |
+| 🟢 green | Easy | 1 | 3 | boss | villagers, nothing built | +50% / +40% | 94% |
+| 🟡 yellow | Moderate | 1 | 4 | boss | novices: a Guard, an Archer, two villagers | +75% / +60% | 77% |
+| 🟠 orange | Hard | 2 | 6 | 1 elite, boss | trained, with a Hearthkeeper | +125% / +100% | 73% |
+| 🔴 deep red | Deadly | 2 | 7 | 1 elite, boss | trained, all four classes, buildings at level 2 to 3 | +150% / +105% | 38% |
+| 🟣 purple | Nightmare | 3 | 9 | 2 elites, boss | veterans, all four classes, buildings at their top level | +200% / +150% | 25% |
 
-These come from simulated runs on the real combat engine (`docs/DUNGEON_CONTENT.md` §5 and §6, which also give rests, events, clear rates and playing time). Two findings shape the table: today's creatures are much too weak for a party playing cards, hence the large modifiers; and a party one citizen short almost never clears, so every dungeon requires exactly four citizens.
+These come from simulated runs on the real combat engine. The fights, rests, events and playing time are in `docs/DUNGEON_CONTENT.md` §5 and §6; the health and strength were **retuned on 2026-11-19 for class decks** (`docs/DUNGEON_CLASS_DECKS.md` §6.2, which also shows each skull without a healer). Before that orange was +100% / +80%, red +125% / +100% and purple +175% / +140%; the "Deck" column of the shared draft is gone. Two findings shape the table: today's creatures are much too weak for a party playing cards, hence the large modifiers; and a party one citizen short almost never clears, so every dungeon requires exactly four citizens. The simulated player uses no supplies and cannot stand a downed citizen up, so read the clear rates as a floor.
 
 All numbers are starting values for tuning.
 
@@ -177,6 +194,13 @@ Event rooms reuse the moments definition shape (text, options, a `choose` functi
 - Each floor is a grid of 3 lanes by N steps. Each step has 1–3 rooms; each room links to 1–2 rooms in the next step.
 - Rules for the generator: the first room is always a fight; never two rests in a row; an elite never before step 3; at least one rest or event on every route to the boss; every route reaches the boss.
 - The whole floor is visible from the start. A party with a scout career sees room contents one floor ahead.
+- Added when the generator was built (2026-11-18), so that a generated floor is always worth walking:
+  - one fight at the door, then two or three rooms at every step, then one last room; links never cross;
+  - **never three fights in a row** on any route (so two fights and then the boss never happens either);
+  - **treasure is never the safe road:** no two treasure rooms in a row, and two at most on any route through a floor;
+  - no step whose rooms are all rests or all treasure (that is no choice; rooms that are all fights still differ in who is in them);
+  - an **elite is always a choice**: every room that leads to it leads somewhere else too;
+  - the fights on a route through a floor are within one of the skull's figure, and never fewer than two.
 
 ### 5.2 Blessings and curses
 
@@ -203,7 +227,9 @@ Each needs a hook where the battle is built, frozen on the battle so replays mat
 
 ### 5.3 Generation
 
-Everything comes from one seed stored on the dungeon. The same seed always gives the same floors, rooms, enemy groups and events, so every town sees the same dungeon, and the server can rebuild it at any time. Battle seeds are derived from the dungeon seed, the town and the room, so two towns do not get identical card draws.
+Everything comes from one seed stored on the dungeon. The same seed, skull and land always give the same floors, rooms, enemy groups and events, so every town sees the same dungeon. Battle seeds are derived from the dungeon seed, the town and the room, so two towns do not get identical card draws.
+
+As built: the generator's result is **stored on the dungeon row** (`dungeons.layout`) when the dungeon is made, and read from there. Rebuilding from the seed each time would let a later edit to the creature list change a dungeon that towns are already walking through.
 
 ## 6. Map dungeons
 
@@ -355,9 +381,9 @@ This is the larger part of the work.
 
 The design questions are answered (§2). What remains is content and balance, in `docs/DUNGEON_CONTENT.md` §9: the costs of the class buildings, and the wealth a fight gives (§12 below, "Found while building").
 
-## 12. Built so far (2026-11-18): steps 1 and 2
+## 12. Built so far (2026-11-19): steps 1 to 3, class decks, the two class buildings
 
-A party of four can be sent into a hand-written test dungeon from Dev Tools and play it to any ending. Nothing is offered to players yet.
+A party of four can be sent from Dev Tools into a hand-written test dungeon, or into one the generator makes for a skull, a land and a seed, and play it to any ending, every citizen with their own deck. Nothing is offered to players yet.
 
 **What works**
 
@@ -366,6 +392,9 @@ A party of four can be sent into a hand-written test dungeon from Dev Tools and 
 - Run loot held until the end; the five endings of §3.2; the single injury roll with the two tables; the chronicle line on a clear and a defeat; a line in the town news for every ending.
 - A run left idle for 24 hours ends by itself (§3.3).
 - The party is busy from setting out until the run ends, between rooms too.
+- **Class decks** (`docs/DUNGEON_CLASS_DECKS.md`, which has its own table of files): a deck for each citizen from their class's pack; one card of three each at the door; one of three for the party after each fight, or a hone; heals spent until the party rests; a rest room that rests and hones a card; the Class cards screen with its Prepared ticks.
+- **The Wizard and Hearthkeeper** careers, and the **Hearth Shrine** and **Wizard's Tower** that open them and unlock their cards by level. Both stand in the Home scene (as the placeholder hut until they have art).
+- **The generator** (step 3): a dungeon from a seed for each of the five skulls and seven lands. Floors and steps per skull as in §4; room types that obey §5.1; elites as a choice; creature groups from the land's creatures, harder the deeper the room; treasure, an elite's find and the boss chest from the land's materials.
 
 **Where**
 
@@ -373,15 +402,17 @@ A party of four can be sent into a hand-written test dungeon from Dev Tools and 
 |---|---|
 | Tables `dungeons`, `dungeon_runs`; `settlement_quests.dungeon_run_id`; the quest row `dungeon_room` | server `migrations/0NN_dungeons.sql` |
 | Skulls, the two test dungeons, the path rules of §5.1 (`checkFloor`, `checkStory`) | server `lib/dungeon_defs.js` |
-| The run: start, move, choose, leave, flee, the battle hook, endings, the idle sweep | server `lib/dungeons.js` |
+| The generator: `generate`, and `check` (every rule a generated dungeon must obey) | server `lib/dungeon_gen.js` |
+| The run: start, move, choose, leave, flee, the battle hook, endings, the idle sweep; `createGenerated` (make and store a dungeon) | server `lib/dungeons.js` |
 | Routes, and the Dev Tools routes | server `routes/dungeons.js` |
 | Carried health (`mods.dungeon.start`, frozen on the battle), the no-fatal roll, the run's injuries | server `lib/combat_resolver.js` |
 | A dungeon fight's resolve, forfeit and idle clock | server `routes/combat.js` |
 | The path screen, and the Dev Tools tab | frontend `js/dungeons.js`, `css/dungeons.css` |
 | Flee and the dungeon wording on the battle screen | frontend `js/combat-ui.js` |
-| Tests | server `scripts/dungeons_test.js` (112 checks), frontend `verify/dungeons_proofs.js` (66) |
+| Aiming a card on the battle screen (rings, the arrow, the line that names the target) | frontend `js/combat-ui.js`, `js/card-hand-ui.js`, `css/card-hand-ui.css` |
+| Tests | server `scripts/dungeons_test.js` (243 checks), frontend `verify/dungeons_proofs.js` (96), `verify/aim_proofs.js` (22) |
 
-**How to try it:** Dev Tools → 💀 Dungeons → Start. The town needs four free adults. "Win the open fight" walks a path without playing every battle. The numbers (creature health and strength per skull, rest healing, the share kept when fleeing, idle hours) are under Dev Tools → 👪 Life → Dungeons.
+**How to try it:** Dev Tools → 💀 Dungeons → Start a test dungeon, or choose a skull and a land under "Generated dungeons" (give a seed to get the same dungeon again; the run's line shows its seed). The town needs four free adults. "Win the open fight" walks a path without playing every battle. The numbers (creature health and strength per skull, rest healing, the share kept when fleeing, idle hours) are under Dev Tools → 👪 Life → Dungeons.
 
 **How it differs from §9**
 
@@ -390,11 +421,30 @@ A party of four can be sent into a hand-written test dungeon from Dev Tools and 
 - A test dungeon is a fresh `dungeons` row each time, so it can be played again; "once per town" is enforced per row.
 - Statuses: `active`, `cleared`, `left`, `fled`, `defeat`, `timed_out`. `travelling` arrives with map dungeons.
 
-**Not built, in order:** the generator and tiers on real content (3), map dungeons and "who has cleared it" (4), the draft (5), events, keepsakes, kin and bonds, reviving in battle and the rest room's second choice (6), quest dungeons (7), content and tuning (8), supplies (9). The rule changes to weak, vulnerable and Focus are their own piece of work: they touch both engine copies and every kind of battle.
+**What the generator makes, per skull** (2,500 seeds in the tests, 35,000 while building: every one obeys the rules, with no fallback layout):
+
+| Skull | Floors | Steps a floor | Elites | Fights on a way through, boss included (the table in §4) |
+|---|---|---|---|---|
+| 🟢 green | 1 | 5 | 0 | 3 or 4 (3) |
+| 🟡 yellow | 1 | 7 | 0 | 3 to 5 (4) |
+| 🟠 orange | 2 | 5 or 6 | 1 | 5 to 8 (6) |
+| 🔴 red | 2 | 6 or 7 | 1 | 5 to 9 (7) |
+| 🟣 purple | 3 | 5 or 6 | 2, on different floors | 7 to 12 (9) |
+
+The spread is the player's choice of route: a floor's routes hold one fewer or one more fight than the figure, and taking an elite is one of them.
+
+**Not built, in order:** map dungeons and "who has cleared it" (4), events, keepsakes, kin and bonds and reviving in battle (6), quest dungeons (7), content and tuning (8), supplies (9). Step 5 (the draft, and cards found inside) is done, as class decks. The rule changes to weak, vulnerable and Focus are their own piece of work: they touch both engine copies and every kind of battle.
 
 **Found while building**
 
 1. **The wealth from fights does not match the budget.** §8 says a fight gives its usual wealth (8 × reward weight) times the skull's health modifier; `DUNGEON_CONTENT.md` §8.2 budgets 40 wealth from all of a green dungeon's fights. Three green fights at the usual rate give about 200. The build uses a share per skull (`TIERS[…].wealth` in `lib/dungeon_defs.js`: 0.2 at green to 0.4 at purple), which lands near the budget. To be settled in tuning.
-2. **On a database with no card rows, cards do nothing in a server battle.** The code-defined fallback cards read `this.scaling`, which the dispatcher in `card_combat.js` does not bind, so every play is a silent no-op. The live game has card rows, so it is not affected; a fresh install or test database is. The dungeon test seeds four card rows for itself. Fixing it means changing both engine copies.
+2. **On a database with no card rows, cards do nothing in a server battle.** The code-defined fallback cards read `this.scaling`, which the dispatcher in `card_combat.js` does not bind, so every play is a silent no-op. The live game has card rows, so it is not affected; a fresh install or test database is. The class cards are now written to the table at start-up, so dungeons are not affected either; quests on a fresh install or test database still are. Fixing it means changing both engine copies.
 3. **The test bosses are stand-ins**: a boosted Hill Ogre and company, from today's eleven creatures. Three of those creatures still have no move list, so block does nothing against them (`DUNGEON_CONTENT.md` §2 row 3); the test dungeons avoid them.
 4. **A citizen who dies of old age during a paused run** would still be brought into its fights. The 24-hour idle limit keeps this rare; the run should drop them when map dungeons make runs longer.
+5. **Generated dungeons are thin until the content exists** (step 8). No land has an elite or a boss, so its strongest creature stands in with a boost (`standin: true` on the room); when a creature carries `rank: 'elite'` or `'boss'` the generator uses it as it is (there is a test for this, but `enemy_definitions` has no `rank` column yet: rank is read from health). Lands are short of creatures: forest has no heavy, hills has one heavy and no minion, so the same groups come round often.
+6. **Event rooms are treasure for now.** The generator has their place; until step 6 builds events it puts treasure there, which is why the route rules keep treasure scarce.
+7. **Some of the plan's reward items may not be in a database.** Leather armour, the hunter's dagger and cloak, dragonscale armour, beast horn and dragon tooth are defined in `item_seed.js`, which nothing loads by itself (`seedItemTemplates` has no caller). The generator prefers them and, where the database lacks one, gives the next on its list (an item the migrations create), so a dungeon never promises something that is missing when it is paid. Boss trophies, named gear, cards and titles come with their own steps.
+8. **The two-click cards.** On a desktop that reports itself as touch-only (`(hover: none)`: a touch screen, some browsers), every card needed a first click only to lift it, so "click a card, then a creature" did nothing. The hand now follows the pointer in use (`js/card-hand-ui.js` `_isTouchInput`). A card played on oneself still takes a second click by design; its prompt now says so.
+9. **Honing in place of a rest is a trap.** The first build of honing offered "rest, or hone a card". Simulated, honing cost 15 to 20 points of clear rate at every skull, because a rest heals the whole party. A rest now hones as well, and the choice is after a fight: a new card, or a hone (`DUNGEON_CLASS_DECKS.md` §4.2 and §6.4).
+10. **A citizen with no cards left was handed someone else's hand.** With every heal spent, a deck can be empty; the battle then left that citizen out of its decks. Every citizen now has a deck of their own, even an empty one.
+11. **Weak and vulnerable still do not wear off.** The simulator assumes the agreed rule (they drop by 1 each turn); the game does not do it yet, so Mark, Shove and Chill last longer in play than in the numbers. It is the next rule change to make, in both engine copies.

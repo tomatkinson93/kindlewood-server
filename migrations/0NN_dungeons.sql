@@ -51,6 +51,24 @@ CREATE TABLE IF NOT EXISTS dungeon_runs (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dungeon_runs_one_live ON dungeon_runs (settlement_id) WHERE status IN ('travelling', 'active');
 CREATE INDEX IF NOT EXISTS idx_dungeon_runs_idle ON dungeon_runs (last_action_at) WHERE status IN ('travelling', 'active');
 
+-- A generated dungeon keeps what the generator made (lib/dungeon_gen.js): the
+-- floors, rooms, creature groups and treasure. Stored, not rebuilt from the
+-- seed each time, so a later change to the creature list cannot change a
+-- dungeon that towns are already walking through.
+ALTER TABLE dungeons ADD COLUMN IF NOT EXISTS layout JSONB;
+
+-- Class decks (docs/DUNGEON_CLASS_DECKS.md). Each citizen's deck for the run
+-- lives in dungeon_runs.deck: { cards: { citizenId: { card: copies } },
+-- spent: { citizenId: [heal cards gone until the party rests] } }. A choice
+-- of cards that is waiting (at the door, after a fight) lives in
+-- dungeon_runs.draft. Cards the player has set aside, never to be offered:
+CREATE TABLE IF NOT EXISTS settlement_card_prefs (
+  settlement_id  INTEGER NOT NULL REFERENCES settlements(id) ON DELETE CASCADE,
+  card_key       TEXT NOT NULL,
+  prepared       BOOLEAN NOT NULL DEFAULT TRUE,
+  PRIMARY KEY (settlement_id, card_key)
+);
+
 -- A fight inside a run is an ordinary battle row that names its run.
 ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS dungeon_run_id INTEGER;
 

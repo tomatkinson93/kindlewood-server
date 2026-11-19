@@ -37,7 +37,7 @@ router.get('/', requireAuth, async (req, res) => {
     const all = C.allCards();
     res.json({
       ok: true, owned: [...owned], starter: C.STARTER, how_to_get: C.HOW,
-      cards: Object.keys(all).sort().map(k => ({ ...C.meta(k), owned: owned.has(k), starter: C.STARTER.includes(k) })),
+      cards: Object.keys(all).filter(C.isHomeCard).sort().map(k => ({ ...C.meta(k), owned: owned.has(k), starter: C.STARTER.includes(k) })),
     });
   } catch (e) { console.error('[cards] list', e); res.status(500).json({ error: 'Failed to load cards.' }); }
 });

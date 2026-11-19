@@ -101,6 +101,10 @@ Research uses the existing system (`lib/research_defs.js`: a project has a cost,
 
 ### 3.3 "Requires Wizard"
 
+> **Superseded on 2026-11-19 by `docs/DUNGEON_CLASS_DECKS.md`:** each citizen has their own deck, so a class card is never in the hand of someone who cannot play it, and this section's rules are not needed. The class cards of §3.4 below stand as the pool of **unlockable** cards; the base packs are in the new document.
+
+Earlier design, kept as the record:
+
 - A class card can only be played on the turn of a citizen of that class.
 - **In the hand:** when a citizen's hand is drawn, a class card they cannot play is set aside and another is drawn in its place. Nobody ever holds a dead card.
 - **In the draft** (the point raised on 2026-11-15, to keep for the class release): class cards are offered **only for classes in the party**, and when the party has classes, **one of the three cards in every offer is a class card** for one of them. A town that owns Fireball but sends no Wizard never sees it.
@@ -470,7 +474,9 @@ Decided 2026-11-18:
 | Weak, vulnerable and Focus (§2, rows 5 and 6) | **Change them everywhere, for new battles.** Battles already stored replay under the old rules (a rules version stamped on the battle, as `party_v` is). Not built yet. |
 | Event checks (§7) | **The right citizen is certain.** Without them the option is still offered where it makes sense, with its chance shown. No hidden rolls. |
 
+Decided 2026-11-19 (`docs/DUNGEON_CLASS_DECKS.md`): one deck per citizen; the two class buildings and their careers built now, with first costs (its §4.3); cards unlocked by a building's level; honing; the skulls retuned for class decks (`docs/DUNGEONS.md` §4). **The clear rates of §6.2 and the class-card rules of §3.3 above describe the earlier shared draft and its skull numbers**; the current figures are in `DUNGEON_CLASS_DECKS.md` §6.
+
 Still open:
 
-1. **Costs** of the Wizard's Tower and Hearth Shrine and of their research lines.
+1. **Tuning the costs** of the Wizard's Tower and Hearth Shrine (set, not tuned), and whether they get research lines.
 2. **Wealth from fights** (§8.2): the rule "usual wealth times the skull's health modifier" gives about five times the budget at green. The build uses a share per skull instead (`docs/DUNGEONS.md` §12).
