@@ -474,7 +474,9 @@ Decided 2026-11-18:
 | Weak, vulnerable and Focus (§2, rows 5 and 6) | **Change them everywhere, for new battles.** Battles already stored replay under the old rules (a rules version stamped on the battle, as `party_v` is). Not built yet. |
 | Event checks (§7) | **The right citizen is certain.** Without them the option is still offered where it makes sense, with its chance shown. No hidden rolls. |
 
+Decided 2026-11-19 (`docs/DUNGEON_CLASS_DECKS.md`): one deck per citizen; the two class buildings and their careers built now, with first costs (its §4.3); cards unlocked by a building's level; honing; the skulls retuned for class decks (`docs/DUNGEONS.md` §4). **The clear rates of §6.2 and the class-card rules of §3.3 above describe the earlier shared draft and its skull numbers**; the current figures are in `DUNGEON_CLASS_DECKS.md` §6.
+
 Still open:
 
-1. **Costs** of the Wizard's Tower and Hearth Shrine and of their research lines.
+1. **Tuning the costs** of the Wizard's Tower and Hearth Shrine (set, not tuned), and whether they get research lines.
 2. **Wealth from fights** (§8.2): the rule "usual wealth times the skull's health modifier" gives about five times the budget at green. The build uses a share per skull instead (`docs/DUNGEONS.md` §12).
