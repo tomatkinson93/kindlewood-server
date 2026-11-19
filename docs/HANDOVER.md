@@ -24,7 +24,7 @@ The same file is in both repos (`kindlewood-server/docs/` and `kindlewood-fronte
 - **No new systems before 1.0.** Every feature must serve families, the turning year, or gentle stakes. If it only turns resources into resources, fold it in or leave it out.
 - **Never punish being away.** Anything that needs tending must have a sensible default that happens by itself.
 - **Death ships only together with inheritance and the chronicle** (Phase 1 steps 2–6 are one release).
-- **Push back** when a request works against the pitch, and say what you would cut. The owner has asked for this.
+- **Work as the creative director or project manager would, not only as the engineer.** The owner's words (2026-11-19): imagine a team of engineers under you; the role is to push back, suggest alternatives and improvements, not just to implement. So: say when a request works against the pitch and what you would cut; bring a better option when you see one; check an idea against the numbers before building it, and say so when the numbers disagree.
 - **Build to the specs.** If a spec turns out to be wrong, say so and propose the change; don't quietly build something else.
 - **Agreed phase order:** 0 (done) → 1 life cycle → 2 moments → 4 consolidation and layout → 3 onboarding and the guide → 5 species → 6 clan project.
 
