@@ -142,6 +142,11 @@ initDB().then(() => {
   require('./lib/clan_quests').seedDefinitions({ onlyIfEmpty: true })
     .then(n => { if (n) console.log(`[clan_quests] seeded ${n} clan quest definitions`); })
     .catch(e => console.error('[clan_quests] seed failed', e.message));
+  // The cards of the class decks into card_templates (lib/class_cards.js). A
+  // card already there is left alone, so the card editor's changes are kept.
+  require('./lib/class_cards').seed()
+    .then(n => { if (n) console.log(`[class_cards] added ${n} class cards`); })
+    .catch(e => console.error('[class_cards] seed failed', e.message));
 
   if (process.env.QUEST_WORKER_DISABLED !== '1') {
     questWorker.start();

@@ -5,7 +5,10 @@
 //
 //    GET  /run            the town's unfinished run, or the last finished one
 //    POST /run/move       { room }    enter a connected room
-//    POST /run/choose     { option }  answer a rest room or a landing
+//    POST /run/pick       { citizen_id, card } at the door, { index } after a fight; null passes
+//    POST /run/choose     { option }  answer a rest room or a landing; honing adds { citizen_id, card }
+//    GET  /cards          the town's class cards: packs, what is unlocked, what is prepared
+//    POST /cards/prepare  { card, prepared }  set a card aside, or prepare it again
 //    POST /run/leave      turn back (between rooms): keep everything
 //    POST /run/flee       leave a fight: the run ends, half the loot is kept
 //
@@ -48,8 +51,23 @@ router.get('/run', requireAuth, async (req, res) => {
 router.post('/run/move', requireAuth, gate, async (req, res) => {
   try { res.json({ ok: true, ...(await D.move(req.user.userId, (req.body || {}).room)) }); } catch (e) { fail(res, e); }
 });
+router.post('/run/pick', requireAuth, gate, async (req, res) => {
+  try { res.json({ ok: true, ...(await D.pick(req.user.userId, req.body || {})) }); } catch (e) { fail(res, e); }
+});
 router.post('/run/choose', requireAuth, gate, async (req, res) => {
-  try { res.json({ ok: true, ...(await D.choose(req.user.userId, (req.body || {}).option)) }); } catch (e) { fail(res, e); }
+  try { const b = req.body || {}; res.json({ ok: true, ...(await D.choose(req.user.userId, b.option, { citizen_id: b.citizen_id, card: b.card })) }); } catch (e) { fail(res, e); }
+});
+// The town's class cards (lib/dungeon_decks.js `collection`).
+const town = async (req) => (await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId])).rows[0];
+router.get('/cards', requireAuth, gate, async (req, res) => {
+  try { const s = await town(req); if (!s) return res.status(404).json({ error: 'No settlement.' }); res.json({ ok: true, ...(await require('../lib/dungeon_decks').collection(s.id)) }); } catch (e) { fail(res, e); }
+});
+router.post('/cards/prepare', requireAuth, gate, async (req, res) => {
+  try {
+    const s = await town(req); if (!s) return res.status(404).json({ error: 'No settlement.' });
+    const b = req.body || {};
+    res.json({ ok: true, ...(await require('../lib/dungeon_decks').setPrepared(s.id, b.card, b.prepared !== false)) });
+  } catch (e) { fail(res, e); }
 });
 router.post('/run/leave', requireAuth, gate, async (req, res) => {
   try { res.json({ ok: true, ...(await D.leave(req.user.userId)) }); } catch (e) { fail(res, e); }

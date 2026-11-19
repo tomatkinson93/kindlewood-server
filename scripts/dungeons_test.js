@@ -118,6 +118,58 @@ function part1() {
   check(GEN.checkRoutes(rich, { fights: 2 }).some(p => /two treasure rooms in a row/.test(p)) && GEN.checkRoutes(rich, { fights: 2 }).some(p => /3 treasure rooms/.test(p)), 'treasure is never the safe road: two in a row, or three on one route, are refused');
   check(GEN.rankOf({ max_hp: 22 }) === 'minion' && GEN.rankOf({ max_hp: 44 }) === 'regular' && GEN.rankOf({ max_hp: 60 }) === 'heavy' && GEN.rankOf({ max_hp: 22, rank: 'boss' }) === 'boss', "a creature's rank is its own when it has one, else read from its health");
 
+  // ── Class cards and decks (lib/class_cards.js, lib/dungeon_decks.js) ────
+  console.log('Class cards');
+  const CC = require('../lib/class_cards'), DK = require('../lib/dungeon_decks'), FM = require('../lib/card_formula');
+  const badFormula = CC.allKeys().filter(k => FM.parseFormula(CC.card(k).formula).errors.length);
+  check(Object.keys(CC.CARDS).length === 59 && CC.allKeys().length === 118 && badFormula.length === 0, 'every class card, and its honed form, has a formula the engine can read', badFormula.join());
+  const size = d => Object.values(d).reduce((n, x) => n + x, 0);
+  check(['guard', 'archer', 'wizard', 'hearthkeeper'].every(k => size(CC.PACKS[k].deck) === 10 && Object.keys(CC.PACKS[k].deck).every(c => CC.CARDS[c].cls === k)), 'each class pack is ten of its own cards');
+  check(['guard', 'archer', 'wizard', 'hearthkeeper'].every(k => Object.keys(CC.PACKS[k].deck).filter(c => CC.CARDS[c].basic).length === 2 && Object.keys(CC.PACKS[k].deck).length === 5), 'two kinds of plain card and three of the class\'s own in every pack');
+  const pk = role => CC.packFor({ role });
+  check(pk('soldier').cls === 'guard' && pk('archer').cls === 'archer' && pk('wizard').cls === 'wizard' && pk('hearthkeeper').cls === 'hearthkeeper', 'a Guard, Archer, Wizard or Hearthkeeper takes the class pack');
+  check(pk('farmer').cls === 'villager' && pk('farmer').deck.t_tool === 2 && pk('scout').deck.t_spot === 2 && pk('blacksmith').deck.t_shore === 2 && pk('porter').deck.t_ration === 2 && pk('tavernkeep').deck.t_drink === 2 && pk('scholar').deck.t_signs === 2
+    && ['farmer', 'scout', 'blacksmith', 'porter', 'tavernkeep', 'scholar'].every(r => size(pk(r).deck) === 10), 'anyone else takes the Villager pack with two copies of their job\'s trade card');
+  check(pk('idle').deck.v_swing === 6 && pk('idle').deck.v_duck === 4 && pk('idle').trade === null && size(pk(undefined).deck) === 10, 'a citizen with no job takes one more Swing and one more Duck');
+  check(CC.card('g_strike_honed').formula === 'damage: (strength*0.7 + combat*0.8 + 5)*1.3' && CC.card('g_strike_honed').name === 'Strike ✦' && CC.card('g_strike_honed').cost === 1
+    && CC.card('a_part_honed').formula === 'damage: (agility*0.5 + combat*0.6 + 3)*1.3\nblock: (agility*0.3 + 2)*1.3\nmove: 1', 'a honed card does about a third more; what it does besides stays as it was');
+  check(CC.honedFormula('draw: 1\nenergy: 1').touched === false && CC.honedFormula('if target_species withered: damage: 4').formula === 'if target_species withered: damage: (4)*1.3', 'a condition is kept; a card with no numbers to raise costs one less instead');
+  check(CC.honed('g_strike_honed') === 'g_strike_honed' && CC.baseOf('g_strike_honed') === 'g_strike' && CC.isClassCard('g_strike_honed') && !CC.isClassCard('strike'), 'a honed card knows the card it came from');
+  check(Object.values(CC.CARDS).filter(c => c.heal).every(c => c.wither) && CC.CARDS.h_kindle.heal && CC.CARDS.t_ration.heal && CC.CARDS.c_second_wind.heal && !CC.CARDS.g_hold_line.heal, 'every healing card is marked as one, and cannot be played twice in a fight');
+  // What can be offered.
+  const pool = (cls, trade, owned, off) => CC.poolFor(cls, trade, new Set(owned || []), new Set(off || [])).sort().join();
+  check(pool('guard', null) === 'g_cover,g_heavy,g_shove', 'with nothing unlocked a Guard is offered more of the pack\'s own class cards, never a plain Strike');
+  check(pool('guard', null, ['g_stand_fast', 'g_shield_bash', 'a_aimed']) === 'g_cover,g_heavy,g_shield_bash,g_shove,g_stand_fast', 'what the town has unlocked for that class joins them, and no other class\'s cards');
+  check(pool('villager', 't_tool') === 'c_cleave,c_expose,c_quick_jab,c_rally,c_weaken,t_tool', 'a villager is offered their trade card and the plain cards every town starts with');
+  check(pool('guard', null, ['g_stand_fast'], ['g_stand_fast', 'g_cover']) === 'g_heavy,g_shove', 'a card that is not prepared is never offered');
+  check(pool('guard', null, [], ['g_cover', 'g_heavy', 'g_shove']) === 'g_cover,g_heavy,g_shove', 'with everything set aside the pack\'s own cards are offered all the same');
+  check(CC.isUnlock('g_stand_fast') && CC.isUnlock('g_shield_bash') && !CC.isUnlock('g_cover') && /Watchtower level 1/.test(CC.howTo('g_stand_fast')) && /Wizard's Tower level 3/.test(CC.howTo('w_fireball')), 'each unlock says how the town comes by it');
+  // The deck through a run.
+  const deck0 = { cards: { 1: { g_strike: 3, g_cover: 2 }, 2: { h_cinder: 3, h_kindle: 1 }, 3: { v_swing: 6 }, 4: { a_shoot: 3 } }, spent: {}, cls: { 1: 'guard', 2: 'hearthkeeper', 3: 'villager', 4: 'archer' }, trade: {} };
+  const door = DK.doorOffers(deck0, [1, 2, 3, 4], 'seed|7', new Set(), new Set());
+  check(door.kind === 'door' && [1, 3, 4].every(id => door.offers[id].length === 3 && new Set(door.offers[id]).size === 3) && door.offers[2].length === 2 && door.done.length === 0,
+    'at the door every citizen is shown up to three different cards (a Hearthkeeper with nothing unlocked has two to show: not the heal already held)');
+  check(JSON.stringify(door) === JSON.stringify(DK.doorOffers(deck0, [1, 2, 3, 4], 'seed|7', new Set(), new Set())) && JSON.stringify(door) !== JSON.stringify(DK.doorOffers(deck0, [1, 2, 3, 4], 'seed|8', new Set(), new Set())), 'the same dungeon and town always show the same cards');
+  check(door.offers[1].every(k => CC.CARDS[k].cls === 'guard') && door.offers[4].every(k => CC.CARDS[k].cls === 'archer') && !door.offers[2].includes('h_kindle'), 'each is offered their own class\'s cards, and never a heal they already hold');
+  let step = DK.pick(deck0, door, { citizen_id: 1, card: door.offers[1][0] });
+  check(step.deck.cards[1][door.offers[1][0]] >= 1 && step.draft.done.join() === '1' && deck0.cards[1][door.offers[1][0]] !== step.deck.cards[1][door.offers[1][0]], 'keeping one adds it to that citizen\'s deck');
+  const tryPick = (fn) => { try { fn(); return null; } catch (e) { return e.status; } };
+  check(tryPick(() => DK.pick(step.deck, step.draft, { citizen_id: 1, card: door.offers[1][1] })) === 400 && tryPick(() => DK.pick(step.deck, step.draft, { citizen_id: 2, card: 'w_fireball' })) === 400, 'a second card for the same citizen, or a card that was not offered, is refused');
+  step = DK.pick(step.deck, step.draft, { citizen_id: 2, card: null }); step = DK.pick(step.deck, step.draft, { citizen_id: 3, card: null }); step = DK.pick(step.deck, step.draft, { citizen_id: 4, card: null });
+  check(step.draft === null, 'a citizen can pass; when all four have answered the door is done');
+  const rew = DK.rewardOffers(deck0, [1, 2, 3, 4], 'seed|7', '0:a', new Set(), new Set());
+  check(rew.kind === 'reward' && rew.offers.length === 3 && new Set(rew.offers.map(o => o.citizen)).size === 3 && rew.offers.every(o => CC.CARDS[o.card].cls === (deck0.cls[o.citizen] === 'villager' ? 'common' : deck0.cls[o.citizen]) || o.card.startsWith('t_')), 'after a fight: three cards, each for a different citizen, each of that citizen\'s class');
+  const fought = { units: [{ id: 'p_2', side: 'player', citizen_id: 2 }, { id: 'p_1', side: 'player', citizen_id: 1 }], decks: { p_2: { withered: ['h_kindle'] }, p_1: { withered: ['g_hold_line'] } } };
+  const afterFight = DK.spendHeals({ ...deck0, cards: { ...deck0.cards, 1: { g_strike: 3, g_hold_line: 1 } } }, fought);
+  check(!afterFight.cards[2].h_kindle && afterFight.spent[2].join() === 'h_kindle' && afterFight.cards[1].g_hold_line === 1, 'a heal that was played is spent; a once-a-fight card that is not a heal comes back as usual');
+  check(!DK.poolOf(afterFight, 2, new Set(), new Set()).includes('h_kindle') && !DK.forBattle(afterFight)[2].h_kindle, 'while spent it is not in the next fight, and is not offered again');
+  check(DK.restore(afterFight).cards[2].h_kindle === 1 && DK.restore(afterFight).spent[2].length === 0, 'a rest brings it back');
+  const honedDeck = DK.hone(deck0, 1, 'g_strike');
+  check(honedDeck.cards[1].g_strike === 2 && honedDeck.cards[1].g_strike_honed === 1 && deck0.cards[1].g_strike === 3, 'honing changes one copy of a card into its honed form');
+  check(tryPick(() => DK.hone(honedDeck, 1, 'g_strike_honed')) === 400 && tryPick(() => DK.hone(deck0, 1, 'a_shoot')) === 400 && tryPick(() => DK.hone(deck0, 9, 'g_strike')) === 400, 'a card already honed, a card not held, or a stranger is refused');
+  const seen = DK.deckView(honedDeck, 1, f => 'does ' + f.length);
+  check(seen.cls === 'guard' && seen.label === 'Guard' && seen.size === 5 && seen.cards[0].basic && seen.cards.find(c => c.key === 'g_strike_honed').honed && /^does /.test(seen.cards[0].text) && seen.cards.find(c => c.key === 'g_cover').reach === 'a friend', 'a deck for the screen: its class, its size, each card with what it does and whom it reaches');
+
   const CR = require('../lib/combat_resolver');
   let fatal = 0, fatalSafe = 0;
   for (let i = 0; i < 4000; i++) { if (CR.rollInjuryFor({}).severity === 'fatal') fatal++; if (CR.rollInjuryFor({ no_fatal: true }).severity === 'fatal') fatalSafe++; }
@@ -133,7 +185,17 @@ async function part2() {
   const SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production';
   const RUN = Math.random().toString(36).slice(2, 7);
   const q = (t, p) => pool.query(t, p);
-  const D = require('../lib/dungeons');
+  const D0 = require('../lib/dungeons');
+  // Most checks below are about the path, not the cards: for them every card on offer is passed over.
+  async function quiet(userId, r) {
+    let v = r && r.run;
+    for (let g = 0; v && v.status === 'active' && v.pending && (v.pending.kind === 'door' || v.pending.kind === 'reward') && g < 8; g++) {
+      v = (await D0.pick(userId, v.pending.kind === 'door' ? { citizen_id: v.pending.citizens.find(c => !c.done).id, card: null } : { index: null })).run;
+    }
+    return { ...r, run: v };
+  }
+  const D = { ...D0 };
+  for (const fn of ['startTest', 'startGenerated', 'start', 'adminWin']) D[fn] = async (userId, ...rest) => quiet(userId, await D0[fn](userId, ...rest));
   const CR = require('../lib/combat_resolver');
   const TU = require('../lib/tuning');
   let seq = 0;
@@ -166,9 +228,13 @@ async function part2() {
       let played = false;
       const hand = (cards && b.deck && b.deck.hand) || [];
       const foe = b.units.find(u => u.side === 'enemy' && u.hp > 0 && !u.flags.downed);
+      const me = b.turn_order[b.current_index];
       for (let i = 0; i < hand.length && !played; i++) {
-        const r = await api(p, 'POST', '/api/combat/action/' + questRunId, { action_key: 'card', hand_index: i, target_id: foe ? foe.id : null });
-        if (r.status === 200) { b = r.body.battle; played = true; }
+        // Aimed at the first creature standing; a card that is not for a creature is played on oneself.
+        for (const target_id of [foe ? foe.id : null, me]) {
+          const r = await api(p, 'POST', '/api/combat/action/' + questRunId, { action_key: 'card', hand_index: i, target_id });
+          if (r.status === 200) { b = r.body.battle; played = true; break; }
+        }
       }
       if (!played) {
         const r = await api(p, 'POST', '/api/combat/action/' + questRunId, { action_key: 'end_turn' });
@@ -180,17 +246,6 @@ async function part2() {
   }
 
   await TU.setSwitch('dungeons.on', true);
-  // On a database with no card rows the code-defined cards do nothing in a
-  // server battle (their effects read `this.scaling`, which the dispatcher
-  // does not bind), so give the default deck's four cards real rows for this
-  // run, with the same numbers, and take them away again at the end.
-  const seededCards = !(await q('SELECT 1 FROM card_templates LIMIT 1')).rows.length;
-  if (seededCards) {
-    for (const c of [['strike', 'Strike', 1, 'attack', 'enemy', 'damage: strength*0.6 + combat*0.8 + 4'], ['defend', 'Defend', 1, 'defense', 'self', 'block: endurance*0.7 + combat*0.5 + 4'],
-      ['quick_jab', 'Quick Jab', 0, 'attack', 'enemy', 'damage: agility*0.5 + combat*0.4 + 2'], ['rally', 'Rally', 1, 'support', 'ally', 'buff damage_bonus: charisma*0.4 + combat*0.2 + 2']]) {
-      await q('INSERT INTO card_templates (card_key, name, cost, card_type, target, formula) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING', c);
-    }
-  }
   try {
     // ── Setting out ──────────────────────────────────────────────────────
     console.log('Setting out');
@@ -251,7 +306,17 @@ async function part2() {
     check(end && end.status === 'victory', 'the party wins the fight');
     r = await api(a, 'POST', '/api/combat/resolve', { quest_run_id: q1, outcome: 'victory' });
     v = r.body.dungeon && r.body.dungeon.run;
-    check(r.status === 200 && r.body.outcome === 'victory' && v && v.status === 'active' && v.room === 'a' && !v.room_open && v.moves.join() === 'b1,b2', 'after the win the party is back on the path, with two ways on');
+    check(r.status === 200 && r.body.outcome === 'victory' && v && v.status === 'active' && v.room === 'a' && !v.room_open, 'after the win the party is back on the path');
+    check(v.pending && v.pending.kind === 'reward' && v.pending.offers.length === 3 && new Set(v.pending.offers.map(o => o.citizen)).size === 3 && v.moves.length === 0,
+      'first three cards are offered, each for a different citizen, and the way on waits');
+    const moveEarly = await api(a, 'POST', '/api/dungeons/run/move', { room: 'b1' });
+    check(moveEarly.status === 400 && /Choose a card from the fight/.test(moveEarly.body.error), 'no walking on until a card is kept or passed over');
+    const offer0 = v.pending.offers[0], sizeBefore = v.party.find(m => m.id === offer0.citizen).deck.size;
+    const took = await api(a, 'POST', '/api/dungeons/run/pick', { index: 0 });
+    v = took.body.run;
+    check(took.status === 200 && took.body.took.card.key === offer0.card.key && v.party.find(m => m.id === offer0.citizen).deck.size === sizeBefore + 1 && v.pending === null && v.moves.join() === 'b1,b2',
+      'keeping one adds it to that citizen\'s deck, and there are two ways on');
+    check((await api(a, 'POST', '/api/dungeons/run/pick', { index: 1 })).status === 400, 'only one of the three can be kept');
     const hpEnd = Object.fromEntries(end.units.filter(u => u.side === 'player').map(u => [u.citizen_id, u.hp]));
     check(v.party.every(m => m.hp === hpEnd[m.id]), "each citizen's health on the path is their health at the end of the fight");
     check(v.loot.wealth === Math.round(end.reward.wealth * 0.2) && v.loot.wealth > 0 && (await wealth(a)) === w0, 'the wealth found is held by the run, not paid yet');
@@ -505,6 +570,138 @@ async function part2() {
     check(JSON.stringify(again.rooms.map(x => [x.id, x.type, x.enemies.map(en => en.key)])) === JSON.stringify(v1.rooms.map(x => [x.id, x.type, x.enemies.map(en => en.key)])), 'a later change to the creature list does not change a dungeon already made');
     await api(t1, 'POST', '/api/dungeons/run/flee'); await api(t2, 'POST', '/api/dungeons/run/flee');
 
+    // ── Class decks ─────────────────────────────────────────────────────
+    console.log('Class decks');
+    const CC = require('../lib/class_cards'), CARDS = require('../lib/cards');
+    const seeded = (await q("SELECT card_key, metadata FROM card_templates WHERE card_key = ANY($1::text[])", [CC.allKeys()])).rows;
+    check(seeded.length === 118 && seeded.every(x => x.metadata.dungeon === true), 'the class cards and their honed forms are in the card table, marked as class-deck cards');
+    await require('../routes/cards');   // (loads the registry helpers)
+    await CR.replayBattle({ citizenIds: a.cits.slice(0, 1), enemyKeys: ['marsh_rat'], seed: 1, actions: [], settlementId: a.sid, mods: null }).catch(() => {});
+    check(!CARDS.unlockable().some(k => CC.isClassCard(k)), 'they are never dropped, taught or won as home cards');
+    r = await api(a, 'GET', '/api/cards');
+    check(r.status === 200 && !r.body.cards.some(c => CC.isClassCard(c.key)), 'and the home collection does not list them');
+    // A party of a Guard, an Archer, a Porter and a Farmer. The Watchtower at level 2, and an old Shield Bash, unlock Guard cards.
+    const k = await player('Decks');
+    const [gd, ar, po, fa] = k.cits;
+    await q("UPDATE citizens SET role='soldier' WHERE id=$1", [gd]); await q("UPDATE citizens SET role='archer' WHERE id=$1", [ar]);
+    await q("UPDATE citizens SET role='porter', stats = stats || '{\"charisma\": 13}' WHERE id=$1", [po]); await q("UPDATE citizens SET role='farmer' WHERE id=$1", [fa]);
+    await q("INSERT INTO buildings (settlement_id, type, level) VALUES ($1,'watchtower',2)", [k.sid]);
+    await q("INSERT INTO settlement_unlocked_cards (settlement_id, card_key, source) VALUES ($1,'shield_bash','test')", [k.sid]);
+    const ownedK = await CC.ownedFor(k.sid);
+    check(['g_stand_fast', 'g_oath', 'a_aimed', 'a_pin', 'g_shield_bash'].every(x => ownedK.has(x)) && !ownedK.has('g_hammer') && !ownedK.has('w_fireball') && !ownedK.has('g_bulwark'),
+      'a Watchtower at level 2 owns the level 1 and 2 cards of Guard and Archer; an old Shield Bash owns its Guard twin');
+    r = await api(k, 'GET', '/api/dungeons/cards');
+    const guardCards = r.body.classes.find(c => c.cls === 'guard');
+    check(r.status === 200 && r.body.classes.map(c => c.cls).join() === 'guard,archer,wizard,hearthkeeper,villager' && guardCards.pack.length === 5 && guardCards.pack.reduce((n, c) => n + c.n, 0) === 10
+      && guardCards.more.find(c => c.key === 'g_stand_fast').owned && !guardCards.more.find(c => c.key === 'g_hammer').owned && /Watchtower level 3/.test(guardCards.more.find(c => c.key === 'g_hammer').how)
+      && r.body.classes.find(c => c.cls === 'villager').trades.length === 6, 'the class cards screen: each class with its pack, what is unlocked and how to get the rest');
+    r = await api(k, 'POST', '/api/dungeons/cards/prepare', { card: 'g_cover', prepared: false });
+    check(r.status === 200 && r.body.classes.find(c => c.cls === 'guard').pack.find(c => c.key === 'g_cover').prepared === false, 'a card can be set aside');
+    check((await api(k, 'POST', '/api/dungeons/cards/prepare', { card: 'g_strike', prepared: false })).status === 400 && (await api(k, 'POST', '/api/dungeons/cards/prepare', { card: 'strike', prepared: false })).status === 400, 'a plain card, or a card that is not a class card, cannot');
+    for (const x of ['g_heavy', 'g_shove', 'g_stand_fast', 'g_shield_bash']) await api(k, 'POST', '/api/dungeons/cards/prepare', { card: x, prepared: false });
+    // The door.
+    v = (await D0.startTest(k.id, 'test_green', [gd, ar, po, fa])).run;
+    const byId = id => v.party.find(m => m.id === id);
+    check(byId(gd).deck.cls === 'guard' && byId(gd).deck.size === 10 && byId(ar).deck.cls === 'archer' && byId(po).deck.cls === 'villager' && byId(po).deck.cards.find(c => c.key === 't_ration').n === 2 && byId(fa).deck.cards.find(c => c.key === 't_tool').n === 2,
+      'each citizen walks in with their own ten cards: the class pack, or the Villager pack with their trade card');
+    check(/^Deal \d+ damage$/.test(byId(gd).deck.cards.find(c => c.key === 'g_strike').text) && byId(gd).deck.cards.find(c => c.key === 'g_strike').reach === 'the front creature', "each card shows what it does in that citizen's hands");
+    check(v.pending.kind === 'door' && v.pending.citizens.length === 4 && v.pending.citizens.every(c => c.cards.length >= 1 && c.cards.length <= 3 && !c.done) && v.moves.length === 0, 'at the door a choice of cards waits for each of the four');
+    const gOffer = v.pending.citizens.find(c => c.id === gd).cards.map(c => c.key);
+    check(gOffer.length === 1 && gOffer[0] === 'g_oath', 'the Guard is offered only what is prepared: with the rest set aside, the one unlocked card left', gOffer.join());
+    check(v.pending.citizens.find(c => c.id === ar).cards.every(c => CC.CARDS[c.key].cls === 'archer') && v.pending.citizens.find(c => c.id === po).cards.every(c => ['common', 'trade'].includes(CC.CARDS[c.key].cls)), "an Archer sees Archer cards; a villager the plain cards and their trade's");
+    r = await api(k, 'POST', '/api/dungeons/run/move', { room: 'a' });
+    check(r.status === 400 && /Choose a card for each citizen/.test(r.body.error), 'no walking in until each citizen has kept a card or passed');
+    r = await api(k, 'POST', '/api/dungeons/run/pick', { citizen_id: gd, card: 'g_hammer' });
+    check(r.status === 400, 'a card that was not offered is refused');
+    r = await api(k, 'POST', '/api/dungeons/run/pick', { citizen_id: gd, card: 'g_oath' });
+    check(r.status === 200 && r.body.took.card.name === "Guard's Oath" && r.body.run.party.find(m => m.id === gd).deck.size === 11 && r.body.run.pending.citizens.find(c => c.id === gd).done === true, 'the Guard keeps one: eleven cards now');
+    check((await api(k, 'POST', '/api/dungeons/run/pick', { citizen_id: gd, card: 'g_oath' })).status === 400, 'one card each');
+    const reload = (await api(k, 'GET', '/api/dungeons/run')).body.run;
+    check(JSON.stringify(reload.pending.citizens.find(c => c.id === ar).cards.map(c => c.key)) === JSON.stringify(v.pending.citizens.find(c => c.id === ar).cards.map(c => c.key)), 'reloading shows the same cards');
+    await api(k, 'POST', '/api/dungeons/run/pick', { citizen_id: ar, card: null });
+    await api(k, 'POST', '/api/dungeons/run/pick', { citizen_id: po, card: null });
+    r = await api(k, 'POST', '/api/dungeons/run/pick', { citizen_id: fa, card: null });
+    v = r.body.run;
+    check(v.pending === null && v.moves.join() === 'a' && v.party.find(m => m.id === ar).deck.size === 10, 'the others pass; the way in is open');
+    // The fight: one deck apiece.
+    r = await api(k, 'POST', '/api/dungeons/run/move', { room: 'a' });
+    const qk = r.body.quest_run_id;
+    b = (await q('SELECT * FROM settlement_quests WHERE id=$1', [qk])).rows[0];
+    check(b.combat_mods.dungeon.decks[gd].g_oath === 1 && b.combat_mods.dungeon.decks[gd].g_strike === 3 && Object.keys(b.combat_mods.dungeon.decks).length === 4 && b.combat_mods.dungeon.decks[po].t_ration === 2, "each citizen's deck is frozen on the battle");
+    let bt = (await api(k, 'POST', '/api/combat/engage/' + qk)).body.battle;
+    const unitOf = cid => bt.units.find(u => u.citizen_id === cid);
+    check(Object.keys(bt.decks).length === 4 && [gd, ar, po, fa].every(cid => { const dk = bt.decks[unitOf(cid).id]; return dk.hand.length === 5 && dk.hand.concat(dk.drawPile).length === (cid === gd ? 11 : 10); }), 'the battle holds four decks, each with a hand of five');
+    const mineOnly = (cid) => { const dk = bt.decks[unitOf(cid).id], own = Object.keys(b.combat_mods.dungeon.decks[cid]); return dk.hand.concat(dk.drawPile, dk.discardPile).every(c => own.includes(c)); };
+    check([gd, ar, po, fa].every(mineOnly), "and holds only that citizen's cards");
+    const actor0 = bt.units.find(u => u.id === bt.turn_order[bt.current_index]);
+    check(actor0.side === 'player' && JSON.stringify(bt.deck.hand) === JSON.stringify(bt.decks[actor0.id].hand), "the hand on screen is the acting citizen's own");
+    check(unitOf(po).charisma === 13, 'charisma reaches the battle in a dungeon');
+    // Play it: every card that can be played, the Porter's Share Rations among them.
+    await q("UPDATE dungeon_runs SET party_state = jsonb_set(party_state, $2, '20') WHERE settlement_id=$1 AND status='active'", [k.sid, `{${fa},hp}`]);
+    const hands = new Set();
+    let endK = bt;
+    for (let g = 0; endK.status === 'active' && g < 300; g++) {
+      const me = endK.units.find(u => u.id === endK.turn_order[endK.current_index]);
+      const own = Object.keys(b.combat_mods.dungeon.decks[me.citizen_id]);
+      if (!endK.deck.hand.every(c => own.includes(c))) hands.add('wrong');
+      const foe = endK.units.find(u => u.side === 'enemy' && u.hp > 0 && !u.flags.downed);
+      let played = false;
+      for (let i = 0; i < endK.deck.hand.length && !played; i++) for (const target_id of [foe ? foe.id : null, me.id]) {
+        const rr = await api(k, 'POST', '/api/combat/action/' + qk, { action_key: 'card', hand_index: i, target_id });
+        if (rr.status === 200) { endK = rr.body.battle; played = true; break; }
+      }
+      if (!played) endK = (await api(k, 'POST', '/api/combat/action/' + qk, { action_key: 'end_turn' })).body.battle;
+    }
+    check(endK.status === 'victory' && !hands.has('wrong'), "the fight is won, and on every turn the hand held only the acting citizen's cards");
+    const poDeck = endK.decks[endK.units.find(u => u.citizen_id === po).id];
+    check(poDeck.withered.includes('t_ration'), 'the Porter played Share Rations (a heal cannot be played twice in a fight)');
+    b = (await q('SELECT * FROM settlement_quests WHERE id=$1', [qk])).rows[0];
+    const rp1 = (await CR.replayBattle({ citizenIds: [gd, ar, po, fa], enemyKeys: b.combat_encounter, seed: Number(b.combat_seed), actions: b.combat_actions, settlementId: k.sid, mods: b.combat_mods })).battle;
+    check(rp1.status === 'victory' && JSON.stringify(rp1.units.map(u => [u.id, u.hp])) === JSON.stringify(endK.units.map(u => [u.id, u.hp])), 'the stored battle replays to exactly the same result, decks and all');
+    r = await api(k, 'POST', '/api/combat/resolve', { quest_run_id: qk, outcome: 'victory' });
+    v = r.body.dungeon.run;
+    const spentN = poDeck.withered.filter(c => c === 't_ration').length;
+    check(v.party.find(m => m.id === po).deck.spent.length === spentN && spentN >= 1 && (v.party.find(m => m.id === po).deck.cards.find(c => c.key === 't_ration') || { n: 0 }).n === 2 - spentN, 'the heal he played is spent: out of his deck until the party rests');
+    check(v.pending.kind === 'reward' && !v.pending.offers.some(o => o.citizen === po && o.card.key === 't_ration' && spentN === 2), 'then the reward is offered');
+    await api(k, 'POST', '/api/dungeons/run/pick', { index: null });
+    r = await api(k, 'POST', '/api/dungeons/run/move', { room: 'b2' });
+    b = (await q('SELECT * FROM settlement_quests WHERE id=$1', [r.body.quest_run_id])).rows[0];
+    check((b.combat_mods.dungeon.decks[po].t_ration || 0) === 2 - spentN, 'and it is not in his deck for the next fight');
+    await D0.adminWin(k.id); await api(k, 'POST', '/api/dungeons/run/pick', { index: null });
+    // Rest, or hone.
+    r = await api(k, 'POST', '/api/dungeons/run/move', { room: 'c2' });
+    v = r.body.run;
+    check(v.pending.kind === 'rest' && v.pending.options.map(o => o.key).join() === 'rest,hone' && v.pending.options[1].needs === 'card', 'a rest room offers rest, or honing a card');
+    check((await api(k, 'POST', '/api/dungeons/run/choose', { option: 'hone', citizen_id: gd, card: 'a_shoot' })).status === 400 && (await api(k, 'POST', '/api/dungeons/run/choose', { option: 'hone' })).status === 400, 'honing needs a card that citizen holds');
+    r = await api(k, 'POST', '/api/dungeons/run/choose', { option: 'hone', citizen_id: gd, card: 'g_strike' });
+    v = r.body.run;
+    const gDeck = v.party.find(m => m.id === gd).deck;
+    check(r.status === 200 && gDeck.cards.find(c => c.key === 'g_strike').n === 2 && gDeck.cards.find(c => c.key === 'g_strike_honed').n === 1 && gDeck.cards.find(c => c.key === 'g_strike_honed').honed && gDeck.size === 11 && !v.room_open, 'one Strike is honed, and the party walks on');
+    const plain = parseInt(gDeck.cards.find(c => c.key === 'g_strike').text.match(/\d+/)[0], 10), sharp = parseInt(gDeck.cards.find(c => c.key === 'g_strike_honed').text.match(/\d+/)[0], 10);
+    check(sharp === Math.round(plain * 1.3) || Math.abs(sharp - plain * 1.3) <= 1, `the honed Strike hits for about a third more (${plain} → ${sharp})`);
+    check(v.party.find(m => m.id === po).deck.spent.length === spentN && v.party.every((m, i) => m.hp === r.body.run.party[i].hp), 'honing is in place of resting: nobody is healed and the spent heal stays spent');
+    r = await api(k, 'POST', '/api/dungeons/run/move', { room: 'd2' });
+    r = await api(k, 'POST', '/api/dungeons/run/move', { room: 'boss' });
+    b = (await q('SELECT * FROM settlement_quests WHERE id=$1', [r.body.quest_run_id])).rows[0];
+    check(b.combat_mods.dungeon.decks[gd].g_strike_honed === 1 && b.combat_mods.dungeon.decks[gd].g_strike === 2, 'the honed card goes into the next fight');
+    const bossWin = await D0.adminWin(k.id);
+    check(bossWin.ended && bossWin.run.status === 'cleared' && bossWin.run.pending === null, 'no reward after the boss: the run is over');
+    // A rest brings spent heals back.
+    const h2 = await player('Heals');
+    await q("UPDATE citizens SET role='porter' WHERE id=$1", [h2.cits[0]]);
+    await D.startTest(h2.id, 'test_green', h2.cits.slice(0, 4));
+    await api(h2, 'POST', '/api/dungeons/run/move', { room: 'a' }); await D.adminWin(h2.id);
+    await api(h2, 'POST', '/api/dungeons/run/move', { room: 'b2' }); await D.adminWin(h2.id);
+    await q(`UPDATE dungeon_runs SET deck = jsonb_set(jsonb_set(deck, $2, '1'), $3, '["t_ration"]') WHERE settlement_id=$1 AND status='active'`, [h2.sid, `{cards,${h2.cits[0]},t_ration}`, `{spent,${h2.cits[0]}}`]);
+    await api(h2, 'POST', '/api/dungeons/run/move', { room: 'c2' });
+    r = await api(h2, 'POST', '/api/dungeons/run/choose', { option: 'rest' });
+    const hd = r.body.run.party.find(m => m.id === h2.cits[0]).deck;
+    check(hd.spent.length === 0 && hd.cards.find(c => c.key === 't_ration').n === 2, 'resting brings every spent heal back');
+    await api(h2, 'POST', '/api/dungeons/run/leave');
+    // A battle that is not in a dungeon still uses the town's one deck.
+    const plainBattle = (await CR.replayBattle({ citizenIds: a.cits.slice(0, 2), enemyKeys: ['marsh_rat'], seed: 5, actions: [], settlementId: a.sid, mods: null })).battle;
+    check(!plainBattle.decks && plainBattle.deck && plainBattle.deck.hand.length === 5 && !plainBattle.deck.hand.some(c => CC.isClassCard(c)), 'a battle outside a dungeon still plays with the one home deck, and no class cards');
+
     // ── The switch ──────────────────────────────────────────────────────
     console.log('The switch');
     const g = await player('Gate');
@@ -532,7 +729,6 @@ async function part2() {
     await api(g2, 'POST', '/api/dungeons/run/flee');
   } finally {
     await q("DELETE FROM life_tuning WHERE key = 'dungeons.on' OR key LIKE 'DUNGEON_%'").catch(() => {});
-    if (seededCards) await q("DELETE FROM card_templates WHERE card_key IN ('strike','defend','quick_jab','rally')").catch(() => {});
     await pool.end();
   }
 }
