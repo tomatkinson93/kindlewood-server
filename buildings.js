@@ -248,6 +248,37 @@ const BUILDINGS = {
     requires: [],
     minTier: 'village',
   },
+  // The class buildings (docs/DUNGEON_CLASS_DECKS.md, docs/DUNGEON_CONTENT.md
+  // §3.2). Each trains one fighting class, one citizen a level, and each
+  // level unlocks that class's cards for dungeons (lib/class_cards.js UNLOCKS).
+  hearth_shrine: {
+    id: 'hearth_shrine',
+    label: 'Hearth Shrine',
+    desc: 'A stone hearth under a thatched roof, never let go cold. Hearthkeepers train here: healers and wardens for a dungeon party. Each level seats another and teaches the town new Hearthkeeper cards.',
+    icon: '🔥',
+    cost: { timber: 120, stone: 140, wealth: 60 },
+    maxLevel: 3,
+    levelCost: { 3: { bronze: 15 } },
+    levelTierReq: { 3: 'town' },
+    effect: () => ({}),
+    citizenSlots: (level) => level,
+    requires: [],
+    minTier: 'village',
+  },
+  wizard_tower: {
+    id: 'wizard_tower',
+    label: "Wizard's Tower",
+    desc: "A crooked tower with a lit window at the top. Wizards study here: fire, frost and storm for a dungeon party. Each level seats another and teaches the town new Wizard cards.",
+    icon: '🔮',
+    cost: { timber: 180, stone: 220, wealth: 150 },
+    maxLevel: 3,
+    levelCost: { 2: { bronze: 20 }, 3: { steel: 20 } },
+    levelTierReq: { 3: 'city' },
+    effect: () => ({}),
+    citizenSlots: (level) => level,
+    requires: [],
+    minTier: 'town',
+  },
   // Town walls (lib/defences): 15 raid defence a level, no crew. Palisades
   // to build; levels 3+ need Stone Forts (levelResearch).
   walls: {
@@ -280,6 +311,8 @@ const ROLE_BUILDING_MAP = {
   fisher:      ['fishing_post'],
   soldier:     ['watchtower'],
   archer:      ['watchtower'],
+  wizard:      ['wizard_tower'],
+  hearthkeeper: ['hearth_shrine'],
   idle:        [],
   tavernkeep:   ['tavern'],
   blacksmith:  ['smithy'],

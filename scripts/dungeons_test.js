@@ -623,14 +623,16 @@ async function part2() {
     r = await api(k, 'POST', '/api/dungeons/run/pick', { citizen_id: fa, card: null });
     v = r.body.run;
     check(v.pending === null && v.moves.join() === 'a' && v.party.find(m => m.id === ar).deck.size === 10, 'the others pass; the way in is open');
-    // The fight: one deck apiece.
+    // The fight: one deck apiece. (The Porter is left with his two Share Rations only, so that he is sure to play one.)
+    await q(`UPDATE dungeon_runs SET deck = jsonb_set(deck, $2, '{"t_ration": 2}') WHERE settlement_id=$1 AND status='active'`, [k.sid, `{cards,${po}}`]);
     r = await api(k, 'POST', '/api/dungeons/run/move', { room: 'a' });
     const qk = r.body.quest_run_id;
     b = (await q('SELECT * FROM settlement_quests WHERE id=$1', [qk])).rows[0];
     check(b.combat_mods.dungeon.decks[gd].g_oath === 1 && b.combat_mods.dungeon.decks[gd].g_strike === 3 && Object.keys(b.combat_mods.dungeon.decks).length === 4 && b.combat_mods.dungeon.decks[po].t_ration === 2, "each citizen's deck is frozen on the battle");
     let bt = (await api(k, 'POST', '/api/combat/engage/' + qk)).body.battle;
     const unitOf = cid => bt.units.find(u => u.citizen_id === cid);
-    check(Object.keys(bt.decks).length === 4 && [gd, ar, po, fa].every(cid => { const dk = bt.decks[unitOf(cid).id]; return dk.hand.length === 5 && dk.hand.concat(dk.drawPile).length === (cid === gd ? 11 : 10); }), 'the battle holds four decks, each with a hand of five');
+    check(Object.keys(bt.decks).length === 4 && [gd, ar, fa].every(cid => { const dk = bt.decks[unitOf(cid).id]; return dk.hand.length === 5 && dk.hand.concat(dk.drawPile).length === (cid === gd ? 11 : 10); })
+      && bt.decks[unitOf(po).id].hand.length === 2, 'the battle holds four decks, each with a hand of up to five');
     const mineOnly = (cid) => { const dk = bt.decks[unitOf(cid).id], own = Object.keys(b.combat_mods.dungeon.decks[cid]); return dk.hand.concat(dk.drawPile, dk.discardPile).every(c => own.includes(c)); };
     check([gd, ar, po, fa].every(mineOnly), "and holds only that citizen's cards");
     const actor0 = bt.units.find(u => u.id === bt.turn_order[bt.current_index]);
@@ -661,12 +663,15 @@ async function part2() {
     r = await api(k, 'POST', '/api/combat/resolve', { quest_run_id: qk, outcome: 'victory' });
     v = r.body.dungeon.run;
     const spentN = poDeck.withered.filter(c => c === 't_ration').length;
-    check(v.party.find(m => m.id === po).deck.spent.length === spentN && spentN >= 1 && (v.party.find(m => m.id === po).deck.cards.find(c => c.key === 't_ration') || { n: 0 }).n === 2 - spentN, 'the heal he played is spent: out of his deck until the party rests');
+    check(v.party.find(m => m.id === po).deck.spent.length === spentN && spentN >= 1 && (v.party.find(m => m.id === po).deck.cards.find(c => c.key === 't_ration') || { n: 0 }).n === 2 - spentN, 'the heal he played is spent: out of his deck until the party rests', `played ${spentN}`);
     check(v.pending.kind === 'reward' && !v.pending.offers.some(o => o.citizen === po && o.card.key === 't_ration' && spentN === 2), 'then the reward is offered');
     await api(k, 'POST', '/api/dungeons/run/pick', { index: null });
     r = await api(k, 'POST', '/api/dungeons/run/move', { room: 'b2' });
     b = (await q('SELECT * FROM settlement_quests WHERE id=$1', [r.body.quest_run_id])).rows[0];
     check((b.combat_mods.dungeon.decks[po].t_ration || 0) === 2 - spentN, 'and it is not in his deck for the next fight');
+    const emptyHanded = (await api(k, 'POST', '/api/combat/engage/' + r.body.quest_run_id)).body.battle;
+    const poNow = emptyHanded.decks[emptyHanded.units.find(u => u.citizen_id === po).id];
+    check(spentN < 2 || (poNow.hand.length === 0 && poNow.drawPile.length === 0), 'a citizen with nothing left to play has an empty hand of their own, never someone else\'s');
     await D0.adminWin(k.id); await api(k, 'POST', '/api/dungeons/run/pick', { index: null });
     // Rest, or hone.
     r = await api(k, 'POST', '/api/dungeons/run/move', { room: 'c2' });
@@ -701,6 +706,52 @@ async function part2() {
     // A battle that is not in a dungeon still uses the town's one deck.
     const plainBattle = (await CR.replayBattle({ citizenIds: a.cits.slice(0, 2), enemyKeys: ['marsh_rat'], seed: 5, actions: [], settlementId: a.sid, mods: null })).battle;
     check(!plainBattle.decks && plainBattle.deck && plainBattle.deck.hand.length === 5 && !plainBattle.deck.hand.some(c => CC.isClassCard(c)), 'a battle outside a dungeon still plays with the one home deck, and no class cards');
+
+    // ── The class buildings and their careers ───────────────────────────
+    console.log('Wizards and Hearthkeepers');
+    const BLD = require('../buildings').BUILDINGS, CL = require('../lib/careers/classes');
+    const { build } = require('./_build');
+    check(BLD.hearth_shrine.minTier === 'village' && BLD.wizard_tower.minTier === 'town' && BLD.hearth_shrine.maxLevel === 3 && BLD.wizard_tower.maxLevel === 3
+      && BLD.hearth_shrine.citizenSlots(2) === 2 && BLD.wizard_tower.citizenSlots(3) === 3, 'the Hearth Shrine from Village tier and the Wizard\'s Tower from Town tier: three levels, one seat a level');
+    check(CL.ASSIGNABLE.includes('wizard') && CL.ASSIGNABLE.includes('hearthkeeper') && CL.CLASSES.wizard.kind === 'combat' && CL.CLASSES.hearthkeeper.kind === 'combat'
+      && CL.CLASSES.wizard.needs.join() === 'wizard_tower' && CL.CLASSES.hearthkeeper.needs.join() === 'hearth_shrine' && CL.CLASSES.wizard.primary === 'intelligence' && CL.CLASSES.hearthkeeper.secondary === 'charisma',
+      'Wizard and Hearthkeeper are fighting careers that need their building');
+    check(CL.CLASSES.wizard.tree.length === 11 && CL.CLASSES.hearthkeeper.tree.length === 11 && CL.CLASSES.wizard.tree.filter(x => x.capstone).length === 1
+      && [...CL.CLASSES.wizard.tree, ...CL.CLASSES.hearthkeeper.tree].every(x => x.id.startsWith('wizard.') || x.id.startsWith('hearthkeeper.')), 'each has a skill tree of its own, with a capstone');
+    const wz = await player('Tower');   // a Village
+    const [wizId, hkId, thirdId, fourthId] = wz.cits;
+    const role = (cid, r2) => api(wz, 'PATCH', `/api/citizens/${cid}/role`, { role: r2 });
+    r = await role(wizId, 'wizard');
+    check(r.status === 400, 'no Wizards without a tower', r.body.error);
+    r = await build((m, pth, body) => api(wz, m, pth, body), wz.sid, 'wizard_tower');
+    check(r.status !== 200, "a Village cannot build the Wizard's Tower", JSON.stringify(r.body).slice(0, 120));
+    r = await build((m, pth, body) => api(wz, m, pth, body), wz.sid, 'hearth_shrine');
+    check(r.status === 200, 'a Village can build the Hearth Shrine', JSON.stringify(r.body).slice(0, 120));
+    r = await role(hkId, 'hearthkeeper');
+    check(r.status === 200 && (await q('SELECT role FROM citizens WHERE id=$1', [hkId])).rows[0].role === 'hearthkeeper', 'and then a citizen can become a Hearthkeeper');
+    await q("UPDATE settlements SET tier='town' WHERE id=$1", [wz.sid]);
+    r = await build((m, pth, body) => api(wz, m, pth, body), wz.sid, 'wizard_tower');
+    check(r.status === 200, "a Town can build the Wizard's Tower", JSON.stringify(r.body).slice(0, 120));
+    r = await role(wizId, 'wizard');
+    check(r.status === 200 && (await q('SELECT role FROM citizens WHERE id=$1', [wizId])).rows[0].role === 'wizard', 'and then a citizen can become a Wizard');
+    const ownedW = await CC.ownedFor(wz.sid);
+    check(['w_scorch', 'w_ice_ward', 'h_ember_ward'].every(x => ownedW.has(x)) && !ownedW.has('w_frost_lance') && !ownedW.has('w_fireball') && !ownedW.has('h_rekindle'), 'each building at level 1 owns its first cards: Scorch and Ice Ward, Ember Ward');
+    await q("UPDATE buildings SET level=3 WHERE settlement_id=$1 AND type IN ('wizard_tower','hearth_shrine')", [wz.sid]);
+    const ownedW3 = await CC.ownedFor(wz.sid);
+    check(['w_frost_lance', 'w_thunderclap', 'w_fireball', 'w_deep_freeze', 'w_chain', 'h_banish', 'h_hearthlight', 'h_rekindle'].every(x => ownedW3.has(x)), 'and at level 3 owns them all, Fireball and Rekindle among them');
+    v = (await D0.startTest(wz.id, 'test_green', [wizId, hkId, thirdId, fourthId])).run;
+    const wizDeck = v.party.find(m => m.id === wizId).deck, hkDeck = v.party.find(m => m.id === hkId).deck;
+    check(wizDeck.cls === 'wizard' && wizDeck.cards.find(c => c.key === 'w_bolt').n === 2 && wizDeck.cards.find(c => c.key === 'w_spark').n === 3 && hkDeck.cls === 'hearthkeeper' && hkDeck.cards.find(c => c.key === 'h_kindle').n === 1 && hkDeck.cards.find(c => c.key === 'h_kindle').heal,
+      'in a dungeon the Wizard brings the Wizard pack and the Hearthkeeper theirs, one Kindle in it');
+    const wOffer = v.pending.citizens.find(c => c.id === wizId).cards, hOffer = v.pending.citizens.find(c => c.id === hkId).cards;
+    check(wOffer.length === 3 && wOffer.every(c => CC.CARDS[c.key].cls === 'wizard') && hOffer.every(c => CC.CARDS[c.key].cls === 'hearthkeeper') && !hOffer.some(c => c.key === 'h_kindle'), 'each is offered their own class\'s cards at the door (and not a second Kindle)');
+    check(/^Deal \d+ damage$/.test(wizDeck.cards.find(c => c.key === 'w_spark').text) && /^Heal \d+$/.test(hkDeck.cards.find(c => c.key === 'h_kindle').text), 'with what each does in their hands');
+    await quiet(wz.id, { run: v });
+    r = await api(wz, 'POST', '/api/dungeons/run/move', { room: 'a' });
+    const wEng = (await api(wz, 'POST', '/api/combat/engage/' + r.body.quest_run_id)).body.battle;
+    const wUnit = wEng.units.find(u => u.citizen_id === wizId), wDk = wEng.decks[wUnit.id];
+    check(wDk.hand.concat(wDk.drawPile).every(c => c.startsWith('w_')) && wEng.units.find(u => u.citizen_id === hkId).role === 'hearthkeeper', "in the fight the Wizard draws only Wizard cards");
+    await api(wz, 'POST', '/api/dungeons/run/flee');
 
     // ── The switch ──────────────────────────────────────────────────────
     console.log('The switch');
