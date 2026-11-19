@@ -5,8 +5,9 @@
 //
 //    GET  /run            the town's unfinished run, or the last finished one
 //    POST /run/move       { room }    enter a connected room
-//    POST /run/pick       { citizen_id, card } at the door, { index } after a fight; null passes
-//    POST /run/choose     { option }  answer a rest room or a landing; honing adds { citizen_id, card }
+//    POST /run/pick       { citizen_id, card } at the door, { index } after a fight; null passes;
+//                         after a fight { hone: { citizen_id, card } } hones a card in place of taking one
+//    POST /run/choose     { option }  answer a rest room or a landing; 'hone' (rest and hone) adds { citizen_id, card }
 //    GET  /cards          the town's class cards: packs, what is unlocked, what is prepared
 //    POST /cards/prepare  { card, prepared }  set a card aside, or prepare it again
 //    POST /run/leave      turn back (between rooms): keep everything

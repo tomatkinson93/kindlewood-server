@@ -204,13 +204,12 @@ const MONSTERS = [
 const MON = Object.fromEntries(MONSTERS.map(m => [m.key, m]));
 
 // Skull tiers: how much every creature in the dungeon is scaled.
-const TIERS = {
-  green:  { hp: 0.50, str: 0.40 },
-  yellow: { hp: 0.75, str: 0.60 },
-  orange: { hp: 1.00, str: 0.80 },
-  red:    { hp: 1.25, str: 1.00 },
-  purple: { hp: 1.75, str: 1.40 },
-};
+// The game's own skull numbers (lib/dungeon_defs.js). They were retuned for class decks on 2026-11-19; the
+// figures of docs/DUNGEON_CONTENT.md §6 were made with the earlier ones, kept here as TIERS_2026_11_18
+// (SIM_TIERS='{"orange":{"hp":1,"str":0.8},…}' brings any of them back).
+const TIERS = Object.fromEntries(Object.entries(require('../lib/dungeon_defs').TIERS).map(([k, t]) => [k, { hp: t.hp, str: t.str }]));
+const TIERS_2026_11_18 = { green: { hp: 0.50, str: 0.40 }, yellow: { hp: 0.75, str: 0.60 }, orange: { hp: 1.00, str: 0.80 }, red: { hp: 1.25, str: 1.00 }, purple: { hp: 1.75, str: 1.40 } };
+if (process.env.SIM_OLD_TIERS) Object.assign(TIERS, TIERS_2026_11_18);
 if (process.env.SIM_TIERS) Object.assign(TIERS, JSON.parse(process.env.SIM_TIERS));
 function installRoster(tier) {
   const t = TIERS[tier] || TIERS.green, live = E.ENEMIES();

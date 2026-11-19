@@ -15,6 +15,8 @@
 //    node scripts/class_deck_sim.js door [n]       how a deck should grow: door picks and fight rewards
 //    node scripts/class_deck_sim.js tiers [n]      clear rates per skull and party
 //    node scripts/class_deck_sim.js heal [n]       healing that withers against healing that does not
+//    node scripts/class_deck_sim.js skulls [n]     clear rates with the buildings a town of that standing has, and honing
+//    node scripts/class_deck_sim.js sweep [n] [skull]   a grid of creature health and strength for a skull
 //
 //  One deck per citizen needs no new engine rule to try: only the citizen
 //  whose turn it is plays cards, so the script points the battle's deck at
@@ -28,73 +30,33 @@ console.log = _log;
 const { E, REG, FM, DECK, C, citizen, unitOf, installRoster, encounter, cardValue, bestPlay, rng32, PLANS, REST, TIERS, LEVELS, pct, pad } = S;
 
 // ── The packs ───────────────────────────────────────────────────────────────
-// P(key, name, cost, type, target, formula, extra). A pack card belongs to a
-// deck, not to a class requirement: whoever holds it can play it.
-const P = (key, name, cost, type, target, formula, x) => C(key, name, null, cost, type, target, formula, x);
-const PACK_CARDS = [
-  // Guard (strength / endurance): the best plain attack and block, and block for others.
-  P('g_strike',  'Strike',        1, 'attack',  'enemy',        'damage: strength*0.7 + combat*0.8 + 5', { hit: 'front' }),
-  P('g_shield',  'Shield Up',     1, 'defense', 'self',         'block: endurance*0.8 + combat*0.5 + 5'),
-  P('g_cover',   'Cover',         1, 'defense', 'ally',         'block: endurance*0.7 + combat*0.4 + 5'),
-  P('g_shove',   'Shove',         1, 'attack',  'enemy',        'damage: strength*0.4 + combat*0.4 + 3\npush: 1\ndebuff weak: 2', { hit: 'front' }),
-  P('g_heavy',   'Heavy Blow',    2, 'attack',  'enemy',        'damage: strength*1.2 + combat*1.2 + 8', { hit: 'front' }),
-  // Archer (agility / strength): any target, the line, and getting out of reach.
-  P('a_shoot',   'Shoot',         1, 'attack',  'enemy',        'damage: agility*0.7 + combat*0.8 + 4'),
-  P('a_side',    'Sidestep',      1, 'defense', 'self',         'block: agility*0.6 + combat*0.4 + 4'),
-  P('a_part',    'Parting Shot',  1, 'attack',  'enemy',        'damage: agility*0.5 + combat*0.6 + 3\nblock: agility*0.3 + 2\nmove: 1'),
-  P('a_pierce',  'Piercing Arrow', 2, 'attack', 'enemy',        'damage: agility*0.8 + combat*0.8 + 5', { hit: 'pierce', falloff: 0.6 }),
-  P('a_mark',    'Mark',          0, 'support', 'enemy',        'debuff vulnerable: 3'),
-  // Wizard (intelligence / agility): weak basics, real spells, little health.
-  P('w_spark',   'Spark',         1, 'attack',  'enemy',        'damage: intelligence*0.5 + combat*0.4 + 3'),
-  P('w_ward',    'Ward',          1, 'defense', 'ally_or_self', 'block: intelligence*0.6 + combat*0.3 + 3'),
-  P('w_bolt',    'Firebolt',      1, 'attack',  'enemy',        'damage: intelligence*0.8 + combat*0.6 + 5'),
-  P('w_burst',   'Ember Burst',   2, 'attack',  'all_enemies',  'damage: intelligence*0.6 + combat*0.4 + 2'),
-  P('w_chill',   'Chill',         1, 'attack',  'enemy',        'damage: intelligence*0.4 + 2\nslow: 3\ndebuff weak: 3'),
-  // Hearthkeeper (intelligence / charisma): keeps the others standing. Healing withers.
-  P('h_cinder',  'Cinder',        1, 'attack',  'enemy',        'damage: intelligence*0.5 + combat*0.4 + 3'),
-  P('h_ward',    'Hearth Ward',   1, 'defense', 'ally_or_self', 'block: intelligence*0.6 + charisma*0.3 + 3'),
-  P('h_kindle',  'Kindle',        1, 'support', 'ally_or_self', 'heal: intelligence*0.6 + charisma*0.4 + 4', { wither: true }),
-  P('h_steady',  'Steady Now',    1, 'defense', 'all_allies',   'block: charisma*0.4 + 2'),
-  P('h_bold',    'Embolden',      0, 'support', 'ally',         'buff damage_bonus: charisma*0.5 + 2'),
-  // Villager (no fighting class): the plainest basics.
-  P('v_swing',   'Swing',         1, 'attack',  'enemy',        'damage: strength*0.6 + combat*0.8 + 5'),
-  P('v_duck',    'Duck',          1, 'defense', 'self',         'block: endurance*0.7 + combat*0.5 + 5'),
-  // Trade cards: one by the kind of job a villager holds (two copies in their deck).
-  P('t_tool',    'Tool of the Trade', 2, 'attack',  'enemy',    'damage: strength*1.0 + combat*0.8 + 7', { hit: 'front' }),            // gathering: axe, pick, pitchfork
-  P('t_spot',    'Spot the Weakness', 0, 'support', 'enemy',    'debuff vulnerable: 2\ndraw: 1'),                                      // travel: scouts
-  P('t_shore',   'Shore Up',      1, 'defense', 'ally_or_self', 'block: endurance*0.5 + 6'),                                           // crafting: builders, smiths
-  P('t_ration',  'Share Rations', 1, 'support', 'ally_or_self', 'heal: 7', { wither: true }),                                          // trade: porters, merchants
-  P('t_drink',   'Strong Drink',  1, 'support', 'ally',         'heal: 4\nbuff damage_bonus: charisma*0.3 + 3', { wither: true }),     // service: the tavernkeep
-  P('t_signs',   'Read the Signs', 1, 'support', 'enemy',       'debuff weak: 3\ndraw: 1'),                                            // learning: scholars
+// The cards, packs, trade cards, unlock ladders and honed forms are the
+// game's own (lib/class_cards.js): this script holds no numbers of its own.
+const CC = require('../lib/class_cards');
+const PACK_CARDS = CC.allKeys().map(CC.rowOf)
   // The Hearthkeeper's healing, were it not to wither (the `heal` report).
-  P('h_kindle_keep', 'Kindle (kept)', 1, 'support', 'ally_or_self', 'heal: intelligence*0.6 + charisma*0.4 + 4'),
-];
-// Ten cards a pack: plain attacks and blocks, and four of the class's own.
-const PACKS = {
-  guard:        { label: 'Guard',        deck: { g_strike: 3, g_shield: 3, g_cover: 2, g_shove: 1, g_heavy: 1 } },
-  archer:       { label: 'Archer',       deck: { a_shoot: 3, a_side: 3, a_part: 2, a_pierce: 1, a_mark: 1 } },
-  wizard:       { label: 'Wizard',       deck: { w_spark: 3, w_ward: 3, w_bolt: 2, w_burst: 1, w_chill: 1 } },
-  hearthkeeper: { label: 'Hearthkeeper', deck: { h_cinder: 3, h_ward: 3, h_kindle: 1, h_steady: 1, h_bold: 2 } },
-};
-const TRADES = { gathering: 't_tool', travel: 't_spot', crafting: 't_shore', trade: 't_ration', service: 't_drink', learning: 't_signs' };
-const VILLAGER = { deck: { v_swing: 5, v_duck: 3 }, trade: 2 };
+  .concat([{ ...CC.rowOf('h_kindle'), card_key: 'h_kindle_keep', name: 'Kindle (kept)', wither: false }]);
+const PACKS = Object.fromEntries(Object.entries(CC.PACKS).filter(([k]) => k !== 'villager'));
+const TRADES = CC.TRADES;
+const VILLAGER = { deck: CC.PACKS.villager.deck, trade: CC.TRADE_COPIES };
 const villagerDeck = kind => ({ ...VILLAGER.deck, [TRADES[kind] || 't_tool']: VILLAGER.trade });
-// What a citizen can be offered beyond their pack: their pack's own cards
-// again (anyone has these), and what the town has unlocked for them.
-const BASICS = ['g_strike', 'g_shield', 'a_shoot', 'a_side', 'w_spark', 'w_ward', 'h_cinder', 'h_ward', 'v_swing', 'v_duck'];
-const UNLOCKED = {
-  guard: ['stand_fast', 'guards_oath', 'hammer_blow', 'hold_the_line', 'shield_bash', 'bulwark'],
-  archer: ['aimed_shot', 'piercing_arrow', 'pin_down', 'hail_of_arrows', 'arrow_rain', 'hamstring'],
-  wizard: ['firebolt', 'fireball', 'scorch', 'frost_lance', 'ice_ward', 'deep_freeze', 'chain_lightning', 'thunderclap'],
-  hearthkeeper: ['ember_ward', 'banish_blight', 'rekindle', 'battle_cry'],
-  villager: ['second_wind', 'venom_edge', 'smoke_bomb', 'hamstring', 'shield_bash'],
-};
-// Plain cards every town owns from its first day (five of today's nine starter cards).
-const COMMON = ['quick_jab', 'cleave', 'weaken', 'expose', 'rally'];
-// Healing cards. Under the "spent until the party rests" rule a heal that has been
-// played leaves its owner's deck until the next rest room or landing.
-const HEALS = ['h_kindle', 'h_kindle_keep', 't_ration', 't_drink', 'kindle', 'hearthlight', 'rekindle', 'mend', 'second_wind'];
-function loadAll() { REG.loadRows(S.ALL_CARDS.map(c => (c.card_key === 'focus' ? { ...c, wither: true } : c)).concat(PACK_CARDS)); }
+const isHeal = k => k === 'h_kindle_keep' || !!(CC.card(k) && CC.card(k).heal);
+// What a town owns, from its buildings' levels (and, with `older`, the older
+// general cards whose class-deck twins come with them: Shield Bash, Arrow Rain…).
+const MAX_LEVELS = { watchtower: 4, wizard_tower: 3, hearth_shrine: 3 };
+function ownedAt(levels, older) {
+  const out = new Set();
+  for (const k of Object.keys(CC.CARDS)) {
+    const u = CC.UNLOCKS[k];
+    if (u ? ((levels || {})[u.building] || 0) >= u.level : (older && CC.CARDS[k].from)) out.add(k);
+  }
+  return out;
+}
+// loadAll(factor): with a factor, honed cards are that much stronger in place of the game's (to try other values).
+function loadAll(factor) {
+  const rows = !factor ? PACK_CARDS : PACK_CARDS.map(r => (CC.isHoned(r.card_key) ? { ...r, formula: r.formula.split(')*' + CC.HONE).join(')*' + factor) } : r));
+  REG.loadRows(S.ALL_CARDS.map(c => (c.card_key === 'focus' ? { ...c, wither: true } : c)).concat(rows));
+}
 
 // ── A citizen with a deck ───────────────────────────────────────────────────
 // who: 'guard' | 'archer' | 'wizard' | 'hearthkeeper' | 'villager:<kind>'
@@ -105,9 +67,11 @@ function member(who, level, opts = {}) {
   let deck = isClass ? { ...PACKS[cls].deck } : villagerDeck(kind || 'gathering');
   if (opts.heals && deck.h_kindle) { deck = { ...deck, h_kindle: opts.heals, h_cinder: Math.max(1, deck.h_cinder + deck.h_kindle - opts.heals) }; }
   if (opts.keepHeals && deck.h_kindle) { deck = { ...deck, h_kindle_keep: deck.h_kindle }; delete deck.h_kindle; }
-  // Offers: the pack's own cards again; for a villager also the plain cards every town starts with; and what the town has unlocked.
-  const own = Object.keys(deck).filter(k => !BASICS.includes(k));
-  const pool = own.concat(isClass ? [] : COMMON).concat(opts.unlocks ? (UNLOCKED[isClass ? cls : 'villager'] || []) : []);
+  // Offers: what the game would offer this citizen (class_cards.poolFor): the pack's own class cards, the plain
+  // cards for a villager, and what the town owns. opts.unlocks: every building at its top level and the older
+  // cards owned; opts.levels: { watchtower, wizard_tower, hearth_shrine } as built; neither: nothing unlocked.
+  const owned = opts.unlocks ? ownedAt(MAX_LEVELS, true) : ownedAt(opts.levels || {}, !!opts.older);
+  const pool = CC.poolFor(isClass ? cls : 'villager', isClass ? null : (TRADES[kind] || 't_tool'), owned, null);
   // opts.ban: cards taken out of every pack and offer (to see what a card is worth to a party).
   for (const k of (opts.ban || [])) { if (deck[k]) { const basic = Object.keys(deck)[0]; deck = { ...deck, [basic]: deck[basic] + deck[k] }; delete deck[k]; } }
   const offers = pool.filter(k => !(opts.ban || []).includes(k));
@@ -129,7 +93,7 @@ function rate(p, key) {
   return v;
 }
 // A deck holds one of any healing card at most, so a healer cannot be made of nothing but heals.
-const offerFor = (p, rnd, n = 3) => { const o = [], pool = p.pool.filter(k => !(HEALS.includes(k) && ((p.deck[k] || 0) > 0 || (p.spent || []).includes(k)))); while (o.length < n && pool.length) o.push(pool.splice(Math.floor(rnd() * pool.length), 1)[0]); return o; };
+const offerFor = (p, rnd, n = 3) => { const o = [], pool = p.pool.filter(k => !(isHeal(k) && ((p.deck[k] || 0) > 0 || (p.spent || []).includes(k)))); while (o.length < n && pool.length) o.push(pool.splice(Math.floor(rnd() * pool.length), 1)[0]); return o; };
 // At the door: each citizen is shown three cards of their own and keeps one.
 function doorPick(p, rnd) { const o = offerFor(p, rnd); if (!o.length) return; const k = o.sort((a, b) => rate(p, b) - rate(p, a))[0]; p.deck[k] = (p.deck[k] || 0) + 1; }
 // After a fight: three cards, each for a different citizen; the party keeps one.
@@ -163,13 +127,31 @@ function fight(party, enemyKeys, seed) {
   }
   for (const p of party) { const u = s.units.find(x => x.citizen_id === p.c.id); if (u) { p.hp = Math.max(0, u.hp); if (u.hp <= 0) p.wentDown = true; } }
   // Which heals each citizen played (withering ones sit in the withered pile).
-  live.forEach((p, i) => { p.played = (decks[units[i].id].withered || []).filter(k => HEALS.includes(k)); });
+  live.forEach((p, i) => { p.played = (decks[units[i].id].withered || []).filter(isHeal); });
   return { win: s.status === 'victory', turns, healed, timeout: s.status === 'active' };
+}
+
+// Hone the card worth most to its holder (one copy becomes its honed form).
+function honeBest(party) {
+  let best = null;
+  for (const p of party) {
+    if (p.hp <= 0) continue;
+    for (const k of Object.keys(p.deck)) {
+      if (CC.isHoned(k) || !CC.card(k)) continue;
+      const v = rate(p, CC.honed(k)) - rate(p, k);
+      if (!best || v > best.v) best = { p, k, v };
+    }
+  }
+  if (!best) return;
+  const d = best.p.deck;
+  d[best.k] -= 1; if (!d[best.k]) delete d[best.k];
+  d[CC.honed(best.k)] = (d[CC.honed(best.k)] || 0) + 1;
 }
 
 // ── A run ───────────────────────────────────────────────────────────────────
 // opts: party [who…], level, door (picks each at the door), rewards (a pick of three after a fight), unlocks,
-//       healsUntilRest (a played heal is gone until the next rest), heals (Kindles in the Hearthkeeper pack), keepHeals (heals do not wither)
+//       levels (the town's buildings), healsUntilRest (a played heal is gone until the next rest), heals (Kindles in the
+//       Hearthkeeper pack), keepHeals (heals do not wither), hone (hone at a rest room in place of resting)
 function run(tier, opts, seed) {
   const plan = PLANS[tier], rnd = rng32(seed);
   const level = opts.level || plan.party[0];
@@ -180,6 +162,14 @@ function run(tier, opts, seed) {
   const out = { cleared: false, fights: 0, turns: 0, healed: 0 };
   const fightsInPlan = plan.rooms.filter(Array.isArray).length;
   for (const room of plan.rooms) {
+    // A rest room: rest, or hone a card in its place (opts.hone: 'always', or a share of health above which the
+    // party hones: 0.7 = "hone when the party is at 70% or better"). A landing only rests.
+    if (room === 'R' && opts.hone != null) {
+      const share = party.reduce((n, p) => n + Math.max(0, p.hp), 0) / party.reduce((n, p) => n + p.max, 0);
+      // opts.honeEach: every citizen hones a card (else one card for the party). opts.honeAndRest: the party rests as well.
+      const go = opts.honeAndRest || opts.hone === 'always' || share >= opts.hone;
+      if (go) { if (opts.honeEach) for (const p of party) honeBest([p]); else honeBest(party); out.honed = (out.honed || 0) + 1; if (!opts.honeAndRest) continue; }
+    }
     if (room === 'R' || room === 'L') {
       for (const p of party) {
         p.hp = Math.min(p.max, Math.max(p.hp, 0) + Math.round(p.max * REST));
@@ -193,7 +183,12 @@ function run(tier, opts, seed) {
     if (opts.healsUntilRest !== false) for (const p of party) for (const k of (p.played || [])) { if (p.deck[k] > 0) { p.deck[k]--; if (!p.deck[k]) delete p.deck[k]; (p.spent = p.spent || []).push(k); } }
     for (const p of party) p.played = [];
     if (!r.win) { out.down = party.filter(p => p.wentDown).length; return out; }
-    if (opts.rewards && out.fights < fightsInPlan) reward(party, rnd);
+    // After a fight: a card of three for the party, or (opts.rewardHone) hone a card in its place:
+    // 'always', or 'late' = a card after the first half of the fights, a hone after that.
+    if (opts.rewards && out.fights < fightsInPlan) {
+      const honeNow = opts.rewardHone === 'always' || (opts.rewardHone === 'late' && out.fights > fightsInPlan / 2) || (opts.rewardHone === 'early' && out.fights <= fightsInPlan / 2);
+      if (honeNow) honeBest(party); else reward(party, rnd);
+    }
   }
   out.cleared = true; out.down = party.filter(p => p.wentDown).length;
   out.hpLeft = party.reduce((n, p) => n + p.hp, 0) / party.reduce((n, p) => n + p.max, 0);
@@ -278,8 +273,88 @@ function reportHeal(n) {
     show('a Hearthkeeper for one guard: heals spent until a rest', {});
     show('  the same, heals only wither (back every fight)', { healsUntilRest: false });
     show('  the same, heals do not wither at all', { healsUntilRest: false, keepHeals: true });
-    show('  a Hearthkeeper with no healing', { ban: ['h_kindle', 'rekindle', 'kindle', 'hearthlight'] });
+    show('  a Hearthkeeper with no healing', { ban: ['h_kindle', 'h_rekindle', 'h_hearthlight'] });
   }
+}
+
+// ── The skulls, with what a town of that standing has built ────────────────
+// Each skull is read with the party and buildings a town sending it would
+// really have; the first line of each is the party the skull is tuned for.
+const W = (watchtower, hearth_shrine = 0, wizard_tower = 0) => ({ levels: { watchtower, hearth_shrine, wizard_tower } });
+const HEALER4 = ['guard', 'hearthkeeper', 'archer', 'archer'];            // a village: a shrine, no tower yet
+const TOWNS = {
+  green:  [[VILLAGERS, '4 villagers; nothing built', {}], [MIXED, 'guard, 2 villagers, archer; Watchtower 1', W(1)]],
+  yellow: [[MIXED, 'guard, 2 villagers, archer; Watchtower 1', W(1)], [TODAY4, '2 guards, 2 archers; Watchtower 2', W(2)], [VILLAGERS, '4 villagers; nothing built', {}]],
+  orange: [[HEALER4, 'guard, hearthkeeper, 2 archers; Watchtower 2, Shrine 1', W(2, 1)], [CLASSES4, 'all four classes; Watchtower 2, Shrine 1, Tower 1', W(2, 1, 1)], [TODAY4, '2 guards, 2 archers; Watchtower 2 (no healer)', W(2)]],
+  red:    [[CLASSES4, 'all four classes; Watchtower 3, Shrine 2, Tower 2', W(3, 2, 2)], [HEALER4, 'guard, hearthkeeper, 2 archers; Watchtower 3, Shrine 2', W(3, 2)], [TODAY4, '2 guards, 2 archers; Watchtower 3 (no healer)', W(3)]],
+  purple: [[CLASSES4, 'all four classes; every building at its top level', { unlocks: true }], [HEALER4, 'guard, hearthkeeper, 2 archers; top levels', { unlocks: true }], [TODAY4, '2 guards, 2 archers; Watchtower 4 (no healer)', W(4)]],
+};
+// The game's rules: one pick each at the door, a card of three after each fight, and a rest room that rests the
+// party and hones a card. (PLAIN is the same without honing, for the reports that predate it.)
+const PLAIN = { door: 1, rewards: true };
+const GROW = { ...PLAIN, hone: 0, honeAndRest: true };
+const HONE_AT = 0.7;   // for the `hone` report: "when healthy" = the party stands at 70% of its health or better
+function reportSkulls(n) {
+  loadAll();
+  console.log('Clear rates by skull, with the buildings a town of that standing has. ' + n + ' runs each.');
+  console.log('One pick each at the door, a card after each fight, a rest that also hones a card. "hones instead" = the bot hones after every fight in place of the card.\n');
+  for (const tier of Object.keys(TOWNS)) {
+    console.log('── ' + tier.toUpperCase() + ' (' + PLANS[tier].party[0] + ', +' + pct(TIERS[tier].hp) + ' health, +' + pct(TIERS[tier].str) + ' strength)');
+    console.log(pad('', 58) + pad('clears', 8) + pad('downed', 8) + pad('turns', 8) + pad('turns/fight', 12) + 'hones instead');
+    for (const [party, label, town] of TOWNS[tier]) {
+      const o = { party, ...GROW, ...town };
+      line(label, trial(tier, o, n), pct(trial(tier, { ...o, rewardHone: 'always' }, n).clear));
+    }
+    console.log('');
+  }
+}
+// A grid of creature health and strength for one skull: the clear rate of the party it is tuned for, and beside
+// it the last party in its list (the same town without its healer, or four villagers).
+function reportSweep(tier, n) {
+  loadAll();
+  const [party, label, town] = TOWNS[tier][0], other = TOWNS[tier][TOWNS[tier].length - 1];
+  const now = { ...TIERS[tier] };
+  const hps = [-0.25, 0, 0.25, 0.5, 0.75].map(d => +(now.hp + d).toFixed(2)), strs = [-0.2, 0, 0.2, 0.4, 0.6].map(d => +(now.str + d).toFixed(2));
+  console.log(tier.toUpperCase() + ': ' + label + '   /   ' + other[1] + '     (' + n + ' runs a cell; now +' + pct(now.hp) + ' health, +' + pct(now.str) + ' strength)');
+  console.log(pad('health \\ strength', 20) + strs.map(x => pad('+' + pct(x), 14)).join(''));
+  for (const hp of hps) {
+    let row = pad('+' + pct(hp), 20);
+    for (const str of strs) {
+      TIERS[tier] = { hp, str };
+      const a = trial(tier, { party, ...GROW, ...town }, n), b = trial(tier, { party: other[0], ...GROW, ...other[2] }, n);
+      row += pad(pct(a.clear) + ' / ' + pct(b.clear), 14);
+    }
+    console.log(row);
+  }
+  TIERS[tier] = now;
+}
+
+// What honing should be: the rules tried, on the party each skull is tuned for.
+function reportHone(n) {
+  console.log('Honing rules compared. ' + n + ' runs each; the party each skull is tuned for. "when healthy" = at ' + pct(HONE_AT) + ' health or better.\n');
+  const rules = [
+    ['never hone (always rest)', {}, null],
+    ['one card, in place of resting, when healthy', { hone: HONE_AT }, null],
+    ['a card each, in place of resting, when healthy', { hone: HONE_AT, honeEach: true }, null],
+    ['a card each at +50%, in place of resting, when healthy', { hone: HONE_AT, honeEach: true }, 1.5],
+    ['a card each, in place of resting, always', { hone: 'always', honeEach: true }, null],
+    ['rest and hone one card', { hone: 0, honeAndRest: true }, null],
+    ['rest and hone a card each', { hone: 0, honeAndRest: true, honeEach: true }, null],
+    ['rest and hone one card at +50%', { hone: 0, honeAndRest: true }, 1.5],
+    ['after a fight: always hone, never take the card', { rewardHone: 'always' }, null],
+    ['  the same at +50%', { rewardHone: 'always' }, 1.5],
+    ['after a fight: cards first, hones in the later half', { rewardHone: 'late' }, null],
+    ['  the same at +50%', { rewardHone: 'late' }, 1.5],
+    ['after a fight: hones first, cards in the later half', { rewardHone: 'early' }, 1.5],
+    ['no rewards at all (door pick only)', { rewards: false }, null],
+    ['both: rest and hone one, and hones in the later half, +50%', { hone: 0, honeAndRest: true, rewardHone: 'late' }, 1.5],
+  ];
+  console.log(pad('', 58) + Object.keys(TOWNS).map(t => pad(t, 9)).join(''));
+  for (const [label, o, factor] of rules) {
+    loadAll(factor);
+    console.log(pad(label, 58) + Object.keys(TOWNS).map(t => { const [party, , town] = TOWNS[t][0]; return pad(pct(trial(t, { party, ...PLAIN, ...town, ...o }, n).clear), 9); }).join(''));
+  }
+  loadAll();
 }
 
 if (require.main === module) {
@@ -287,6 +362,9 @@ if (require.main === module) {
   if (cmd === 'packs') reportPacks();
   else if (cmd === 'door') reportDoor(n);
   else if (cmd === 'heal') reportHeal(n);
+  else if (cmd === 'skulls') reportSkulls(n);
+  else if (cmd === 'hone') reportHone(n);
+  else if (cmd === 'sweep') { for (const t of (process.argv[4] ? [process.argv[4]] : Object.keys(TOWNS))) { reportSweep(t, n); console.log(''); } }
   else reportTiers(n);
 }
-module.exports = { PACK_CARDS, PACKS, VILLAGER, TRADES, UNLOCKED, villagerDeck, trial, run, member, loadAll, rate };
+module.exports = { PACK_CARDS, PACKS, VILLAGER, TRADES, ownedAt, villagerDeck, trial, run, member, loadAll, rate };

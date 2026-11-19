@@ -32,7 +32,7 @@ function part1() {
 
   const t = DEFS.TIERS;
   check(DEFS.TIER_ORDER.join() === 'green,yellow,orange,red,purple', 'five skulls, green to purple');
-  check(t.green.hp === 0.5 && t.green.str === 0.4 && t.purple.hp === 1.75 && t.purple.str === 1.4, 'creature health and strength: +50%/+40% at green, +175%/+140% at purple');
+  check(t.green.hp === 0.5 && t.green.str === 0.4 && t.purple.hp === 2 && t.purple.str === 1.5, 'creature health and strength: +50%/+40% at green, +200%/+150% at purple');
   check(t.green.deck === 12 && t.orange.deck === 14 && t.purple.deck === 16, 'deck sizes 12, 14, 16');
   check(DEFS.battleSeed(7, 3, 0, 'a') === DEFS.battleSeed(7, 3, 0, 'a') && DEFS.battleSeed(7, 3, 0, 'a') !== DEFS.battleSeed(7, 4, 0, 'a')
     && DEFS.battleSeed(7, 3, 0, 'a') !== DEFS.battleSeed(7, 3, 0, 'b'), 'a battle seed is fixed for a town and room, and differs between towns and rooms');
@@ -352,7 +352,7 @@ async function part2() {
     r = await api(a, 'POST', '/api/dungeons/run/choose', { option: 'rest' });
     check(r.status === 400, 'nothing to decide outside a rest room');
     r = await api(a, 'POST', '/api/dungeons/run/move', { room: 'c2' });
-    check(r.status === 200 && r.body.run.pending.kind === 'rest' && r.body.run.pending.options[0].key === 'rest' && r.body.run.moves.length === 0, 'a rest room asks before the party walks on');
+    check(r.status === 200 && r.body.run.pending.kind === 'rest' && r.body.run.pending.options.some(o => o.key === 'rest') && r.body.run.moves.length === 0, 'a rest room asks before the party walks on');
     r = await api(a, 'POST', '/api/dungeons/run/choose', { option: 'deeper' });
     check(r.status === 400, 'an answer that is not offered is refused');
     r = await api(a, 'POST', '/api/dungeons/run/choose', { option: 'rest' });
@@ -490,12 +490,12 @@ async function part2() {
     check(v.dungeon.tier === 'orange' && v.dungeon.floors === 2, 'an orange dungeon with two floors');
     r = await api(o, 'POST', '/api/dungeons/run/move', { room: 'a' });
     b = (await q('SELECT combat_mods FROM settlement_quests WHERE id=$1', [r.body.quest_run_id])).rows[0];
-    check(b.combat_mods.enemy_health === 1 && b.combat_mods.enemy_strength === 0.8, 'orange creatures: +100% health, +80% strength');
+    check(b.combat_mods.enemy_health === 1.25 && b.combat_mods.enemy_strength === 1, 'orange creatures: +125% health, +100% strength');
     await D.adminWin(o.id);
     await api(o, 'POST', '/api/dungeons/run/move', { room: 'b1' });
     r = await api(o, 'POST', '/api/dungeons/run/move', { room: 'c1' });
     b = (await q('SELECT combat_mods FROM settlement_quests WHERE id=$1', [r.body.quest_run_id])).rows[0];
-    check(r.body.run.pending.room === 'elite' && b.combat_mods.enemy_health === 1.5, "an elite room's own boost is added to the skull's");
+    check(r.body.run.pending.room === 'elite' && b.combat_mods.enemy_health === 1.75, "an elite room's own boost is added to the skull's");
     const before = (await runRow(o)).loot;
     const eliteWin = await D.adminWin(o.id);
     check(eliteWin.found.items.some(i => i.item_key === 'gemstone') && eliteWin.found.wealth >= 30 && eliteWin.run.loot.wealth >= before.wealth + 30, 'an elite always gives its better find');
@@ -539,7 +539,7 @@ async function part2() {
       let view = (await api(p, 'GET', '/api/dungeons/run')).body.run, rooms = 0;
       for (let guard = 0; view && view.status === 'active' && guard < 80; guard++) {
         if (view.pending && view.pending.kind === 'battle') view = (await D.adminWin(p.id)).run;
-        else if (view.pending) view = (await api(p, 'POST', '/api/dungeons/run/choose', { option: view.pending.options[0].key === 'rest' ? 'rest' : 'deeper' })).body.run;
+        else if (view.pending) view = (await api(p, 'POST', '/api/dungeons/run/choose', { option: view.pending.options.some(o => o.key === 'rest') ? 'rest' : 'deeper' })).body.run;
         else { view = (await api(p, 'POST', '/api/dungeons/run/move', { room: view.moves[0] })).body.run; rooms++; }
       }
       return { view, rooms };
@@ -664,7 +664,7 @@ async function part2() {
     v = r.body.dungeon.run;
     const spentN = poDeck.withered.filter(c => c === 't_ration').length;
     check(v.party.find(m => m.id === po).deck.spent.length === spentN && spentN >= 1 && (v.party.find(m => m.id === po).deck.cards.find(c => c.key === 't_ration') || { n: 0 }).n === 2 - spentN, 'the heal he played is spent: out of his deck until the party rests', `played ${spentN}`);
-    check(v.pending.kind === 'reward' && !v.pending.offers.some(o => o.citizen === po && o.card.key === 't_ration' && spentN === 2), 'then the reward is offered');
+    check(v.pending.kind === 'reward' && v.pending.can_hone === true && !v.pending.offers.some(o => o.citizen === po && o.card.key === 't_ration' && spentN === 2), 'then the reward is offered: a card, or a hone in its place');
     await api(k, 'POST', '/api/dungeons/run/pick', { index: null });
     r = await api(k, 'POST', '/api/dungeons/run/move', { room: 'b2' });
     b = (await q('SELECT * FROM settlement_quests WHERE id=$1', [r.body.quest_run_id])).rows[0];
@@ -672,11 +672,18 @@ async function part2() {
     const emptyHanded = (await api(k, 'POST', '/api/combat/engage/' + r.body.quest_run_id)).body.battle;
     const poNow = emptyHanded.decks[emptyHanded.units.find(u => u.citizen_id === po).id];
     check(spentN < 2 || (poNow.hand.length === 0 && poNow.drawPile.length === 0), 'a citizen with nothing left to play has an empty hand of their own, never someone else\'s');
-    await D0.adminWin(k.id); await api(k, 'POST', '/api/dungeons/run/pick', { index: null });
-    // Rest, or hone.
+    await D0.adminWin(k.id);
+    // After a fight: hone a card in place of taking one.
+    check((await api(k, 'POST', '/api/dungeons/run/pick', { hone: { citizen_id: ar, card: 'g_strike' } })).status === 400, 'a hone in place of the card needs a card that citizen holds');
+    r = await api(k, 'POST', '/api/dungeons/run/pick', { hone: { citizen_id: ar, card: 'a_shoot' } });
+    const aDeck = r.body.run.party.find(m => m.id === ar).deck;
+    check(r.status === 200 && r.body.took && r.body.took.honed === true && r.body.took.card.key === 'a_shoot_honed' && aDeck.size === 10 && aDeck.cards.find(c => c.key === 'a_shoot_honed').n === 1 && aDeck.cards.find(c => c.key === 'a_shoot').n === 2 && r.body.run.pending === null,
+      'the Archer hones a Shoot in place of the card: no card is added and the way on opens');
+    // A rest room: the party rests, and hones a card.
     r = await api(k, 'POST', '/api/dungeons/run/move', { room: 'c2' });
     v = r.body.run;
-    check(v.pending.kind === 'rest' && v.pending.options.map(o => o.key).join() === 'rest,hone' && v.pending.options[1].needs === 'card', 'a rest room offers rest, or honing a card');
+    check(v.pending.kind === 'rest' && v.pending.options.map(o => o.key).join() === 'hone,rest' && v.pending.options[0].needs === 'card', 'a rest room offers a rest with a card honed, or a rest alone');
+    const hurtBefore = v.party.map(m => m.hp);
     check((await api(k, 'POST', '/api/dungeons/run/choose', { option: 'hone', citizen_id: gd, card: 'a_shoot' })).status === 400 && (await api(k, 'POST', '/api/dungeons/run/choose', { option: 'hone' })).status === 400, 'honing needs a card that citizen holds');
     r = await api(k, 'POST', '/api/dungeons/run/choose', { option: 'hone', citizen_id: gd, card: 'g_strike' });
     v = r.body.run;
@@ -684,7 +691,8 @@ async function part2() {
     check(r.status === 200 && gDeck.cards.find(c => c.key === 'g_strike').n === 2 && gDeck.cards.find(c => c.key === 'g_strike_honed').n === 1 && gDeck.cards.find(c => c.key === 'g_strike_honed').honed && gDeck.size === 11 && !v.room_open, 'one Strike is honed, and the party walks on');
     const plain = parseInt(gDeck.cards.find(c => c.key === 'g_strike').text.match(/\d+/)[0], 10), sharp = parseInt(gDeck.cards.find(c => c.key === 'g_strike_honed').text.match(/\d+/)[0], 10);
     check(sharp === Math.round(plain * 1.3) || Math.abs(sharp - plain * 1.3) <= 1, `the honed Strike hits for about a third more (${plain} → ${sharp})`);
-    check(v.party.find(m => m.id === po).deck.spent.length === spentN && v.party.every((m, i) => m.hp === r.body.run.party[i].hp), 'honing is in place of resting: nobody is healed and the spent heal stays spent');
+    check(v.party.find(m => m.id === po).deck.spent.length === 0 && (v.party.find(m => m.id === po).deck.cards.find(c => c.key === 't_ration') || {}).n === 2
+      && v.party.every((m, i) => m.hp >= hurtBefore[i] && !m.down) && v.party.some((m, i) => m.hp > hurtBefore[i] || m.hp === m.max), 'the party rested as well: health is back, and so is the spent heal');
     r = await api(k, 'POST', '/api/dungeons/run/move', { room: 'd2' });
     r = await api(k, 'POST', '/api/dungeons/run/move', { room: 'boss' });
     b = (await q('SELECT * FROM settlement_quests WHERE id=$1', [r.body.quest_run_id])).rows[0];
