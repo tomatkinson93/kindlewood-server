@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════════════════
-//  /api/tactics — the tactics battle prototype (docs/TACTICS_PROTOTYPE.md).
+//  /api/tactics — the tactics battle prototype (docs/TACTICS.md).
 //  Admins only, from Dev Tools. The battle is played in the browser; these
 //  routes only say who is on the board. Nothing is stored or paid.
 //

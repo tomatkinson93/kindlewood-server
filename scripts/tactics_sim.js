@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // ═════════════════════════════════════════════════════════════════════
 //  tactics_sim — numbers for the tactics battle prototype
-//  (docs/TACTICS_PROTOTYPE.md). Builds real setups (lib/tactics_setup.js:
+//  (docs/TACTICS.md). Builds real setups (lib/tactics_setup.js:
 //  the town's citizens at a playtest level, a generated fight for a skull and
 //  a land) and lets the engine's own mind play both sides, on the frontend's
 //  js/tactics-engine.js. Needs DATABASE_URL and a town with four adults.
