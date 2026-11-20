@@ -28,3 +28,10 @@ CREATE TABLE IF NOT EXISTS tactics_battles (
 -- A town has one battle on a board at a time.
 CREATE UNIQUE INDEX IF NOT EXISTS tactics_battles_one_active ON tactics_battles (settlement_id) WHERE status = 'active';
 CREATE INDEX IF NOT EXISTS tactics_battles_by_town ON tactics_battles (settlement_id, id DESC);
+
+-- Dungeons on the board (docs/TACTICS.md §9, Phase 3). A run is fought with
+-- cards ('cards', as before) or on the board ('board'). A board run's open
+-- fight is a tactics battle (board_battle_id) that names its run.
+ALTER TABLE dungeon_runs ADD COLUMN IF NOT EXISTS combat TEXT NOT NULL DEFAULT 'cards';
+ALTER TABLE dungeon_runs ADD COLUMN IF NOT EXISTS board_battle_id BIGINT;
+ALTER TABLE tactics_battles ADD COLUMN IF NOT EXISTS dungeon_run_id INTEGER;
