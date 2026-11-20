@@ -48,6 +48,7 @@ Left out on purpose: charge times and magic points, friendly fire, line of sight
 ### On screen
 
 - Full screen. The party are their villager sprites; creatures are their icons until they have art.
+- **Going in:** a dark spiral closes over the screen, the battle's name is shown, and a circle opens onto the board. Nothing acts until it has opened. **Leaving** fades out. With reduced motion the screen goes dark and then shows the board.
 - **⟲ ⟳ turn the view a quarter** (Q, R): a hill in front hides what stands behind it.
 - **Zoom**: pinch with two fingers, the mouse wheel, or − and ＋. One finger (or the mouse) drags the board once it is zoomed.
 - Blue tiles: where the unit can walk. Choosing an ability marks who it can reach.
