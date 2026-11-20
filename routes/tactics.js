@@ -1,11 +1,17 @@
 // ══════════════════════════════════════════════════════════════════════════
 //  /api/tactics — the tactics battle prototype (docs/TACTICS.md).
-//  Admins only, from Dev Tools. The battle is played in the browser; these
-//  routes only say who is on the board. Nothing is stored or paid.
+//  Admins only, from Dev Tools. The browser shows the battle; the server keeps
+//  it and checks every choice with the same rules (lib/tactics_battles.js).
+//  Nothing is paid or lost.
 //
 //    GET  /admin/options   the classes, levels, skulls and lands to choose from
 //    POST /admin/setup     { classes: [×4], level, tier, terrain, seed, fight, citizen_ids? }
 //                          → { seed, land, tier, name, party, enemies }
+//    POST /battles             the same choices → a battle the server keeps: { battle: { id, setup, actions, check } }
+//    GET  /battles/current     the town's open battle, or null (to pick it up after a reload)
+//    GET  /battles/:id
+//    POST /battles/:id/act     { n, action }  the player's n-th choice; refused if the rules do not allow it
+//    POST /battles/:id/leave
 // ══════════════════════════════════════════════════════════════════════════
 'use strict';
 const express = require('express');
@@ -31,6 +37,27 @@ router.get('/admin/options', requireAuth, requireAdmin, (req, res) => {
 });
 router.post('/admin/setup', requireAuth, requireAdmin, async (req, res) => {
   try { res.json(await T.build(req.user.userId, req.body || {})); } catch (e) { fail(res, e); }
+});
+
+// ── Battles the server keeps (lib/tactics_battles.js) ──────────────────────
+// Admins only while tactics battles are a Dev Tools thing; a failed choice
+// carries the battle as it really stands, so the browser can put itself right.
+const B = require('../lib/tactics_battles');
+const failWith = (res, e) => { if (!e.status) console.error('[tactics]', e); res.status(e.status || 500).json({ error: e.status ? e.message : 'The battle could not be reached.', battle: e.battle || undefined }); };
+router.post('/battles', requireAuth, requireAdmin, async (req, res) => {
+  try { res.json({ ok: true, battle: await B.create(req.user.userId, req.body || {}) }); } catch (e) { failWith(res, e); }
+});
+router.get('/battles/current', requireAuth, requireAdmin, async (req, res) => {
+  try { res.json({ ok: true, battle: await B.current(req.user.userId) }); } catch (e) { failWith(res, e); }
+});
+router.get('/battles/:id', requireAuth, requireAdmin, async (req, res) => {
+  try { res.json({ ok: true, battle: await B.get(req.user.userId, Number(req.params.id)) }); } catch (e) { failWith(res, e); }
+});
+router.post('/battles/:id/act', requireAuth, requireAdmin, async (req, res) => {
+  try { const b = req.body || {}; res.json({ ok: true, battle: await B.act(req.user.userId, Number(req.params.id), b.n, b.action) }); } catch (e) { failWith(res, e); }
+});
+router.post('/battles/:id/leave', requireAuth, requireAdmin, async (req, res) => {
+  try { res.json({ ok: true, battle: await B.leave(req.user.userId, Number(req.params.id)) }); } catch (e) { failWith(res, e); }
 });
 
 module.exports = router;
