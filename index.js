@@ -57,7 +57,7 @@ app.use('/api/wonders', require('./routes/wonders'));
 app.use('/api/cards', require('./routes/cards'));
 app.use('/api/raids', require('./routes/raids'));
 app.use('/api/dungeons', require('./routes/dungeons'));   // a party's run through a dungeon (docs/DUNGEONS.md)
-app.use('/api/tactics', require('./routes/tactics'));     // the tactics battle prototype, admins only (docs/TACTICS_PROTOTYPE.md)
+app.use('/api/tactics', require('./routes/tactics'));     // the tactics battle prototype, admins only (docs/TACTICS.md)
 const expeditionRoutes = require('./routes/expeditions');
 app.use('/api/expeditions', expeditionRoutes);
 const questRoutes = require('./routes/quests');

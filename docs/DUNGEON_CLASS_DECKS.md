@@ -1,5 +1,7 @@
 # Class decks: one deck per citizen
 
+> **Being replaced (2026-11-20).** The owner has chosen tactics battles on a board in place of cards (`docs/TACTICS.md`). What is here still runs dungeons until Phase 3 of that roadmap. What carries over: the classes, the two class buildings and their level ladders, every card's formula (they become abilities), and the healing findings. What does not: decks, the door pick, the card after a fight, honing and prepared cards.
+
 Status: **agreed with the owner on 2026-11-19 and built the same day** (§7 says where). In a dungeon every citizen plays their own deck; the Wizard and Hearthkeeper careers and their two buildings exist; cards can be prepared or set aside, and honed. It replaces the door draft of `docs/DUNGEONS.md` §3.4 and the "Requires Wizard" rules of `docs/DUNGEON_CONTENT.md` §3.3. Quests, camps and raids still use the home deck. The same file is in both repos.
 
 Every number comes from `scripts/class_deck_sim.js` (server repo), which plays whole dungeon runs on the real combat engine. It holds no numbers of its own: the cards, packs and unlock ladders are read from `lib/class_cards.js` and the skulls from `lib/dungeon_defs.js`. It builds on `scripts/dungeon_balance_sim.js` (the same bot, creatures and room plans). To reproduce:

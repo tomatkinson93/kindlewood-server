@@ -180,7 +180,7 @@ Multi-species towns stay out of 1.0. To keep that door open, species will be rea
 - **Events and treasure** budgeted per clear.
 - **Decided 2026-11-19:** one deck per citizen, from a base pack for their class, in place of the shared drafted deck (`DUNGEON_CLASS_DECKS.md`). This is the roadmap's "a default deck follows the party's careers" made the whole design. With it: the player ticks which unlocked cards are **prepared** (offered); cards can be **honed** (the game's word for upgrading, marked ✦) at a rest room or in place of a fight's card.
 - **Decided 2026-11-18** (`DUNGEONS.md` §2): a Flee button at half the loot; no fatal result for a citizen stood back up; one creature list with a multiplier per skull; weak, vulnerable and Focus change everywhere for new battles; keepsakes; kin and bonds in a fight; "who has cleared it" on the dungeon card.
-- **In trial, 2026-11-20:** the owner is leaning towards replacing card battles with a tactics battle on a board, everywhere. A prototype is behind Dev Tools (`TACTICS_PROTOTYPE.md`); work on the card side waits for his verdict.
+- **Decided 2026-11-20: combat becomes a tactics battle on a board, replacing cards** (`TACTICS.md`). The owner played a trial and chose it. Citizens learn abilities in place of towns unlocking cards. Its own roadmap of seven phases is `TACTICS.md` §9; the first two are done, and the server deciding battles is next. Class decks (`DUNGEON_CLASS_DECKS.md`) stay in play only until Phase 3 replaces them.
 - **Still open** (`DUNGEON_CONTENT.md` §9, `DUNGEON_CLASS_DECKS.md` §8): tuning the two buildings' costs and whether they get research; the wealth a fight gives; a limit on prepared cards; the rule change to weak and vulnerable.
 
 ### After 1.0
