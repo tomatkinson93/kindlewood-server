@@ -1,6 +1,8 @@
 // The tactics battle prototype's server side (lib/tactics_setup.js, routes/tactics.js).
 //   DATABASE_URL=… QUEST_TEST_BASE=http://localhost:3999 CRAFTING_TEST_ADMIN_ID=990001 node scripts/tactics_test.js
 'use strict';
+const fs = require('fs');
+const path = require('path');
 const jwt = require('jsonwebtoken');
 const T = require('../lib/tactics_setup');
 const CC = require('../lib/class_cards');
@@ -64,7 +66,65 @@ async function part2() {
   check(asIs.status === 200 && asIs.body.level === 'as_is' && asIs.body.party.length === 4 && asIs.body.seed > 0, 'with no classes or level named, the citizens come as they are, in their own classes, on a fresh seed', asIs.body.party.map(u => u.label).join(', '));
   check((await call(adminId, 'POST', '/api/tactics/admin/setup', { tier: 'pink', terrain: 'moon' })).body.tier === 'green', 'an unknown skull or land falls back to green forest');
   const after = (await query('SELECT COUNT(*)::int AS n FROM dungeons')).rows[0].n + ':' + (await query('SELECT COUNT(*)::int AS n FROM settlement_quests')).rows[0].n;
-  check(before === after, 'nothing is stored: no dungeon, no battle row');
+  check(before === after, 'a setup alone stores nothing: no dungeon, no battle row');
+
+  // ── Battles the server keeps ────────────────────────────────────────────
+  console.log('Battles the server keeps');
+  const E = require('../lib/tactics_engine');
+  const fe = path.join(process.env.KW_FRONTEND_DIR || path.join(__dirname, '..', '..', 'kindlewood-frontend'), 'js', 'tactics-engine.js');
+  if (fs.existsSync(fe)) check(fs.readFileSync(fe, 'utf8') === fs.readFileSync(path.join(__dirname, '..', 'lib', 'tactics_engine.js'), 'utf8'), 'the server and the browser run the same rules, byte for byte');
+  check((await call(stranger, 'POST', '/api/tactics/battles', {})).status === 403 && (await call(stranger, 'GET', '/api/tactics/battles/current')).status === 403, 'only admins, for now');
+  const opts = { classes: ['guard', 'hearthkeeper', 'archer', 'wizard'], level: 'trained', tier: 'green', terrain: 'plains', seed: 77 };
+  let r = await call(adminId, 'POST', '/api/tactics/battles', opts);
+  let bt = r.body.battle;
+  check(r.status === 200 && bt.id > 0 && bt.status === 'active' && bt.count === 0 && bt.setup.party.length === 4 && bt.setup.seed === 77 && typeof bt.check === 'string', 'a battle is created and stored: its two sides, no choices yet, the board\'s fingerprint');
+  check((await call(adminId, 'GET', '/api/tactics/battles/current')).body.battle.id === bt.id, 'it is the town\'s open battle');
+  // The browser's copy, played alongside.
+  const mine = E.replay(bt.setup, []).state;
+  check(E.checksum(mine) === bt.check, 'the browser\'s copy starts on the same board');
+  const who = E.current(mine), to = [...E.reach(mine, who).values()].filter(nd => nd.stop && nd.cost)[0];
+  r = await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 0, action: { t: 'move', x: 0, y: 0, extra: 'junk' } });
+  check(r.status === 400 && r.body.battle && r.body.battle.count === 0, 'a move the rules do not allow is refused, nothing is stored, and the answer says where the battle stands');
+  check((await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 0, action: { t: 'teleport' } })).status === 400, 'so is a move the game does not know');
+  check((await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 3, action: { t: 'move', x: to.x, y: to.y } })).status === 409, 'a choice out of step is refused (the battle has moved on)');
+  r = await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 0, action: { t: 'move', x: to.x, y: to.y, extra: 'junk' } });
+  E.apply(mine, { t: 'move', x: to.x, y: to.y });
+  check(r.status === 200 && r.body.battle.count === 1 && r.body.battle.check === E.checksum(mine) && JSON.stringify(r.body.battle.actions[0]) === JSON.stringify({ t: 'move', x: to.x, y: to.y }), 'a good move is stored (and only what a move may hold); both sides agree on the board');
+  r = await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 0, action: { t: 'move', x: to.x, y: to.y } });
+  check(r.status === 200 && r.body.battle.repeated === true && r.body.battle.count === 1, 'the same choice sent twice is taken once');
+  r = await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 1, action: { t: 'undo' } }); E.apply(mine, { t: 'undo' });
+  check(r.status === 200 && r.body.battle.check === E.checksum(mine), 'a move can be taken back on the server too');
+  // Play it out: the mind chooses for the party, every choice goes through the server.
+  let n = 2, agree = true, refused = 0;
+  for (let g = 0; g < 400 && mine.status === 'active'; g++) {
+    const u = E.current(mine), keep = mine.r, p = E.plan(mine); mine.r = keep;
+    const acts = [];
+    if (p && p.to && (p.to.x !== u.x || p.to.y !== u.y)) acts.push({ t: 'move', x: p.to.x, y: p.to.y });
+    if (p && p.ability) acts.push({ t: 'use', key: p.ability, x: p.x, y: p.y });
+    acts.push({ t: 'end', face: ['n', 'e', 's', 'w'][g % 4] });
+    for (const a of acts) {
+      if (mine.status !== 'active') break;
+      if (!E.apply(mine, a)) { refused++; continue; }
+      r = await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: n++, action: a });
+      if (r.status !== 200 || r.body.battle.check !== E.checksum(mine)) { agree = false; break; }
+    }
+    if (!agree) break;
+  }
+  bt = r.body.battle;
+  check(agree && mine.status !== 'active', `a whole battle played through the server: ${n} choices, the two sides agree after every one`, `${mine.status}, ${refused} refused locally`);
+  check(bt.status === mine.status && bt.result && bt.result.status === mine.status && bt.result.party.length === 4 && bt.result.rounds === mine.round && bt.result.turns === mine.stats.turns
+    && JSON.stringify(bt.result.party.map(x => [x.id, x.citizen_id, x.hp, x.maxHp, x.down])) === JSON.stringify(E.resultOf(mine).party.map(x => [x.id, x.citizen_id, x.hp, x.maxHp, x.down])),
+    'when it ends the server records how: who won, the rounds, each citizen\'s health and who is down', JSON.stringify(bt.result).slice(0, 110));
+  check((await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n, action: { t: 'end' } })).status === 400 && (await call(adminId, 'GET', '/api/tactics/battles/current')).body.battle === null, 'a finished battle takes no more choices, and the town has no open battle');
+  const stored = (await query('SELECT actions, status FROM tactics_battles WHERE id=$1', [bt.id])).rows[0];
+  const again = E.replay(bt.setup, stored.actions);
+  check(again.bad === -1 && E.checksum(again.state) === E.checksum(mine) && stored.actions.length === n, 'played again from what is stored, the battle comes out the same');
+  // One open battle a town; leaving.
+  const b1 = (await call(adminId, 'POST', '/api/tactics/battles', opts)).body.battle, b2 = (await call(adminId, 'POST', '/api/tactics/battles', { ...opts, seed: 78 })).body.battle;
+  check((await call(adminId, 'GET', `/api/tactics/battles/${b1.id}`)).body.battle.status === 'left' && (await call(adminId, 'GET', '/api/tactics/battles/current')).body.battle.id === b2.id, 'starting another ends the one before: a town has one open battle');
+  r = await call(adminId, 'POST', `/api/tactics/battles/${b2.id}/leave`);
+  check(r.status === 200 && r.body.battle.status === 'left' && (await call(adminId, 'GET', '/api/tactics/battles/current')).body.battle === null && (await call(adminId, 'POST', `/api/tactics/battles/${b2.id}/leave`)).body.battle.status === 'left', 'leaving ends it; leaving twice is no error');
+  check((await call(adminId, 'GET', '/api/tactics/battles/999999999')).status === 404, 'another town\'s battle (or none) is not found');
 }
 
 (async () => {

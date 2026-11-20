@@ -1,6 +1,6 @@
 # Tactics battles
 
-Status: **chosen by the owner on 2026-11-20 as the game's combat.** One battle is playable from Dev Tools; nothing else uses it yet. Card battles still run quests, camps, raids and dungeons until the phases in §9 replace them. The same file is in both repos. What art, sound and music it needs is in `docs/TACTICS_ASSETS.md`.
+Status: **chosen by the owner on 2026-11-20 as the game's combat.** One battle is playable from Dev Tools, kept and checked by the server (Phase 2 of §9, done); nothing else uses it yet. Card battles still run quests, camps, raids and dungeons until the phases in §9 replace them. The same file is in both repos. What art, sound and music it needs is in `docs/TACTICS_ASSETS.md`.
 
 ## 1. The decision
 
@@ -23,7 +23,7 @@ Dev Tools → 💀 Dungeons → **Tactics battle**, at the bottom. On a narrow p
 - **Skull, land, seed**: the same three always give the same field and creatures.
 - **Against**: an ordinary fight, the hardest fight, or the boss.
 
-It uses the first four grown-up citizens who are free, costs nothing and changes nothing.
+It uses the first four grown-up citizens who are free, costs nothing and changes nothing in the town. The battle is stored: if the page is reloaded or closed, the same box offers "Pick up the battle that is open".
 
 ## 3. The rules
 
@@ -48,6 +48,7 @@ Left out on purpose: charge times and magic points, friendly fire, line of sight
 ### On screen
 
 - Full screen. The party are their villager sprites; creatures are their icons until they have art.
+- **Going in:** a dark spiral closes over the screen, the battle's name is shown, and a circle opens onto the board. Nothing acts until it has opened. **Leaving** fades out. With reduced motion the screen goes dark and then shows the board.
 - **⟲ ⟳ turn the view a quarter** (Q, R): a hill in front hides what stands behind it.
 - **Zoom**: pinch with two fingers, the mouse wheel, or − and ＋. One finger (or the mouse) drags the board once it is zoomed.
 - Blue tiles: where the unit can walk. Choosing an ability marks who it can reach.
@@ -55,7 +56,8 @@ Left out on purpose: charge times and magic points, friendly fire, line of sight
 - Tapping a creature shows its moves and, in red, where it can walk this turn.
 - A phone held sideways puts the board on the left at full height and the panel beside it.
 - Keys: arrows move the cursor, Enter chooses, Escape cancels, 1 to 5 choose an ability, E ends the turn, + and − zoom.
-- The end screen gives rounds, the player's turns and the time taken.
+- **Let them fight** (beside End turn): the party fights the rest of the battle by itself, at once.
+- The end screen gives rounds, the player's turns and the time taken, and says when the result is recorded.
 
 ## 4. The classes today
 
@@ -143,14 +145,14 @@ Each phase ends with something playable behind the switch.
 |---|---|---|---|
 | 0 | The trial | One battle from Dev Tools. **Done.** | |
 | 1 | Feel | Choosing a facing, zoom and drag, a phone on its side, hooks for art, sound and music. **Done.** | |
-| 2 | **The server decides** | The same engine runs on the server from a log of the player's choices; a battle is stored, survives a reload and cannot be cheated. | Medium |
+| 2 | The server decides | The same rules run on the server from a list of the player's choices; a battle is stored, survives a reload and cannot be cheated. **Done** (§10). | |
 | 3 | **Dungeons on the board** | A dungeon's fights are tactics battles. Health and who is down carry between them; rests, loot, fleeing and the endings as now. Fewer, larger fights per dungeon. The door pick and the card after a fight go; standing a fallen citizen back up comes in. Tuning for whole runs. | Large |
 | 4 | **Abilities** | Knowing and readying; class ladders; study at the class buildings; research; equipment; mastery. An Abilities page on each citizen. | Large |
 | 5 | **Everywhere, and the cards go** | Quests, camps and raids on the board, with a quick result for small fights. Raids on a map of the town. The card systems are removed. | Large |
 | 6 | **Content** | The full creature list with board behaviour, the seven bosses, ground that matters, the seasons, other ways to win, placing the party. | Large; alongside the art |
 | 7 | **The way in, and polish** | Dungeons on the map for players, a first battle that teaches, art and sound in, tuning from real play, slow phones. | Medium |
 
-**Why this order.** Phase 2 first, because everything after it stores results and a battle the browser decides cannot be trusted with them. Phase 3 next, because a single battle is a toy and a dungeon is the game. Abilities (4) before retiring cards (5), so there is something to replace them with. Content (6) can run beside any phase once art starts arriving.
+**Why this order.** Phase 2 came first, because everything after it stores results and a battle the browser decides cannot be trusted with them. Phase 3 next, because a single battle is a toy and a dungeon is the game. Abilities (4) before retiring cards (5), so there is something to replace them with. Content (6) can run beside any phase once art starts arriving.
 
 **Decisions the owner will need to make,** none of them yet:
 
@@ -167,10 +169,14 @@ Each phase ends with something playable behind the switch.
 | The screen: the board, taps and keys, zoom, facing, animation, sound, the Dev Tools box | frontend `js/tactics.js`, `css/tactics.css` |
 | The list of art and sound that exists | frontend `scripts/pack_tactics.js` → `assets/tactics/manifest.json` |
 | The two sides: kits, levels, creatures, the board's skull numbers | server `lib/tactics_setup.js` |
+| The same rules on the server (kept identical to the browser's; a test compares them) | server `lib/tactics_engine.js` |
+| Battles the server keeps: create, each choice, the result, leaving | server `lib/tactics_battles.js`, `migrations/0NN_tactics.sql` |
 | Routes (admins only) | server `routes/tactics.js` |
 | Numbers | server `scripts/tactics_sim.js` |
-| Tests | frontend `verify/tactics_proofs.js` (69 checks), server `scripts/tactics_test.js` (21) |
+| Tests | frontend `verify/tactics_proofs.js` (86 checks), server `scripts/tactics_test.js` (39) |
 
-- **The engine is pure**: no clock, no `Math.random`, no DOM. A battle is a plain object changed only by `move`, `use` and `endTurn`, and the same seed and choices always give the same battle. Phase 2 relies on that.
-- **Today the battle runs in the browser only**, and the server only says who is on the board.
+- **The engine is pure**: no clock, no `Math.random`, no DOM. A battle is a plain object changed only by `move`, `use` and `endTurn`, and the same seed and choices always give the same battle.
+- **How the server decides.** A battle is stored as its two sides, frozen when it begins, and the player's choices in order (`tactics_battles`). Creatures have no entries: their mind is part of the rules, so both sides reach the same turns from the same choices. The browser plays each choice at once, so the screen never waits, and sends it; the server plays it on top of the ones before and refuses what the rules do not allow. Every answer carries a fingerprint of the board; if the browser's differs, or a choice is refused, the screen is put back to the battle as the server has it. A choice sent twice is taken once.
+- **When a battle ends** the server records who won, the rounds, and each citizen's health and who is down. Phase 3 reads that to carry wounds through a dungeon.
+- **A town has one battle on a board at a time.** Starting another ends the one before.
 - Class names in the stylesheet start `kwtc-` (`kwt-` belongs to travel).

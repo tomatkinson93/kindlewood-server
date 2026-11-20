@@ -16,7 +16,7 @@ It lists what is there in `assets/tactics/manifest.json`, and the game uses it f
 
 | # | What | Tool | Why now |
 |---|---|---|---|
-| 1 | Sounds: the eighteen in §5 | freesound, Kenney, pixabay | an afternoon's work; the battle is nearly silent without them |
+| 1 | Sounds: the nineteen in §5 | freesound, Kenney, pixabay | an afternoon's work; the battle is nearly silent without them |
 | 2 | Music: two or three of the tracks in §6 | a music generator | sets the mood at once |
 | 3 | The eleven creatures in §1 | PixelLab | the foes are emoji today, and emoji cannot face anywhere |
 | 4 | The mouse's battle animations in §2 | PixelLab | attacks read as a nudge until these exist |
@@ -134,6 +134,7 @@ The example file names are from memory of those packs: go by the sound, not the 
 
 | Save as | When it plays | What it should be | Search words; Kenney names to try |
 |---|---|---|---|
+| `start` | The spiral into a battle | A rising whoosh into a soft drum hit, about a second | "battle start whoosh", "encounter sting", "swoosh rise"; today an older tension sound stands in |
 | `select` | An ability is chosen | A soft, short tick | "ui select", "soft click"; Interface Sounds `select_00x`, `click_00x` |
 | `confirm` | Confirm, and choosing a facing | A firmer, slightly lower click | "ui confirm"; Interface Sounds `confirmation_00x` |
 | `cancel` | Cancel or Back | A short falling blip | "ui back", "ui cancel"; Interface Sounds `back_00x` |
@@ -153,7 +154,7 @@ The example file names are from memory of those packs: go by the sound, not the 
 | `victory` | The battle is won | A three-second cheerful fanfare, folk instruments | "victory jingle", "win fanfare short"; Music Jingles `jingles_PIZZI_x`, `jingles_STEEL_x` |
 | `defeat` | The battle is lost | A three-second gentle sad phrase, not grim | "defeat jingle soft", "game over gentle"; Music Jingles `jingles_SAX_x` |
 
-Until a file is there: `select`, `confirm`, the four attack sounds, both falls and the two endings borrow older sounds from the game; the rest are silent.
+Until a file is there: `start`, `select`, `confirm`, the four attack sounds, both falls and the two endings borrow older sounds from the game; the rest are silent.
 
 If you use a sound generator, a line that works: "A [length] sound effect for a cosy storybook tactics game: [the description]. Clean, dry, no music, no voice."
 
