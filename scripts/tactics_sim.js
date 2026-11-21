@@ -39,7 +39,7 @@ async function main() {
     const [classes, label] = PARTIES[tier];
     let win = 0, turns = 0, rounds = 0, down = 0, lost = 0, foes = 0, foeHp = 0, stuck = 0;
     for (let k = 0; k < runs; k++) {
-      const s = await T.build(town.user_id, { classes, level: 'skull', tier, terrain: LANDS[k % LANDS.length], seed: 1000 + k * 7919, fight });
+      const s = await T.build(town.user_id, { classes, level: "skull", tier, terrain: LANDS[k % LANDS.length], seed: 1000 + k * 7919, fight, band: process.env.TACTICS_BAND || null });
       const st = E.autoplay({ seed: s.seed, land: s.land, party: s.party, enemies: s.enemies }, 800);
       if (st.status === 'victory') win++; if (st.status === 'active') stuck++;
       const mine = st.units.filter(u => u.side === 'player');

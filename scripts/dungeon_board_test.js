@@ -73,8 +73,8 @@ async function main() {
       'entering a fight room opens a battle on the board, not a card battle');
     let bt = (await api(a, 'GET', '/api/tactics/battles/' + b1)).body.battle;
     check(bt.source === 'dungeon' && bt.dungeon_run_id === v.id && bt.setup.party.length === 4 && bt.setup.party.map(u => u.cls).join() === 'guard,archer,villager,villager'
-      && bt.setup.enemies.map(e => e.key).join() === 'night_wolf,thornback_boar,night_wolf' && bt.setup.land === 'forest' && bt.setup.fight === 'fight',
-      'the battle is the room: the party in their own classes, the room\'s creatures, the dungeon\'s land');
+      && bt.setup.enemies.map(e => e.key).join() === 'wolf_raider,boar_bruiser,wolf_raider' && bt.setup.land === 'forest' && bt.setup.fight === 'fight',
+      'the battle is the room: the party in their own classes, the board\'s foes in place of the room\'s creatures, the dungeon\'s land');
     check(bt.setup.party.every((u, i) => u.maxHp === v.party[i].max && (u.hp == null || u.hp === v.party[i].hp)), 'each citizen comes in with the health the run has for them');
     check((await api(a, 'POST', '/api/dungeons/run/move', { room: 'b1' })).status === 400 && (await api(a, 'POST', '/api/dungeons/run/leave')).status === 400, 'the party cannot walk on or turn back until the fight is over');
     check((await api(a, 'POST', '/api/tactics/battles', { tier: 'green' })).status !== 200, 'a practice battle cannot push a dungeon\'s battle aside');

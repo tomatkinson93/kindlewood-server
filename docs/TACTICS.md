@@ -20,8 +20,10 @@ Dev Tools → 💀 Dungeons → **Tactics battle**, at the bottom. On a narrow p
 
 - **A class for each of the four** (front left, front right, back left, back right): Guard, Archer, Wizard, Hearthkeeper or Villager. Any citizen can be tried as any class.
 - **Their level**: what the skull expects, one of the four levels by name, or the citizens as they really are.
-- **Skull, land, seed**: the same three always give the same field and creatures.
+- **Skull, land, seed**: the same three always give the same field and foes.
 - **Against**: an ordinary fight, the hardest fight, or the boss.
+- **Whose**: whoever lives in that land (the seed picks the band), or one band by name. A band by name gives its showcase: someone who shoots, someone who heals or casts, someone to stand in front; for the boss fight, its boss.
+- **Going in**: a different way in each time, or one of the five by name.
 
 It uses the first four grown-up citizens who are free, costs nothing and changes nothing in the town. The battle is stored: if the page is reloaded or closed, the same box offers "Pick up the battle that is open".
 
@@ -47,9 +49,9 @@ Left out on purpose: charge times and magic points, friendly fire, line of sight
 
 ### On screen
 
-- Full screen. The party are their villager sprites; creatures are their icons until they have art.
-- **Going in:** something closes over the screen, the battle's name is shown on it, and it opens onto the board. Nothing acts until it has opened. **Leaving** fades out. With reduced motion the screen goes dark and then shows the board. The owner did not like the first one (a spiral), so there are five to try, chosen under "Going in" in the Dev Tools box until one is settled on: a fade through dark (the default), a page turning, tiles turning over, leaves blowing across, a closing circle; or nothing at all.
-- **Things that fly and burst.** An Archer's arrow arcs to its target; a Wizard's Firebolt is a ball of flame, Ember Burst blooms where it lands, Chill is a shard of frost, Spark a crackle of light; a blade leaves a slash and a creature's bite three claw marks. A ward shows as a shield, healing as a glow with rising sparks, a boon as rising chevrons, Mark as a closing reticle, poison as bubbles, a stun as stars. A heavy blow, or one from behind, jolts the board. All of it is drawn by code, from what the ability is, so every ability has an effect with no art; with reduced motion none is drawn.
+- Full screen. The party are their villager sprites; foes are an emoji each until they have art (`docs/TACTICS_ASSETS.md` §1).
+- **Going in:** something closes over the screen, the battle's name is shown on it, and it opens onto the board. Nothing acts until it has opened. **Leaving** fades out. With reduced motion the screen goes dark and then shows the board. There are five ways in: a fade through dark, a page turning, tiles turning over, leaves blowing across, a closing circle. **Each battle picks one at random, never the one before** (the owner liked all five, 2026-11-21). Dev Tools can ask for one by name, or for none. No sound plays until `start` exists in the sounds folder.
+- **Things that fly and burst.** Every ability has a look, drawn by code, so none needs art. *In flight:* an arrow, a sling stone, a venom dart, a thrown bottle and a boulder arc to their target; fire, embers, frost, a hex, venom, spores and a curse fly as glowing orbs; a spark leaps the gap, lightning strikes from the sky, and a gale curls down a row. *On landing:* a slash for a blade, three claw marks for talons and teeth, a straight flash for a spear, a dusty thud for a club, a puff, a flare, a splat, shards of ice. *Over an area:* fire blooms, a boulder cracks the ground, spores hang as a green cloud, a curse as a purple murk. *On those it touches:* a shield for a ward, a glow with rising sparks for healing, rising chevrons for a boon, a closing reticle for Mark, bubbles for poison, stars for a stun; a howl, a shriek or a rally spreads as a ring. A heavy blow, or one from behind, jolts the board. A class ability's look is a table in `js/tactics.js`; a foe's ability names its own (`look` in `lib/tactics_foes.js`), and the sound follows the look. With reduced motion none is drawn.
 - **The screen holds still.** The panel below the board is one fixed height. What an action would do, and its Confirm, float over the top of the board.
 - **⟲ ⟳ turn the view a quarter** (Q, R): a hill in front hides what stands behind it.
 - **Zoom**: pinch with two fingers, the mouse wheel, or − and ＋. One finger (or the mouse) drags the board once it is zoomed.
@@ -73,19 +75,37 @@ Every ability is a class card (`lib/class_cards.js`) and takes its numbers from 
 | Hearthkeeper | 3 / 1 | Cinder (1 to 3) · Hearth Ward (anyone within 3, every 2nd) · Kindle (heal within 3, twice a battle) · Steady Now (every friend within 2, every 3rd) · Embolden (a friend within 3, quick; every 3rd) |
 | Villager | 3 / 1 | Swing (1) · Duck (self, every 2nd) · their trade card |
 
-The creatures are the game's own, with their own moves; the board gives each a Move (a Mountain Harpy flies five tiles and three levels; a Hill Ogre trudges two) and a reach for the few that strike from afar.
+### Who they fight
+
+**Reworked 2026-11-21, at the owner's word:** in a world where every animal walks upright and wears clothes, a wild fox or a boar on four legs does not belong. So nobody on the board is a beast. A foe is an outlaw, a raider, one of the marsh folk, or a villager the blight hollowed out, and **every band has someone who fights up close, someone who strikes from far off, and someone who heals or casts.** Thirty foes in five bands, written for the board in `lib/tactics_foes.js`: how far each walks and jumps, what it does, how far that reaches, its shape, how often.
+
+| Band | Where | Minions and regulars | Heavy | Elite | Boss |
+|---|---|---|---|---|---|
+| **The Redtooth Brigands** (red neckerchiefs) | plains, forest, hills | Rat Cutpurse (quick) · Weasel Slinger (**shoots** 2 to 4) · Fox Footpad (throws sand: weak) · Polecat Sawbones (**heals** a friend within 3; throws tonic) | Boar Bruiser (charge knocks back; braces) | Stoat Captain (**rallies** the band) | Redtooth, the Brigand King (plains) |
+| **The Night Pack** (blue war paint) | forest, hills, mountain | Wolf Raider (a howl **emboldens** the pack) · Wolf Bowhunter (**shoots** 2 to 5; a shot that slows) | the land's | Pack Chieftain (cleaves all round) | Old Greyfeather, an owl warlock (forest; **casts** moonbolts) |
+| **The Crag Reavers** (black harness) | mountain, hills | Hawk Reaver (moves 5, leaps 3; a shriek weakens) · Crow Stormcaller (**casts**: spark 1 to 4; a gale down a row slows) | Bear Marauder (slow; a slam stuns) | Stormcrow (**casts** lightning; a thunderclap over an area) | The Storm Matriarch (mountain) · Grum, Chief of the Hill Bears (hills; **throws boulders**) |
+| **The Mire Folk** (reed cloaks) | marsh, river | Newt Darter (**shoots** venom darts 2 to 4: poison) · Toad Sporecaller (**casts** a spore cloud over an area) · Heron Lancer (a spear that reaches 2 and through a row) | Snapper Shellback (armour; into its shell) | Bog Witch (**casts** hexes and a curse; **heals**) | Old Snapjaw (river) · The Bog Mother (marsh; heals herself) |
+| **The Withered** (grey fur, hollow green eyes) | ruins, marsh, deep forest | Hollow Bowman (**shoots** 2 to 5) · Hollow Thrall (slow; a rotting touch) · Rot Shaman (**casts** hexes; **heals** its kin) | Husk Brute (rot breath down a row) | Husk Knight (armour; reaps all round) | The Hollow King (ruins; a crown of rot over an area) |
+
+- **A dungeon belongs to a band.** The seed picks one of the bands that live in the land; the dungeon's ordinary foes are that band's, and where the band has nobody of a rank, whoever in the land does. The boss is the land's.
+- **The eleven creatures of the card battles each have a foe that stands in their place** (Marsh Rat → Rat Cutpurse, Wild Fox → Fox Footpad, Thornback Boar → Boar Bruiser, Night Wolf → Wolf Raider, Mountain Harpy → Hawk Reaver, Hill Ogre → Bear Marauder, Bog Lurker → Newt Darter, Fungal Toad → Toad Sporecaller, River Pike → Heron Lancer, Withered Husk → Hollow Thrall; the Rot Shaman keeps its name). So a dungeon written for cards, fought on the board, shows the new cast. A creature made in the enemy editor that the board has never heard of is read from its row as before.
+- **The card battles are untouched**: quests, camps and raids in the live game still name the old creatures, until Phase 5 moves them to the board.
+- **Two of mine to overrule:** the Hill Ogre became a bear and the Mountain Harpy a hawk, because an ogre and a harpy are not animals either. Old Snapjaw became a snapping turtle (a pike cannot stand up). Say the word and any of them goes back.
+- The mind that plays them (`plan` in the engine) already keeps those who shoot at their distance, heals whoever is hurt, and weighs an area by everyone in it, so the new foes needed no new rules.
 
 ## 5. First numbers
 
 From `scripts/tactics_sim.js`: the engine's own mind plays both sides, 140 battles a line. "Your turns" is what a player decides; at about 12 seconds each, 25 turns is five minutes.
 
-| Skull (creature health / strength) | Party | Ordinary fight: your turns · health lost | Hardest fight | Boss: wins · your turns · health lost |
+| Skull (foe health / strength) | Party | Ordinary fight: your turns · health lost | Hardest fight | Boss: wins · your turns · health lost |
 |---|---|---|---|---|
-| 🟢 Green (+40% / +10%) | 4 villagers | 19 · 30% | 19 · 34% | 92% · 29 · 63% |
-| 🟡 Yellow (+80% / +30%) | guard, archer, 2 villagers | 15 · 23% | 17 · 32% | 99% · 22 · 44% |
-| 🟠 Orange (+140% / +60%) | guard, hearthkeeper, 2 archers | 18 · 29% | 18 · 26% | 99% · 19 · 30% |
-| 🔴 Red (+180% / +80%) | all four classes | 17 · 25% | 21 · 44% | 91% · 23 · 44% |
-| 🟣 Purple (+240% / +100%) | all four classes | 18 · 23% | 21 · 34% | 94% · 23 · 42% |
+| 🟢 Green (+40% / +10%) | 4 villagers | 19 · 32% | 20 · 39% | 94% · 25 · 64% |
+| 🟡 Yellow (+80% / +30%) | guard, archer, 2 villagers | 16 · 23% | 19 · 39% | 100% · 23 · 52% |
+| 🟠 Orange (+140% / +60%) | guard, hearthkeeper, 2 archers | 18 · 29% | 19 · 33% | 100% · 21 · 38% |
+| 🔴 Red (+180% / +80%) | all four classes | 18 · 23% | 22 · 48% | 94% · 26 · 61% |
+| 🟣 Purple (+240% / +100%) | all four classes | 18 · 21% | 22 · 45% | 87% · 27 · 63% |
+
+**Against the new cast (2026-11-21).** The foes' health and strength were set so an ordinary fight comes out as it did against the old creatures (the same turns and health lost, within a point or two). The hardest fight and the boss are a little harder than before, because every land now has a real heavy and a real boss with three or four things it can do, where the strongest creature used to stand in: a boss costs the party about two thirds of its health at green, red and purple, and purple's is lost one time in eight. That is about right for the last room of a dungeon, and it is the first thing to look at when runs are tuned.
 
 These are for one battle. Nothing has been tuned for runs of battles; that is Phase 3.
 
@@ -151,7 +171,7 @@ Each phase ends with something playable behind the switch.
 | 3 | **Dungeons on the board** | A dungeon's fights are tactics battles. Health and who is down carry between them; rests, loot, fleeing and the endings as now. The door pick and the card after a fight are gone. **Done (2026-11-21).** Still to do in this phase: fewer, larger fights per dungeon; tuning for whole runs; standing a fallen citizen back up. | Large; half done |
 | 4 | **Abilities** | Knowing and readying; class ladders; study at the class buildings; research; equipment; mastery. An Abilities page on each citizen. | Large |
 | 5 | **Everywhere, and the cards go** | Quests, camps and raids on the board, with a quick result for small fights. Raids on a map of the town. The card systems are removed. | Large |
-| 6 | **Content** | The full creature list with board behaviour, the seven bosses, ground that matters, the seasons, other ways to win, placing the party. | Large; alongside the art |
+| 6 | **Content** | Ground that matters, the seasons, other ways to win, placing the party; bosses that resist being stunned or pushed; a second form or a trick for each boss. **The cast is in (2026-11-21):** thirty foes in five bands with board behaviour, and the seven bosses (§4). | Large; alongside the art |
 | 7 | **The way in, and polish** | Dungeons on the map for players, a first battle that teaches, art and sound in, tuning from real play, slow phones. | Medium |
 
 **Why this order.** Phase 2 came first, because everything after it stores results and a battle the browser decides cannot be trusted with them. Phase 3 next, because a single battle is a toy and a dungeon is the game. Abilities (4) before retiring cards (5), so there is something to replace them with. Content (6) can run beside any phase once art starts arriving.
@@ -169,13 +189,14 @@ Each phase ends with something playable behind the switch.
 |---|---|
 | The rules: map, turns, moving, reach, facing, height, abilities, the creatures' mind | frontend `js/tactics-engine.js` |
 | The screen: the board, taps and keys, zoom, facing, animation, sound, the Dev Tools box | frontend `js/tactics.js`, `css/tactics.css` |
-| The list of art and sound that exists | frontend `scripts/pack_tactics.js` → `assets/tactics/manifest.json` |
-| The two sides: kits, levels, creatures, the board's skull numbers | server `lib/tactics_setup.js` |
+| The list of art and sound that exists: foe pictures, ability icons, sounds, music | frontend `scripts/pack_tactics.js` → `assets/tactics/manifest.json` |
+| Who the party fights: the thirty foes, the bands, a dungeon's cast, the showcase fights | server `lib/tactics_foes.js` |
+| The two sides: kits, levels, a foe as a unit, the board's skull numbers | server `lib/tactics_setup.js` |
 | The same rules on the server (kept identical to the browser's; a test compares them) | server `lib/tactics_engine.js` |
 | Battles the server keeps: create, each choice, the result, leaving | server `lib/tactics_battles.js`, `migrations/0NN_tactics.sql` |
 | Routes (admins only) | server `routes/tactics.js` |
 | Numbers | server `scripts/tactics_sim.js` |
-| Tests | frontend `verify/tactics_proofs.js` (103 checks), server `scripts/tactics_test.js` (39), `scripts/dungeon_board_test.js` (27) |
+| Tests | frontend `verify/tactics_proofs.js` (110 checks), server `scripts/tactics_test.js` (50), `scripts/dungeon_board_test.js` (27) |
 
 - **The engine is pure**: no clock, no `Math.random`, no DOM. A battle is a plain object changed only by `move`, `use` and `endTurn`, and the same seed and choices always give the same battle.
 - **How the server decides.** A battle is stored as its two sides, frozen when it begins, and the player's choices in order (`tactics_battles`). Creatures have no entries: their mind is part of the rules, so both sides reach the same turns from the same choices. The browser plays each choice at once, so the screen never waits, and sends it; the server plays it on top of the ones before and refuses what the rules do not allow. Every answer carries a fingerprint of the board; if the browser's differs, or a choice is refused, the screen is put back to the battle as the server has it. A choice sent twice is taken once.

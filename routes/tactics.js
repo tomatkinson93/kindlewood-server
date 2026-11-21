@@ -5,7 +5,7 @@
 //  Nothing is paid or lost.
 //
 //    GET  /admin/options   the classes, levels, skulls and lands to choose from
-//    POST /admin/setup     { classes: [×4], level, tier, terrain, seed, fight, citizen_ids? }
+//    POST /admin/setup     { classes: [×4], level, tier, terrain, seed, fight, band?, citizen_ids? }
 //                          → { seed, land, tier, name, party, enemies }
 //    POST /battles             the same choices → a battle the server keeps: { battle: { id, setup, actions, check } }
 //    GET  /battles/current     the town's open battle, or null (to pick it up after a reload)
@@ -32,6 +32,8 @@ router.get('/admin/options', requireAuth, requireAdmin, (req, res) => {
       tiers: DEFS.TIER_ORDER.map(k => ({ key: k, name: DEFS.TIERS[k].name, skull: DEFS.TIERS[k].skull })),
       lands: require('../lib/dungeon_gen').LANDS,
       fights: [{ key: 'first', label: 'An ordinary fight' }, { key: 'hard', label: 'The hardest fight' }, { key: 'boss', label: 'The boss' }],
+      // Whose fight: as the land and the seed decide, or one band's showcase (lib/tactics_foes.js SHOWCASE).
+      bands: [{ key: '', label: 'Whoever lives in that land' }].concat(Object.keys(T.FOES.BANDS).map(k => ({ key: k, label: T.FOES.BANDS[k].name }))),
     });
   } catch (e) { fail(res, e); }
 });

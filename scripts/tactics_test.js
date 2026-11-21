@@ -31,9 +31,61 @@ console.log('The kits');
   check(vil.abilities.length === 3 && ab(vil, 't_ration').heal === 7 && ab(vil, 't_ration').uses === 1 && vil.armour === 0, 'a villager has Swing, Duck and their trade card');
   check(guard.maxHp > vil.maxHp && guard.armour === 2, 'a level sets health and armour as the simulator\'s levels do');
   const ogre = T.creatureUnit({ id: 'hill_ogre', name: 'Hill Ogre', icon: '👹', max_hp: 60, strength: 11, agility: 3, endurance: 10, combat_skill: 3, moves: [{ key: 'club', name: 'Club', intent: 'attack', target: 'enemy', weight: 2, formula: 'damage: strength*0.9 + 2' }] }, 0, 'orange', { hp: 0.5 });
-  check(ogre.maxHp === Math.round(60 * (1 + T.TIERS.orange.hp + 0.5)) && ogre.abilities[0].dmg === Math.round(Math.round(11 * (1 + T.TIERS.orange.str)) * 0.9 + 2) && ogre.move === 2, 'a creature takes the skull\'s health and strength, and a room\'s own boost');
+  check(ogre.maxHp === Math.round(60 * (1 + T.TIERS.orange.hp + 0.5)) && ogre.abilities[0].dmg === Math.round(Math.round(11 * (1 + T.TIERS.orange.str)) * 0.9 + 2) && ogre.move === 3, 'a creature the board knows only by its row takes the skull\'s health and strength, and a room\'s own boost');
   const rat = T.creatureUnit({ id: 'marsh_rat', name: 'Marsh Rat', max_hp: 22, strength: 5, agility: 9, endurance: 4, combat_skill: 2, moves: [] }, 0, 'green', null);
   check(rat.abilities.length === 1 && rat.abilities[0].dmg > 0 && rat.abilities[0].max === 1, 'a creature with no moves of its own bites');
+
+  console.log('Who the party fights (lib/tactics_foes.js)');
+  const F = T.FOES, all = Object.values(F.FOES), units = all.map((f, i) => T.foeUnit(f, i, 'green', null));
+  check(all.length >= 28 && all.every(f => F.BANDS[f.band] && F.RANK_ORDER.includes(f.rank) && f.lands.length && f.hp > 0 && f.pow > 0 && f.name && f.icon && f.flavour && f.does.length),
+    'every foe has a band, a rank, lands, health, a name, a line about it and something it does', `${all.length} foes in ${Object.keys(F.BANDS).length} bands`);
+  check(units.every(u => u.abilities.every(x => x.name && x.icon && x.look && (x.dmg || x.block || x.heal || Object.keys(x.fx).length)) && u.abilities.some(x => x.dmg && !x.cooldown)),
+    'everything a foe does does something and has a look, and each has an attack that is always ready');
+  {
+    // Every look a foe names is one the screen draws (the frontend's js/tactics.js, when it is beside this repo).
+    const fs = require('fs'), path = require('path');
+    const file = path.join(process.env.KW_FRONTEND_DIR || path.join(__dirname, '..', '..', 'kindlewood-frontend'), 'js', 'tactics.js');
+    if (fs.existsSync(file)) {
+      const J = fs.readFileSync(file, 'utf8'), looks = [...new Set(units.flatMap(u => u.abilities.map(x => x.look)))];
+      const known = k => new RegExp(`\\b${k}\\(c, f, p, k`).test(J) || new RegExp(`\\b${k}: '[a-z_]+'`).test(J) || new RegExp(`\\b${k}: '#`).test(J);
+      check(looks.every(known), 'every look a foe names is one the battle screen draws', looks.filter(k => !known(k)).join(' ') || `${looks.length} looks`);
+    }
+  }
+  const can = (u, f) => u.abilities.some(f);
+  const shoots = u => can(u, x => x.dmg && x.max >= 3), heals = u => can(u, x => x.heal && x.target !== 'self'), casts = u => can(u, x => x.shape === 'burst' || (x.max >= 3 && Object.keys(x.fx).length));
+  check(Object.keys(F.BANDS).every(b => { const us = units.filter(u => u.band === b && u.rank !== 'boss'); return us.some(shoots) && us.some(u => heals(u) || casts(u)); }),
+    'every band has someone who strikes from far off and someone who heals or casts');
+  check(units.filter(heals).length >= 3 && units.filter(casts).length >= 6 && units.filter(shoots).length >= 10, 'across the bands: healers, casters and plenty who shoot',
+    `${units.filter(heals).length} heal, ${units.filter(casts).length} cast, ${units.filter(shoots).length} shoot`);
+  const LANDS = require('../lib/dungeon_gen').LANDS;
+  check(LANDS.every(l => F.RANK_ORDER.every(r => all.some(f => f.rank === r && f.lands.includes(l))) && all.filter(f => f.rank === 'boss' && f.lands.includes(l)).length === 1),
+    'every land has a minion, a regular, a heavy, an elite and one boss');
+  check(['marsh_rat', 'river_pike', 'wild_fox', 'rot_shaman', 'mountain_harpy', 'bog_lurker', 'night_wolf', 'withered_husk', 'fungal_toad', 'thornback_boar', 'hill_ogre'].every(k => F.foe(k)) && F.foe('night_wolf').key === 'wolf_raider' && F.foe('nobody') === null,
+    'each creature of the card battles has a foe that stands in its place on the board');
+  const cast = F.castFor('forest', 1), again = F.castFor('forest', 1);
+  check(cast.band && JSON.stringify(cast) === JSON.stringify(again) && F.RANK_ORDER.every(r => cast.creatures.some(c => c.rank === r))
+    && cast.creatures.filter(c => c.rank === 'regular').every(c => F.FOES[c.id].band === cast.band) && LANDS.every(l => [1, 2, 3].every(n => F.castFor(l, n).band)),
+    'a dungeon belongs to a band: its ordinary foes are the band\'s, with every rank filled, the same for the same seed', cast.band);
+  const cap = T.foeUnit(F.FOES.stoat_captain, 0, 'orange', { hp: 0.5 });
+  check(cap.maxHp === Math.round(F.FOES.stoat_captain.hp * (1 + T.TIERS.orange.hp + 0.5)) && cap.armour === 2 && cap.abilities.find(x => x.key === 'rally').fx.bold === 3
+    && cap.abilities.find(x => x.key === 'rally').target === 'ally_or_self' && cap.abilities.find(x => x.key === 'rally').shape === 'around'
+    && cap.abilities.find(x => x.key === 'twin').dmg === Math.round(Math.round(F.FOES.stoat_captain.pow * (1 + T.TIERS.orange.str)) * 0.9 + 3),
+    'a foe takes the skull\'s health and strength and a room\'s boost; a rally reaches its friends around it');
+  check(Object.keys(F.SHOWCASE).length === Object.keys(F.BANDS).length && Object.values(F.SHOWCASE).every(sc => ['first', 'hard', 'boss'].every(k => sc[k].length >= 3 && sc[k].every(x => F.FOES[x])) && F.FOES[sc.boss[sc.boss.length - 1]].rank === 'boss'),
+    'each band has a showcase fight of each kind, the boss at the back');
+  // Both sides' minds can play every showcase to an end.
+  {
+    const party = ['guard', 'hearthkeeper', 'archer', 'wizard'].map((cls, i) => ({ id: 'c' + i, citizen_id: i, name: cls, cls, maxHp: 60, armour: 2, agility: 8, move: 3, jump: 1,
+      abilities: [{ key: 'hit', name: 'Hit', icon: '⚔️', kind: 'attack', target: 'enemy', min: 1, max: cls === 'archer' || cls === 'wizard' ? 4 : 1, shape: 'single', radius: 0, dmg: 12, block: 0, heal: 0, fx: {}, cooldown: 0, quick: false, uses: null, falloff: null }] }));
+    const E = require('../lib/tactics_engine');
+    let done = 0, n = 0;
+    for (const b of Object.keys(F.SHOWCASE)) for (const k of ['first', 'hard', 'boss']) {
+      n++;
+      const st = E.autoplay({ seed: 77 + n, land: 'forest', party: JSON.parse(JSON.stringify(party)), enemies: F.SHOWCASE[b][k].map((x, i) => T.foeUnit(F.FOES[x], i, 'green', null)) }, 900);
+      if (st.status !== 'active') done++;
+    }
+    check(done === n, 'the rules play every showcase fight through to an end', `${done} of ${n}`);
+  }
 }
 
 async function part2() {
