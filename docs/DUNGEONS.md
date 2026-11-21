@@ -1,6 +1,6 @@
 # Dungeons (design spec)
 
-> **Combat is changing (2026-11-20).** Dungeon fights will be tactics battles on a board (`docs/TACTICS.md`, Phase 3). The run described here stays: the path, rooms, wounds that carry, rests, endings, loot and the generator. The parts about cards and decks are being replaced.
+> **Combat is changing (2026-11-20).** Dungeon fights are becoming tactics battles on a board (`docs/TACTICS.md`, Phase 3). From 2026-11-21 a dungeon started from Dev Tools is fought that way by default (`dungeon_runs.combat = 'board'`); a card run is still possible. The run described here stays: the path, rooms, wounds that carry, rests, endings, loot and the generator. The parts about cards and decks are being replaced.
 
 
 Status: **design agreed 2026-11-15 (three rounds of answers), with a fourth round on 2026-11-18. Build steps 1 to 3 are built (§12); the rest is not. On 2026-11-19 the door draft (§3.4) was replaced by a deck for each citizen: `docs/DUNGEON_CLASS_DECKS.md`.** Classes, cards, creatures, events, treasure and the numbers behind the difficulty table are in `docs/DUNGEON_CONTENT.md`. The roadmap placed dungeons after the remaining 1.0 phases; the owner brought them forward on 2026-11-18. They are started from Dev Tools only and stay behind the switch `dungeons.on` until they are ready for players. The same file is in both repos.

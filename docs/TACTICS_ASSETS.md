@@ -117,7 +117,7 @@ Guard: Strike, Shield Up, Cover, Shove, Heavy Blow. Archer: Shoot, Sidestep, Par
 
 > A sheet of five 32 × 32 pixel-art icons in a row with gaps, for a storybook tactics game: [five names, each with three words of what it shows]. Bold simple shapes that read at small size, one-pixel dark brown outline, a different main colour for each, transparent background, no text.
 
-Effects (a slash, an arrow in flight, a burst of flame, a frost shard, a ring of healing light, a shield flash) would be short strips of four to six frames, 48 × 48. Numbers and a flash do this work today.
+**Effects are drawn by code today** (arrows, flame, frost, sparks, slashes, shields, healing light and the rest: `docs/TACTICS.md` §3), so every ability has one with no art. Drawn effects would be polish: short strips of four to six frames, 48 × 48, one per look. Not wired.
 
 ## 5. Sounds
 
@@ -134,7 +134,7 @@ The example file names are from memory of those packs: go by the sound, not the 
 
 | Save as | When it plays | What it should be | Search words; Kenney names to try |
 |---|---|---|---|
-| `start` | The spiral into a battle | A rising whoosh into a soft drum hit, about a second | "battle start whoosh", "encounter sting", "swoosh rise"; today an older tension sound stands in |
+| `start` | Going into a battle | A rising whoosh into a soft drum hit, about a second | "battle start whoosh", "encounter sting", "swoosh rise". Silent until this file exists |
 | `select` | An ability is chosen | A soft, short tick | "ui select", "soft click"; Interface Sounds `select_00x`, `click_00x` |
 | `confirm` | Confirm, and choosing a facing | A firmer, slightly lower click | "ui confirm"; Interface Sounds `confirmation_00x` |
 | `cancel` | Cancel or Back | A short falling blip | "ui back", "ui cancel"; Interface Sounds `back_00x` |
@@ -154,7 +154,7 @@ The example file names are from memory of those packs: go by the sound, not the 
 | `victory` | The battle is won | A three-second cheerful fanfare, folk instruments | "victory jingle", "win fanfare short"; Music Jingles `jingles_PIZZI_x`, `jingles_STEEL_x` |
 | `defeat` | The battle is lost | A three-second gentle sad phrase, not grim | "defeat jingle soft", "game over gentle"; Music Jingles `jingles_SAX_x` |
 
-Until a file is there: `start`, `select`, `confirm`, the four attack sounds, both falls and the two endings borrow older sounds from the game; the rest are silent.
+Until a file is there: `select`, `confirm`, the four attack sounds, both falls and the two endings borrow older sounds from the game; the rest are silent.
 
 If you use a sound generator, a line that works: "A [length] sound effect for a cosy storybook tactics game: [the description]. Clean, dry, no music, no voice."
 

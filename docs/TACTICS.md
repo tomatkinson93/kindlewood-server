@@ -1,6 +1,6 @@
 # Tactics battles
 
-Status: **chosen by the owner on 2026-11-20 as the game's combat.** One battle is playable from Dev Tools, kept and checked by the server (Phase 2 of §9, done); nothing else uses it yet. Card battles still run quests, camps, raids and dungeons until the phases in §9 replace them. The same file is in both repos. What art, sound and music it needs is in `docs/TACTICS_ASSETS.md`.
+Status: **chosen by the owner on 2026-11-20 as the game's combat.** Battles are kept and checked by the server (Phase 2 of §9), and a dungeon started from Dev Tools is now fought on the board, room after room (Phase 3, its first half). Quests, camps and raids still use cards. Card battles still run quests, camps, raids and dungeons until the phases in §9 replace them. The same file is in both repos. What art, sound and music it needs is in `docs/TACTICS_ASSETS.md`.
 
 ## 1. The decision
 
@@ -48,7 +48,9 @@ Left out on purpose: charge times and magic points, friendly fire, line of sight
 ### On screen
 
 - Full screen. The party are their villager sprites; creatures are their icons until they have art.
-- **Going in:** a dark spiral closes over the screen, the battle's name is shown, and a circle opens onto the board. Nothing acts until it has opened. **Leaving** fades out. With reduced motion the screen goes dark and then shows the board.
+- **Going in:** something closes over the screen, the battle's name is shown on it, and it opens onto the board. Nothing acts until it has opened. **Leaving** fades out. With reduced motion the screen goes dark and then shows the board. The owner did not like the first one (a spiral), so there are five to try, chosen under "Going in" in the Dev Tools box until one is settled on: a fade through dark (the default), a page turning, tiles turning over, leaves blowing across, a closing circle; or nothing at all.
+- **Things that fly and burst.** An Archer's arrow arcs to its target; a Wizard's Firebolt is a ball of flame, Ember Burst blooms where it lands, Chill is a shard of frost, Spark a crackle of light; a blade leaves a slash and a creature's bite three claw marks. A ward shows as a shield, healing as a glow with rising sparks, a boon as rising chevrons, Mark as a closing reticle, poison as bubbles, a stun as stars. A heavy blow, or one from behind, jolts the board. All of it is drawn by code, from what the ability is, so every ability has an effect with no art; with reduced motion none is drawn.
+- **The screen holds still.** The panel below the board is one fixed height. What an action would do, and its Confirm, float over the top of the board.
 - **⟲ ⟳ turn the view a quarter** (Q, R): a hill in front hides what stands behind it.
 - **Zoom**: pinch with two fingers, the mouse wheel, or − and ＋. One finger (or the mouse) drags the board once it is zoomed.
 - Blue tiles: where the unit can walk. Choosing an ability marks who it can reach.
@@ -146,7 +148,7 @@ Each phase ends with something playable behind the switch.
 | 0 | The trial | One battle from Dev Tools. **Done.** | |
 | 1 | Feel | Choosing a facing, zoom and drag, a phone on its side, hooks for art, sound and music. **Done.** | |
 | 2 | The server decides | The same rules run on the server from a list of the player's choices; a battle is stored, survives a reload and cannot be cheated. **Done** (§10). | |
-| 3 | **Dungeons on the board** | A dungeon's fights are tactics battles. Health and who is down carry between them; rests, loot, fleeing and the endings as now. Fewer, larger fights per dungeon. The door pick and the card after a fight go; standing a fallen citizen back up comes in. Tuning for whole runs. | Large |
+| 3 | **Dungeons on the board** | A dungeon's fights are tactics battles. Health and who is down carry between them; rests, loot, fleeing and the endings as now. The door pick and the card after a fight are gone. **Done (2026-11-21).** Still to do in this phase: fewer, larger fights per dungeon; tuning for whole runs; standing a fallen citizen back up. | Large; half done |
 | 4 | **Abilities** | Knowing and readying; class ladders; study at the class buildings; research; equipment; mastery. An Abilities page on each citizen. | Large |
 | 5 | **Everywhere, and the cards go** | Quests, camps and raids on the board, with a quick result for small fights. Raids on a map of the town. The card systems are removed. | Large |
 | 6 | **Content** | The full creature list with board behaviour, the seven bosses, ground that matters, the seasons, other ways to win, placing the party. | Large; alongside the art |
@@ -173,10 +175,12 @@ Each phase ends with something playable behind the switch.
 | Battles the server keeps: create, each choice, the result, leaving | server `lib/tactics_battles.js`, `migrations/0NN_tactics.sql` |
 | Routes (admins only) | server `routes/tactics.js` |
 | Numbers | server `scripts/tactics_sim.js` |
-| Tests | frontend `verify/tactics_proofs.js` (86 checks), server `scripts/tactics_test.js` (39) |
+| Tests | frontend `verify/tactics_proofs.js` (103 checks), server `scripts/tactics_test.js` (39), `scripts/dungeon_board_test.js` (27) |
 
 - **The engine is pure**: no clock, no `Math.random`, no DOM. A battle is a plain object changed only by `move`, `use` and `endTurn`, and the same seed and choices always give the same battle.
 - **How the server decides.** A battle is stored as its two sides, frozen when it begins, and the player's choices in order (`tactics_battles`). Creatures have no entries: their mind is part of the rules, so both sides reach the same turns from the same choices. The browser plays each choice at once, so the screen never waits, and sends it; the server plays it on top of the ones before and refuses what the rules do not allow. Every answer carries a fingerprint of the board; if the browser's differs, or a choice is refused, the screen is put back to the battle as the server has it. A choice sent twice is taken once.
 - **When a battle ends** the server records who won, the rounds, and each citizen's health and who is down. Phase 3 reads that to carry wounds through a dungeon.
 - **A town has one battle on a board at a time.** Starting another ends the one before.
+- **A dungeon on the board** (`lib/dungeons.js`, `dungeon_runs.combat = 'board'`; Dev Tools → Dungeons → Fights: "On the board", the default there). The run starts with no decks and no door pick. Entering a fight room opens a tactics battle that names its run: the party as it stands (health carried in; whoever is down is left off the board) against the room's creatures, with the board's own skull numbers and the room's boost, on the dungeon's land. When the battle ends, the transaction that stores the last choice also settles the run: each citizen's health and who is down, the fight's wealth and any find, the way on; the boss clears the dungeon; a defeat ends it. ✕ on the battle only steps away (it stays open and is picked up from the dungeon's Fight button); fleeing is done from the dungeon's screen and ends the run with half the loot. A run started without `combat: 'board'` is a card run as before.
+- **Not yet, for a dungeon on the board:** a creature's item drops (only wealth and the room's finds are given), fewer fights per dungeon, numbers tuned for a whole run, and raising the fallen.
 - Class names in the stylesheet start `kwtc-` (`kwt-` belongs to travel).

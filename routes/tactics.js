@@ -47,17 +47,23 @@ const failWith = (res, e) => { if (!e.status) console.error('[tactics]', e); res
 router.post('/battles', requireAuth, requireAdmin, async (req, res) => {
   try { res.json({ ok: true, battle: await B.create(req.user.userId, req.body || {}) }); } catch (e) { failWith(res, e); }
 });
-router.get('/battles/current', requireAuth, requireAdmin, async (req, res) => {
+// A battle a town already has (its dungeon's, say) is open to whoever may play dungeons, not only admins.
+const mayPlay = async (req, res, next) => {
+  try { if (await require('../lib/dungeons').allowed(req.user)) return next(); res.status(403).json({ error: 'Battles on the board are not open yet.' }); }
+  catch (e) { failWith(res, e); }
+};
+router.get('/battles/current', requireAuth, mayPlay, async (req, res) => {
   try { res.json({ ok: true, battle: await B.current(req.user.userId) }); } catch (e) { failWith(res, e); }
 });
-router.get('/battles/:id', requireAuth, requireAdmin, async (req, res) => {
+router.get('/battles/:id', requireAuth, mayPlay, async (req, res) => {
   try { res.json({ ok: true, battle: await B.get(req.user.userId, Number(req.params.id)) }); } catch (e) { failWith(res, e); }
 });
-router.post('/battles/:id/act', requireAuth, requireAdmin, async (req, res) => {
-  try { const b = req.body || {}; res.json({ ok: true, battle: await B.act(req.user.userId, Number(req.params.id), b.n, b.action) }); } catch (e) { failWith(res, e); }
+router.post('/battles/:id/act', requireAuth, mayPlay, async (req, res) => {
+  // A dungeon's battle that has just ended also says what became of the run: { dungeon: { run, found, ended, injuries } }.
+  try { const b = req.body || {}; const { dungeon, ...battle } = await B.act(req.user.userId, Number(req.params.id), b.n, b.action); res.json({ ok: true, battle, dungeon }); } catch (e) { failWith(res, e); }
 });
-router.post('/battles/:id/leave', requireAuth, requireAdmin, async (req, res) => {
-  try { res.json({ ok: true, battle: await B.leave(req.user.userId, Number(req.params.id)) }); } catch (e) { failWith(res, e); }
+router.post('/battles/:id/leave', requireAuth, mayPlay, async (req, res) => {
+  try { const { dungeon, ...battle } = await B.leave(req.user.userId, Number(req.params.id)); res.json({ ok: true, battle, dungeon }); } catch (e) { failWith(res, e); }
 });
 
 module.exports = router;
