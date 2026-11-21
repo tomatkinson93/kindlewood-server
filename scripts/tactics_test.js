@@ -73,6 +73,38 @@ console.log('The kits');
     'a foe takes the skull\'s health and strength and a room\'s boost; a rally reaches its friends around it');
   check(Object.keys(F.SHOWCASE).length === Object.keys(F.BANDS).length && Object.values(F.SHOWCASE).every(sc => ['first', 'hard', 'boss'].every(k => sc[k].length >= 3 && sc[k].every(x => F.FOES[x])) && F.FOES[sc.boss[sc.boss.length - 1]].rank === 'boss'),
     'each band has a showcase fight of each kind, the boss at the back');
+  console.log('A dungeon on the board: what foes leave, and fewer, larger fights');
+  {
+    const items = [...new Set(all.flatMap(f => (f.drops || []).map(d => d[0])))];
+    check(all.every(f => Array.isArray(f.drops) && f.drops.length && f.drops.every(d => d[0] && d[1] > 0 && d[1] <= 1)) && !items.includes('hide'),
+      'every foe may leave something it carried, and nobody leaves a hide', items.join(' '));
+    const d1 = F.dropsOf(['redtooth', 'fox_footpad', 'polecat_sawbones'], 4242), d2 = F.dropsOf(['redtooth', 'fox_footpad', 'polecat_sawbones'], 4242);
+    let n = 0; for (let k = 1; k <= 400; k++) if (F.dropsOf(['fox_footpad'], k * 7919).some(x => x.item === 'wool')) n++;
+    check(JSON.stringify(d1) === JSON.stringify(d2) && d1.some(x => x.item === 'ancient_coin') && n > 50 && n < 120 && F.dropsOf([], 5).length === 0,
+      'what a fight leaves comes from its seed: the same every time, a sure drop always, a one-in-five drop about one time in five', `${n} of 400`);
+    const GEN = require('../lib/dungeon_gen'), DEFS = require('../lib/dungeon_defs');
+    const want = { green: [2, 3], yellow: [3, 4], orange: [3, 5], red: [4, 6], purple: [5, 7] };
+    let made = 0, bad = 0, safe = 0, wrong = 0, big = 0, fightsN = 0, foesN = 0;
+    for (const tier of Object.keys(want)) for (const land of GEN.LANDS) for (let seed = 1; seed <= 25; seed++) {
+      const d = GEN.generate({ seed, tier, terrain: land, creatures: F.castFor(land, seed).creatures, items: null, board: true });
+      made++; if (GEN.check(d).length) bad++; if (d.notes.safe_layout) safe++;
+      let lo = 0, hi = 0;
+      for (const fl of d.floors) {
+        const by = new Map(fl.rooms.map(r => [r.id, r])), memo = new Map();
+        const walk = r => { if (memo.has(r.id)) return memo.get(r.id); const here = DEFS.FIGHTS.includes(r.type) ? 1 : 0, nx = (r.next || []).map(x => walk(by.get(x))); const v = [here + (nx.length ? Math.min(...nx.map(x => x[0])) : 0), here + (nx.length ? Math.max(...nx.map(x => x[1])) : 0)]; memo.set(r.id, v); return v; };
+        const st = fl.rooms.filter(r => r.step === 1).map(walk); lo += Math.min(...st.map(x => x[0])); hi += Math.max(...st.map(x => x[1]));
+        for (const r of fl.rooms) if (r.enemies) { fightsN++; foesN += r.enemies.length; if (r.enemies.length > 4) big++; }
+      }
+      if (d.combat !== 'board' || lo < want[tier][0] || hi > want[tier][1]) wrong++;
+    }
+    check(bad === 0 && safe === 0 && wrong === 0 && big === 0, 'a dungeon made for the board obeys every rule, and a route has 2 to 3 fights at green, up to 5 to 7 at purple, boss and all',
+      `${made} dungeons, ${(foesN / fightsN).toFixed(1)} foes a fight`);
+    const card = GEN.generate({ seed: 7, tier: 'red', terrain: 'forest', creatures: F.list(), items: null });
+    check(!card.combat && card.floors.length === GEN.SHAPES.red.floors && !GEN.check(card).length && GEN.fightRange(3).join() === '2,4' && GEN.fightRange([1, 2]).join() === '1,2',
+      'a dungeon made for cards is shaped as it always was');
+    check(T.TIERS.green.hp < T.TIERS.yellow.hp && T.TIERS.yellow.hp < T.TIERS.orange.hp && T.TIERS.orange.hp < T.TIERS.red.hp && T.TIERS.red.hp < T.TIERS.purple.hp
+      && require('../lib/tuning').LIFE_KEYS.DUNGEON_BOARD_REST.default === 0.5, 'each skull is harder than the last, and a rest on the board gives back half');
+  }
   // Both sides' minds can play every showcase to an end.
   {
     const party = ['guard', 'hearthkeeper', 'archer', 'wizard'].map((cls, i) => ({ id: 'c' + i, citizen_id: i, name: cls, cls, maxHp: 60, armour: 2, agility: 8, move: 3, jump: 1,

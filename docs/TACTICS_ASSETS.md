@@ -33,7 +33,7 @@ It lists what is there in `assets/tactics/manifest.json`, and the game uses it f
 
 **Wired. Folder:** `assets/sprites/creatures/`
 
-**Who they are.** Everyone in Kindlewood walks on two legs and wears clothes, and so do those who mean it harm. There are no beasts on four legs here: a foe is an outlaw, a raider, one of the marsh folk, or a villager the blight has hollowed out. There are 30, in five bands, and every band has someone who fights up close, someone who strikes from far off, and someone who heals or casts. The list, with what each does, is `lib/tactics_foes.js` on the server.
+**Who they are.** Everyone in Kindlewood walks on two legs and wears clothes, and so do those who mean it harm. No animal here walks on four legs: a foe is an outlaw, a raider, one of the marsh folk, a villager the blight has hollowed out, or something out of a story (an ogre, a harpy; the owner's rule is "no four-legged animals", and anything mythical is welcome). There are 30, in five bands, and every band has someone who fights up close, someone who strikes from far off, and someone who heals or casts. The list, with what each does, is `lib/tactics_foes.js` on the server.
 
 **Two pictures for each foe:**
 
@@ -55,6 +55,8 @@ The game mirrors each for the other two directions, so two pictures give all fou
 | The Redtooth Brigands | a **red neckerchief** or red sash; patched brown leather | plains, forest, hills; stragglers by rivers and in ruins |
 | The Night Pack | **blue war paint** on the face and arms; grey hide and bone | forest, hills, mountain |
 | The Crag Reavers | a **black leather harness** with brass rings; storm-grey cloth | mountain, hills |
+
+For an ogre or a harpy, change the opener's "An anthropomorphic woodland animal standing upright on two legs like a person, wearing clothes" to "A storybook [ogre / harpy], standing upright, wearing clothes" and keep the rest.
 | The Mire Folk | a **cloak of woven green reeds**; a small glowing fungus lantern | marsh, river |
 | The Withered | **grey, dull fur and hollow eyes with a dim green glow**; the torn, faded clothes of a villager | ruins, marsh, the deep forest |
 
@@ -93,12 +95,12 @@ Then the foe's own line from the tables. For the back view, in the same conversa
 
 | File key | Foe | What it does | Its line |
 |---|---|---|---|
-| `hawk_reaver` | Hawk Reaver (stands in for the Mountain Harpy) | fast and leaps high; talons; a shriek that weakens | A fierce brown hawk standing upright in a black leather harness with brass rings, a short storm-grey kilt, wings half spread like a cloak, a hooked knife strapped to each heel, a sharp hooked beak. One and a third times the mouse's height. |
+| `mountain_harpy` | Mountain Harpy | fast and leaps high; talons; a shriek that weakens | A harpy: a fierce bird-woman with brown-grey wings for arms, a feathered body, a sharp hooked nose like a beak and wild feathered hair, in a black leather harness with brass rings and a short storm-grey kilt, a hooked knife strapped to each taloned heel, wings half spread. One and a third times the mouse's height. |
 | `crow_stormcaller` | Crow Stormcaller | **casts**: a spark lash; a gale that slows a whole row | A black crow in a ragged storm-grey cloak and a black leather harness, a copper rod with a forked tip raised in one wing-hand, small sparks at its tip, a string of copper charms round the neck. As tall as the mouse. |
-| `bear_marauder` | Bear Marauder (heavy; stands in for the Hill Ogre) | slow; a club; a ground slam that stuns | A big brown bear standing upright in a patched hide kilt and a black leather shoulder strap, a tree-branch club over one shoulder, a small round head with one chipped fang and a bored look. Fills most of the frame: one and three quarters times the mouse's height. |
+| `hill_ogre` | Hill Ogre (heavy) | slow; a club; a ground slam that stuns | A big pot-bellied ogre with mossy green-grey skin, in a patched hide kilt and a black leather shoulder strap, a tree-branch club over one shoulder, a small head with one tusk and a bored look. Fills most of the frame: one and three quarters times the mouse's height. |
 | `stormcrow` | Stormcrow (elite) | dives; **casts** lightning and a thunderclap over an area | A great raven in a high-collared mantle of black feathers over a black harness, wingtips crackling with pale blue sparks, a crown of copper wire, eyes glowing white-blue. One and a half times the mouse's height. |
-| `storm_matriarch` | The Storm Matriarch (boss, mountain) | dives; a gale; a shriek | An eagle queen standing upright in a storm-grey mantle trimmed with white feathers, a silver circlet, a black harness set with a blue stone, broad wings spread wide with wind lines curling off them, a fierce golden glare. Fills the frame: twice the mouse's height. |
-| `grum` | Grum, Chief of the Hill Bears (boss, hills) | a great club; **throws boulders** over an area; a roar | An enormous dark brown bear standing upright, a breastplate made from a cart wheel strapped on with black leather, a necklace of brass rings, a whole young tree for a club, one ear torn, small bright eyes. Fills the frame: twice the mouse's height and very broad. |
+| `storm_matriarch` | The Storm Matriarch (boss, mountain) | dives; a gale; a shriek | A harpy queen: a tall bird-woman with great storm-grey wings spread wide, wind lines curling off them, a mantle trimmed with white feathers, a silver circlet in wild feathered hair, a black harness set with a blue stone, a fierce golden glare. Fills the frame: twice the mouse's height. |
+| `grum` | Grum, the Ogre Chief (boss, hills) | a great club; **throws boulders** over an area; a roar | An enormous ogre with grey-green skin, a breastplate made from a cart wheel strapped on with black leather, a necklace of brass rings, a whole young tree for a club, one ear torn, two tusks, small bright eyes. Fills the frame: twice the mouse's height and very broad. |
 
 ### The Mire Folk
 
@@ -142,7 +144,7 @@ For every Withered, add to the opener: "A villager hollowed out by a blight: dul
 | `cast_se.gif`, `cast_ne.gif` | "casting a spell: lifts both paws, a small glow gathers between them, thrusts it forward" |
 | `guard_se.gif`, `guard_ne.gif` | "bracing: crouches slightly and raises one arm across the body as if behind a shield, holds" (4 frames) |
 | `hurt_se.gif`, `hurt_ne.gif` | "taking a hit: flinches backward, then recovers" (4 frames) |
-| `down_se.gif` | "collapsing: staggers, drops to the knees and lies down" (6 frames; one direction is enough) |
+| `down_se.gif` | "collapsing: staggers, drops to the knees and lies down" (6 frames; one direction is enough). **Needed more now:** a citizen who goes down stays on the board, lying, until healed. Today the standing sprite is turned on its side and greyed; the last frame of this would replace it. |
 | `cheer_s.gif` | already asked for in the art guide; reused for a victory |
 
 **Class looks.** Today a class is a coloured dot beside the health bar. The real answer is the mouse dressed for each class, as its own set of sheets: standing and walking first, the animations above after.
