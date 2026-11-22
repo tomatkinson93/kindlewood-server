@@ -62,7 +62,8 @@ router.get('/battles/:id', requireAuth, mayPlay, async (req, res) => {
 });
 router.post('/battles/:id/act', requireAuth, mayPlay, async (req, res) => {
   // A dungeon's battle that has just ended also says what became of the run: { dungeon: { run, found, ended, injuries } }.
-  try { const b = req.body || {}; const { dungeon, ...battle } = await B.act(req.user.userId, Number(req.params.id), b.n, b.action); res.json({ ok: true, battle, dungeon }); } catch (e) { failWith(res, e); }
+  // And any battle that has just ended: { rewards: { kept, xp, party: [rows] } } when it was won (lib/tactics_xp.js), { rolls } for injuries when a run ended.
+  try { const b = req.body || {}; const { dungeon, rewards, rolls, ...battle } = await B.act(req.user.userId, Number(req.params.id), b.n, b.action); res.json({ ok: true, battle, dungeon, rewards, rolls }); } catch (e) { failWith(res, e); }
 });
 router.post('/battles/:id/leave', requireAuth, mayPlay, async (req, res) => {
   try { const { dungeon, ...battle } = await B.leave(req.user.userId, Number(req.params.id)); res.json({ ok: true, battle, dungeon }); } catch (e) { failWith(res, e); }

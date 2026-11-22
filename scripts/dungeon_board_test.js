@@ -87,6 +87,21 @@ async function main() {
     check(d1.run.party.every(m => { const u = after.find(x => x.citizen_id === m.id); return u && m.hp === Math.max(u.down ? 0 : 1, u.hp) && m.down === u.down; }),
       'the run now has each citizen\'s health as the battle left it', d1.run.party.map(m => `${m.hp}/${m.max}`).join(' '));
     check(d1.run.loot.wealth > lootBefore && d1.found && d1.found.wealth > 0, 'the fight\'s wealth joins the run\'s loot', `+${d1.found.wealth}`);
+    // What the fight taught: paid at once, into each citizen's class, and told to the screen.
+    {
+      const XP = require('../lib/tactics_xp'), rw = f.last.body.rewards, worth = XP.xpOf(bt.setup.enemies.map(e => e.key), 'green');
+      const rows = (rw && rw.party) || [], guard = rows.find(x => x.cls === 'guard'), archer = rows.find(x => x.cls === 'archer'), others = rows.filter(x => x.cls === 'villager');
+      check(rw && rw.kept === true && rw.xp === worth && rows.length === 4 && guard && guard.own && guard.class_key === 'soldier' && guard.gain === (guard.down ? Math.round(worth / 2) : worth)
+        && archer && archer.own && archer.class_key === 'archer' && others.length === 2 && others.every(x => !x.own && x.class_key === 'soldier' && x.class_label === 'Guard' && x.gain === Math.max(1, Math.round(worth * 0.5 * (x.down ? 0.5 : 1)))),
+        'a fight that is won pays experience: a Guard and an Archer in their own class, a villager half as much as Guard training', rows.map(x => `${x.cls} +${x.gain} ${x.class_label}`).join(', '));
+      await new Promise(done => setTimeout(done, 600));      // let the careers' own listener run: it must only count the battle
+      const now = (await q('SELECT citizen_id, class_key, xp, level FROM citizen_classes WHERE citizen_id = ANY($1::int[])', [rows.map(x => x.citizen_id)])).rows;
+      check(rows.every(x => { const row = now.find(y => y.citizen_id === x.citizen_id && y.class_key === x.class_key); return row && Math.abs(Number(row.xp) - x.after.xp) < 1 && row.level === x.after.level; }) && rows.every(x => x.after.xp >= x.before.xp + x.gain - 0.01),
+        'it is in their class rows, once (the careers\' listener does not pay it a second time), with the level it brings', rows.map(x => `${x.before.level}→${x.after.level}`).join(' '));
+      const again = (await api(a, 'GET', '/api/tactics/battles/' + b1)).body.battle;
+      check(rows.every(x => x.levels === x.after.level - x.before.level) && rows.some(x => x.levels > 0) && again.result.rewards && again.result.rewards.kept === true && again.result.rewards.party.length === 4,
+        'the levels gained are said, and the rewards are kept with the battle\'s record to be read again');
+    }
     // What the foes carried: rolled from the battle's seed, so it can be worked out again here.
     const SETUP = require('../lib/tactics_setup');
     const dropped = await SETUP.dropsFor(bt.setup.enemies.map(e => e.key), bt.seed);
@@ -141,6 +156,14 @@ async function main() {
     r = await api(weak, 'POST', '/api/dungeons/run/move', { room: 'a' });
     f = await fight(weak, r.body.board_battle_id);
     const lost = f.last.body.dungeon;
+    {
+      const rolls = f.last.body.rolls || [], kinds = ['none', 'scratch', 'wound', 'scar', 'crippling', 'fatal'];
+      check(f.last.body.rewards == null && rolls.length === 4 && rolls.every(x => x.citizen_id && x.name && kinds.includes(x.severity) && x.no_fatal === false && (x.severity === 'none' ? !x.narrative : !!x.narrative))
+        && rolls.filter(x => x.severity !== 'none').length === lost.injuries.length,
+        'a defeat teaches nothing, and the answer lists each citizen\'s injury roll for the screen to show: who, how bad, and the line about it', rolls.map(x => x.severity).join(', '));
+      const tale = (rolls.find(x => x.narrative) || {}).narrative || '';
+      check(!tale || (/an? [A-Z]/.test(tale) && !/night wolf|mountain harpy|thornback boar/.test(tale) && /^[A-Z]/.test(tale)), 'an injury\'s line names the foe of the board ("a Wolf Raider"), not the creature it stands in for', tale || 'nobody was hurt this time');
+    }
     check(f.st.status === 'defeat' && lost.ended === true && lost.run.status === 'defeat' && lost.run.result.rolled.length === 4, 'a defeat on the board ends the run, and everyone rolls for injury', JSON.stringify({ st: f.st.status, ended: lost && lost.ended, run: lost && lost.run && lost.run.status, rolled: lost && lost.run && lost.run.result && lost.run.result.rolled }));
     const fl = await player('Flee');
     await D.startTest(fl.id, 'test_green', fl.cits.slice(0, 4), { combat: 'board' });

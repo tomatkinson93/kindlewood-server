@@ -356,6 +356,10 @@ Make them five to a sheet and cut them apart. The opener:
 
 **Wired. Folder:** `assets/audio/tactics/`. **The file name is what matters**: `melee.mp3` plays for a melee hit. MP3, OGG or WAV. Short, clean, no music behind it, and no long tail of silence.
 
+**After adding or changing a file, run `node scripts/pack_tactics.js`** (in the frontend repo) and commit `assets/tactics/manifest.json` with it. The game plays only what that list names: a sound in the folder that is not in the list is silent.
+
+**In the game now (2026-11-22, the owner's first set):** `start`, `select`, `confirm`, `cancel`, `step`, `melee`, `sword`, `arrow`, `magic`, `bite`, `block`, `heal`, `buff`, `push`, `down_foe`, `victory`, `defeat`. **Still to find:** `turn`, `debuff`, `down_friend`. What was done to that set on the way in: the list was made (it had not been, so nothing played); `shove` was renamed `push`, the name the game plays; `step` was all but silent and two and a half seconds long, so it was cut to the first steps and made louder; `sword`, `buff`, `melee` and `push` lost the silence before and after them (a silent start makes a hit land late); `cancel` and `confirm` were the same file, so `cancel` is now that click a little lower. The originals are in the repository's history.
+
 **Where to look** (all allow use in a game; check each file's licence line):
 
 - **kenney.nl** (everything is CC0, no credit needed): the packs "RPG Audio", "Impact Sounds", "Interface Sounds" and "Music Jingles" cover nearly all of this list.
@@ -373,7 +377,8 @@ The example file names are from memory of those packs: go by the sound, not the 
 | `cancel` | Cancel or Back | A short falling blip | "ui back", "ui cancel"; Interface Sounds `back_00x` |
 | `turn` | Your citizen's turn begins | A small bright chime, under half a second | "notification chime soft", "bell ting"; Interface Sounds `pluck_00x`, `glass_00x` |
 | `step` | A unit starts walking | Two or three quick footsteps on grass | "footsteps grass short"; Impact Sounds `footstep_grass_00x`, RPG Audio `footstep0x` |
-| `melee` | A blade, spear or club lands (Guard, Villager, most foes) | A swish and a solid thud | "sword hit", "blade slash impact"; RPG Audio `knifeSlice`, `chop`; Impact Sounds `impactPunch_heavy_00x` |
+| `sword` | A blade or a spear lands (a Guard's strike, a brigand's cutlass). Without this file, `melee` plays | A ring of steel and a cut | "sword slash", "blade hit metal"; RPG Audio `knifeSlice`, `drawKnife` |
+| `melee` | A club, a tool, a fist or a boulder lands (a Villager's swing, an ogre's club) | A swish and a solid thud | "sword hit", "blade slash impact"; RPG Audio `knifeSlice`, `chop`; Impact Sounds `impactPunch_heavy_00x` |
 | `arrow` | An Archer's shot; a foe's arrow, sling stone or dart | A bowstring twang, a whistle, a thunk | "bow shot", "arrow impact"; freesound "arrow whoosh hit" |
 | `magic` | A Wizard's or Hearthkeeper's attack; a foe's spell | A quick whoosh of flame or a crackle | "fire spell", "magic bolt short", "fireball whoosh" |
 | `bite` | A claw, talon or bite lands; a howl or a shriek | A snarl and a snap | "animal bite", "monster snap", "growl short" |
@@ -383,11 +388,13 @@ The example file names are from memory of those packs: go by the sound, not the 
 | `debuff` | Mark, Chill, a hex | A short dark falling tone | "debuff", "curse short"; Interface Sounds `minimize_00x` |
 | `push` | A Shove sends someone back | A grunt-less shove and a skid | "body shove", "cloth scuffle"; RPG Audio `cloth_x`, Impact Sounds `impactSoft_medium_00x` |
 | `down_foe` | A creature falls | A heavy thump and a small puff | "body fall thud", "creature defeated" |
-| `down_friend` | A citizen falls | A softer thump with a sad falling note | "fall down soft", "lose life" |
+| `down_friend` | A citizen falls. Without this file, `down_foe` plays | A softer thump with a sad falling note | "fall down soft", "lose life" |
 | `victory` | The battle is won | A three-second cheerful fanfare, folk instruments | "victory jingle", "win fanfare short"; Music Jingles `jingles_PIZZI_x`, `jingles_STEEL_x` |
 | `defeat` | The battle is lost | A three-second gentle sad phrase, not grim | "defeat jingle soft", "game over gentle"; Music Jingles `jingles_SAX_x` |
 
 Until a file is there: `select`, `confirm`, the four attack sounds, both falls and the two endings borrow older sounds from the game; the rest are silent.
+
+**Two more the end of a battle could use** (not wired; say when they exist): `levelup` (a bright rising chime for "Level up!"; `buff` plays today) and `roll` (a soft rattle or tick for an injury roll spinning; `select` ticks today).
 
 If you use a sound generator, a line that works: "A [length] sound effect for a cosy storybook tactics game: [the description]. Clean, dry, no music, no voice."
 
