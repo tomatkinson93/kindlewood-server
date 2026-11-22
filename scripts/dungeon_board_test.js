@@ -73,8 +73,8 @@ async function main() {
       'entering a fight room opens a battle on the board, not a card battle');
     let bt = (await api(a, 'GET', '/api/tactics/battles/' + b1)).body.battle;
     check(bt.source === 'dungeon' && bt.dungeon_run_id === v.id && bt.setup.party.length === 4 && bt.setup.party.map(u => u.cls).join() === 'guard,archer,villager,villager'
-      && bt.setup.enemies.map(e => e.key).join() === 'night_wolf,thornback_boar,night_wolf' && bt.setup.land === 'forest' && bt.setup.fight === 'fight',
-      'the battle is the room: the party in their own classes, the room\'s creatures, the dungeon\'s land');
+      && bt.setup.enemies.map(e => e.key).join() === 'wolf_raider,boar_bruiser,wolf_raider' && bt.setup.land === 'forest' && bt.setup.fight === 'fight',
+      'the battle is the room: the party in their own classes, the board\'s foes in place of the room\'s creatures, the dungeon\'s land');
     check(bt.setup.party.every((u, i) => u.maxHp === v.party[i].max && (u.hp == null || u.hp === v.party[i].hp)), 'each citizen comes in with the health the run has for them');
     check((await api(a, 'POST', '/api/dungeons/run/move', { room: 'b1' })).status === 400 && (await api(a, 'POST', '/api/dungeons/run/leave')).status === 400, 'the party cannot walk on or turn back until the fight is over');
     check((await api(a, 'POST', '/api/tactics/battles', { tier: 'green' })).status !== 200, 'a practice battle cannot push a dungeon\'s battle aside');
@@ -87,24 +87,42 @@ async function main() {
     check(d1.run.party.every(m => { const u = after.find(x => x.citizen_id === m.id); return u && m.hp === Math.max(u.down ? 0 : 1, u.hp) && m.down === u.down; }),
       'the run now has each citizen\'s health as the battle left it', d1.run.party.map(m => `${m.hp}/${m.max}`).join(' '));
     check(d1.run.loot.wealth > lootBefore && d1.found && d1.found.wealth > 0, 'the fight\'s wealth joins the run\'s loot', `+${d1.found.wealth}`);
+    // What the foes carried: rolled from the battle's seed, so it can be worked out again here.
+    const SETUP = require('../lib/tactics_setup');
+    const dropped = await SETUP.dropsFor(bt.setup.enemies.map(e => e.key), bt.seed);
+    check(dropped.every(x => (d1.found.items || []).some(i => (i.item_key || i.item) === x.item && i.qty >= x.qty && i.name)) && (d1.found.items || []).length === dropped.length,
+      'what its foes carried joins the loot too, the same for the same battle', dropped.map(x => `${x.qty} ${x.item}`).join(', ') || 'nothing this time');
+    const sure = await SETUP.dropsFor(['redtooth', 'hollow_king'], 99);
+    check(sure.some(x => x.item === 'ancient_coin' && x.qty >= 3) && JSON.stringify(sure) === JSON.stringify(await SETUP.dropsFor(['redtooth', 'hollow_king'], 99)), 'a boss always leaves its coin', JSON.stringify(sure));
+    // One citizen is carried on down (set here: the mind rarely loses anyone at green).
+    const fallen = d1.run.party[3].id;
+    await q(`UPDATE dungeon_runs SET party_state = jsonb_set(jsonb_set(party_state, ARRAY[$2::text,'down'], 'true'), ARRAY[$2::text,'hp'], '0') WHERE id=$1`, [d1.run.id, String(fallen)]);
+    d1.run.party[3].down = true; d1.run.party[3].hp = 0;
     // The second fight starts from the first one's wounds.
     r = await api(a, 'POST', '/api/dungeons/run/move', { room: 'b2' });
     const b2 = r.body.board_battle_id;
     bt = (await api(a, 'GET', '/api/tactics/battles/' + b2)).body.battle;
     const carried = bt.setup.party.every(u => { const m = d1.run.party.find(x => x.id === u.citizen_id); return (u.hp == null ? u.maxHp : u.hp) === m.hp; });
-    check(b2 > b1 && carried && bt.setup.party.length === d1.run.party.filter(m => !m.down).length, 'the next fight begins with those wounds; anyone who is down stays off the board');
+    const lying = bt.setup.party.find(u => u.citizen_id === fallen), begun = E.replay(bt.setup, []).state, body = begun.units.find(u => u.citizen_id === fallen);
+    check(b2 > b1 && carried && bt.setup.party.length === 4 && lying && lying.down === true, 'the next fight begins with those wounds, and whoever is down is carried in');
+    check(body.down && body.hp === 0 && !begun.order.includes(body.id) && !!E.bodyAt(begun, body.x, body.y) && !E.unitAt(begun, body.x, body.y),
+      'they lie on the board where they would have stood, and take no turn');
     // Leave the page in the middle of it: the battle is still there, part-played.
     f = await fight(a, b2, { until: st => st.round >= 2 });
     const mid = (await api(a, 'GET', '/api/tactics/battles/current')).body.battle;
     check(mid && mid.id === b2 && mid.count > 0 && mid.status === 'active' && (await api(a, 'GET', '/api/dungeons/run')).body.run.pending.battle_id === b2, 'a battle left part-played is still the run\'s open fight, with its choices kept');
     f = await fight(a, b2);
     check(f.last.body.dungeon && f.last.body.dungeon.run.moves.join() === 'c1,c2', 'picked up and won');
+    const stood = !f.st.units.find(u => u.citizen_id === fallen).down, m3 = f.last.body.dungeon.run.party.find(m => m.id === fallen);
+    check(m3.down === !stood && m3.was_down === true && (stood ? m3.hp > 0 : m3.hp === 0), 'after it they are down still, unless someone healed them back up; either way they went down', stood ? 'healed back up in the fight' : 'still down');
     // Rest, then the boss.
     r = await api(a, 'POST', '/api/dungeons/run/move', { room: 'c2' });
     check(r.body.run.pending.kind === 'rest' && r.body.run.pending.options.map(o => o.key).join() === 'rest', 'a rest room on the board offers a rest (there are no cards to hone)');
-    const hurt = r.body.run.party.map(m => m.hp);
+    const hurt = r.body.run.party.map(m => m.hp), half = D.CONFIG.BOARD_REST;
+    check(half === 0.5 && D.CONFIG.REST === 0.3 && /gets back 50% of their full health/.test(r.body.run.pending.options[0].text), 'a rest on the board gives back half, where a card run\'s gives three tenths');
     r = await api(a, 'POST', '/api/dungeons/run/choose', { option: 'rest' });
-    check(r.body.run.party.every((m, i) => m.hp >= hurt[i] && !m.down), 'resting heals as before');
+    check(r.body.run.party.every((m, i) => !m.down && m.hp === Math.min(m.max, (hurt[i] || 0) + Math.max(1, Math.round(m.max * half)))), 'resting gives each of them that much, and stands the fallen up',
+      r.body.run.party.map((m, i) => `${hurt[i]}→${m.hp}/${m.max}`).join(' '));
     await api(a, 'POST', '/api/dungeons/run/move', { room: 'd2' });
     r = await api(a, 'POST', '/api/dungeons/run/move', { room: 'boss' });
     const b3 = r.body.board_battle_id, w0 = await wealth(a);
@@ -119,11 +137,11 @@ async function main() {
 
     console.log('Losing, fleeing, and the shortcuts');
     const weak = await player('Weak', false);
-    await D.startTest(weak.id, 'test_green', weak.cits.slice(0, 4), { combat: 'board' });
+    await D.startTest(weak.id, 'test_orange', weak.cits.slice(0, 4), { combat: 'board' });
     r = await api(weak, 'POST', '/api/dungeons/run/move', { room: 'a' });
     f = await fight(weak, r.body.board_battle_id);
     const lost = f.last.body.dungeon;
-    check(f.st.status === 'defeat' && lost.ended === true && lost.run.status === 'defeat' && lost.run.result.rolled.length === 4, 'a defeat on the board ends the run, and everyone rolls for injury');
+    check(f.st.status === 'defeat' && lost.ended === true && lost.run.status === 'defeat' && lost.run.result.rolled.length === 4, 'a defeat on the board ends the run, and everyone rolls for injury', JSON.stringify({ st: f.st.status, ended: lost && lost.ended, run: lost && lost.run && lost.run.status, rolled: lost && lost.run && lost.run.result && lost.run.result.rolled }));
     const fl = await player('Flee');
     await D.startTest(fl.id, 'test_green', fl.cits.slice(0, 4), { combat: 'board' });
     r = await api(fl, 'POST', '/api/dungeons/run/move', { room: 'a' });
@@ -163,6 +181,10 @@ async function main() {
       else { gv = (await api(g, 'POST', '/api/dungeons/run/move', { room: gv.moves[0] })).body.run; rooms++; }
     }
     check(gv && (gv.status === 'cleared' || gv.status === 'defeat') && fights >= 2, 'a generated dungeon is walked to its end on the board', `${gv && gv.status}, ${fights} fights in ${rooms} rooms`);
+    const lay = (await q('SELECT layout FROM dungeons WHERE id=$1', [r.run.dungeon_id || (await q('SELECT dungeon_id FROM dungeon_runs WHERE id=$1', [r.run.id])).rows[0].dungeon_id])).rows[0].layout;
+    const F = require('../lib/tactics_foes'), keys = lay.floors.flatMap(fl => fl.rooms.flatMap(x => x.enemies || []));
+    check(lay.combat === 'board' && fights <= 4 && lay.floors.length === 1 && keys.every(k => F.FOES[k]) && F.FOES[lay.floors[0].rooms.find(x => x.type === 'boss').enemies.slice(-1)[0]].rank === 'boss',
+      'it was made for the board: one floor, four fights at most on a route, the board\'s own foes, a real boss at the end', [...new Set(keys)].join(' '));
     const c = await player('Cards');
     r = await D.startTest(c.id, 'test_green', c.cits.slice(0, 4));
     check(r.run.combat === 'cards' && r.run.pending && r.run.pending.kind === 'door', 'a run started the old way is still a card run, door pick and all');

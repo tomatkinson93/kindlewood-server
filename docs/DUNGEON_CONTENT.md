@@ -204,6 +204,8 @@ For comparison, Mend (owned by everyone) heals 10. A Hearthkeeper is the differe
 
 ## 4. Creatures and challenge ratings
 
+> **Replaced on the board, 2026-11-21.** The owner asked for the creatures to be reworked: in a world of animals who walk upright and wear clothes, animals on four legs do not fit (mythical things are welcome: the ogre and the harpy stay). The board's cast is thirty foes in five bands (Brigands, the Night Pack, the Crag Reavers, the Mire Folk, the Withered), with seven bosses, in `lib/tactics_foes.js` and `docs/TACTICS.md` §4. The list below is what the **card battles** planned; it is kept for the record and for the card battles that still run, and nothing more of it will be built. What carried over: the ranks (minion, regular, heavy, elite, boss), one boss to a land, and the bosses' names (Old Snapjaw is a snapping turtle and Old Greyfeather an owl warlock; the rest are as planned). What did not: challenge ratings, the fey, and resistance to control, which is Phase 6. **The floors and clear rates of §6 are the card dungeons' too:** a dungeon made for the board has fewer fights and its own numbers (`docs/TACTICS.md` §5).
+
 **Challenge rating (CR)** = √(health × damage per turn) ÷ 10, to the nearest half. Damage per turn is the average over the creature's move cycle against three targets, with poison, lost turns and weakening counted in. For scale, **a trained citizen is about CR 4** (68 health, about 25 damage a turn).
 
 Families: **beast**, **brigand** (stoats, weasels and crows: no playable species), **withered**, **fey**. Creatures marked * are already in the game with these stats.

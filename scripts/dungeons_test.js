@@ -777,7 +777,7 @@ async function part2() {
     check(true, 'the Dev Tools routes are for admins only');
     await TU.setSwitch('dungeons.on', true);
     await api(g, 'POST', '/api/dungeons/run/leave');
-    check((await TU.lifeAll()).filter(n => n.group === 'Dungeons').length === 13, 'thirteen dungeon numbers are tunable from Dev Tools');
+    check((await TU.lifeAll()).filter(n => n.group === 'Dungeons').length === 14, 'fourteen dungeon numbers are tunable from Dev Tools (the board\'s rest among them)');
     await TU.setLife('DUNGEON_HP_GREEN', 0.8);
     const g2 = await player('Tuned');
     await D.startTest(g2.id, 'test_green', g2.cits.slice(0, 4));
