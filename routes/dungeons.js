@@ -18,8 +18,8 @@
 //  Admins (Dev Tools → Dungeons):
 //    GET  /admin/status          the switch, the test dungeons, free adults
 //    POST /admin/switch          { on }
-//    POST /admin/test            { story, citizen_ids?, combat? }  start a test dungeon
-//    POST /admin/generate        { tier, terrain, seed?, citizen_ids?, combat? }  generate a dungeon and start it
+//    POST /admin/test            { story, citizen_ids? }  start a test dungeon (fought on the board)
+//    POST /admin/generate        { tier, terrain, seed?, citizen_ids? }  generate a dungeon and start it (on the board)
 //                                combat: 'board' fights the dungeon's battles on the board (docs/TACTICS.md), else with cards
 //    POST /admin/sweep           { idle_run? } end idle runs now (optionally age this town's run first)
 //    POST /admin/heal            the party back to full health, everyone up
@@ -94,10 +94,11 @@ router.post('/admin/switch', requireAuth, requireAdmin, async (req, res) => {
   try { res.json({ ok: true, on: await TU.setSwitch('dungeons.on', !!(req.body || {}).on) }); } catch (e) { fail(res, e); }
 });
 router.post('/admin/test', requireAuth, requireAdmin, async (req, res) => {
-  try { const b = req.body || {}; res.json({ ok: true, ...(await D.startTest(req.user.userId, b.story, b.citizen_ids, { combat: b.combat })) }); } catch (e) { fail(res, e); }
+  // Every dungeon is fought on the board now (docs/TACTICS.md §8): a run with cards can no longer be started from the game.
+  try { const b = req.body || {}; res.json({ ok: true, ...(await D.startTest(req.user.userId, b.story, b.citizen_ids, { combat: 'board' })) }); } catch (e) { fail(res, e); }
 });
 router.post('/admin/generate', requireAuth, requireAdmin, async (req, res) => {
-  try { const b = req.body || {}; res.json({ ok: true, ...(await D.startGenerated(req.user.userId, { tier: b.tier, terrain: b.terrain, seed: b.seed }, b.citizen_ids, { combat: b.combat })) }); } catch (e) { fail(res, e); }
+  try { const b = req.body || {}; res.json({ ok: true, ...(await D.startGenerated(req.user.userId, { tier: b.tier, terrain: b.terrain, seed: b.seed }, b.citizen_ids, { combat: 'board' })) }); } catch (e) { fail(res, e); }
 });
 router.post('/admin/sweep', requireAuth, requireAdmin, async (req, res) => {
   try {

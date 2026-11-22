@@ -98,6 +98,11 @@ async function main() {
       const now = (await q('SELECT citizen_id, class_key, xp, level FROM citizen_classes WHERE citizen_id = ANY($1::int[])', [rows.map(x => x.citizen_id)])).rows;
       check(rows.every(x => { const row = now.find(y => y.citizen_id === x.citizen_id && y.class_key === x.class_key); return row && Math.abs(Number(row.xp) - x.after.xp) < 1 && row.level === x.after.level; }) && rows.every(x => x.after.xp >= x.before.xp + x.gain - 0.01),
         'it is in their class rows, once (the careers\' listener does not pay it a second time), with the level it brings', rows.map(x => `${x.before.level}→${x.after.level}`).join(' '));
+      check(guard.levels > 0 && guard.learned.map(x => x.key).join() === 'g_cover' && archer.learned.map(x => x.key).join() === 'a_part' && others.every(x => x.learned.length === 0),
+        'the levels gained teach: the Guard learns Cover and the Archer Parting Shot at level 2; Guard training teaches a villager nothing', `${guard.before.level}→${guard.after.level}`);
+      const kit1 = bt.setup.party.find(u => u.cls === 'guard');
+      check(kit1.abilities.map(x => x.key).join() === 'g_strike,g_shield' && kit1.class_level === 1 && kit1.locked.map(x => x.key).join() === 'g_cover,g_shove,g_heavy',
+        'they went in knowing two abilities each, at class level 1, the rest still to learn');
       const again = (await api(a, 'GET', '/api/tactics/battles/' + b1)).body.battle;
       check(rows.every(x => x.levels === x.after.level - x.before.level) && rows.some(x => x.levels > 0) && again.result.rewards && again.result.rewards.kept === true && again.result.rewards.party.length === 4,
         'the levels gained are said, and the rewards are kept with the battle\'s record to be read again');
@@ -118,6 +123,8 @@ async function main() {
     const b2 = r.body.board_battle_id;
     bt = (await api(a, 'GET', '/api/tactics/battles/' + b2)).body.battle;
     const carried = bt.setup.party.every(u => { const m = d1.run.party.find(x => x.id === u.citizen_id); return (u.hp == null ? u.maxHp : u.hp) === m.hp; });
+    const kit2 = bt.setup.party.find(u => u.cls === 'guard');
+    check(kit2.class_level >= 2 && kit2.abilities.some(x => x.key === 'g_cover'), 'and the next fight is fought with what the last one taught', `class level ${kit2.class_level}: ${kit2.abilities.map(x => x.name).join(', ')}`);
     const lying = bt.setup.party.find(u => u.citizen_id === fallen), begun = E.replay(bt.setup, []).state, body = begun.units.find(u => u.citizen_id === fallen);
     check(b2 > b1 && carried && bt.setup.party.length === 4 && lying && lying.down === true, 'the next fight begins with those wounds, and whoever is down is carried in');
     check(body.down && body.hp === 0 && !begun.order.includes(body.id) && !!E.bodyAt(begun, body.x, body.y) && !E.unitAt(begun, body.x, body.y),
@@ -162,7 +169,7 @@ async function main() {
         && rolls.filter(x => x.severity !== 'none').length === lost.injuries.length,
         'a defeat teaches nothing, and the answer lists each citizen\'s injury roll for the screen to show: who, how bad, and the line about it', rolls.map(x => x.severity).join(', '));
       const tale = (rolls.find(x => x.narrative) || {}).narrative || '';
-      check(!tale || (/an? [A-Z]/.test(tale) && !/night wolf|mountain harpy|thornback boar/.test(tale) && /^[A-Z]/.test(tale)), 'an injury\'s line names the foe of the board ("a Wolf Raider"), not the creature it stands in for', tale || 'nobody was hurt this time');
+      check(!tale || (/\b[Aa]n? [A-Z]/.test(tale) && !/night wolf|mountain harpy|thornback boar/.test(tale) && /^[A-Z]/.test(tale)), 'an injury\'s line names the foe of the board ("a Wolf Raider"), not the creature it stands in for', tale || 'nobody was hurt this time');
     }
     check(f.st.status === 'defeat' && lost.ended === true && lost.run.status === 'defeat' && lost.run.result.rolled.length === 4, 'a defeat on the board ends the run, and everyone rolls for injury', JSON.stringify({ st: f.st.status, ended: lost && lost.ended, run: lost && lost.run && lost.run.status, rolled: lost && lost.run && lost.run.result && lost.run.result.rolled }));
     const fl = await player('Flee');

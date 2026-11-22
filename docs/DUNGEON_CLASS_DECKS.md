@@ -1,4 +1,6 @@
-# Class decks: one deck per citizen
+# Class decks: one deck per citizen (ARCHIVED)
+
+> **Archived 2026-11-22.** The owner has retired card combat: "I am confident in tactics replacing it." A dungeon with cards can no longer be started from the game, and the code described here is to be deleted (`docs/TACTICS.md` §8, step 2). This document is kept as the record of what was built and why; do not build on it.
 
 > **Being replaced (2026-11-20).** The owner has chosen tactics battles on a board in place of cards (`docs/TACTICS.md`). What is here still runs dungeons until Phase 3 of that roadmap. What carries over: the classes, the two class buildings and their level ladders, every card's formula (they become abilities), and the healing findings. What does not: decks, the door pick, the card after a fight, honing and prepared cards.
 
