@@ -73,6 +73,17 @@ console.log('The kits');
     'a foe takes the skull\'s health and strength and a room\'s boost; a rally reaches its friends around it');
   check(Object.keys(F.SHOWCASE).length === Object.keys(F.BANDS).length && Object.values(F.SHOWCASE).every(sc => ['first', 'hard', 'boss'].every(k => sc[k].length >= 3 && sc[k].every(x => F.FOES[x])) && F.FOES[sc.boss[sc.boss.length - 1]].rank === 'boss'),
     'each band has a showcase fight of each kind, the boss at the back');
+  console.log('What a battle teaches (lib/tactics_xp.js)');
+  {
+    const XP = require('../lib/tactics_xp'), M = require('../lib/career_math');
+    check(XP.xpOf(['fox_footpad', 'weasel_slinger', 'polecat_sawbones'], 'green') === 26 && XP.xpOf(['hill_ogre', 'mountain_harpy', 'crow_stormcaller'], 'red') === 79 && XP.xpOf(['grum', 'hill_ogre', 'mountain_harpy'], 'purple') === 258
+      && XP.xpOf(['night_wolf'], 'green') === XP.xpOf(['wolf_raider'], 'green') && XP.xpOf(['made_in_the_editor'], 'green') === XP.RANK_XP.regular && XP.xpOf([], 'red') === 0,
+      'a fight is worth its foes\' ranks times the skull: 26 for three brigands at green, 79 for an ogre\'s band at red, 258 for Grum at purple');
+    const tiers = Object.keys(XP.TIER_XP), ranks = ['minion', 'regular', 'heavy', 'elite', 'boss'];
+    check(tiers.every((t, i) => i === 0 || XP.TIER_XP[t] > XP.TIER_XP[tiers[i - 1]]) && ranks.every((k, i) => i === 0 || XP.RANK_XP[k] > XP.RANK_XP[ranks[i - 1]]) && XP.OFF_JOB === 0.5 && XP.FALLEN === 0.5,
+      'a harder skull and a higher rank are worth more; a villager and the fallen earn half');
+    check(M.levelForXp(M.xpForLevel(5)) === 5 && M.levelForXp(M.xpForLevel(5) - 1) === 4 && Math.abs(M.xpForLevel(5) - 180) <= 2 && M.xpForLevel(10) > 1700 && M.xpForLevel(10) < 1900, 'the levels are the careers\' own: about 180 experience is level 5, about 1,800 is level 10', `${M.xpForLevel(5)}, ${M.xpForLevel(10)}`);
+  }
   console.log('A dungeon on the board: what foes leave, and fewer, larger fights');
   {
     const items = [...new Set(all.flatMap(f => (f.drops || []).map(d => d[0])))];
@@ -199,6 +210,20 @@ async function part2() {
   check(bt.status === mine.status && bt.result && bt.result.status === mine.status && bt.result.party.length === 4 && bt.result.rounds === mine.round && bt.result.turns === mine.stats.turns
     && JSON.stringify(bt.result.party.map(x => [x.id, x.citizen_id, x.hp, x.maxHp, x.down])) === JSON.stringify(E.resultOf(mine).party.map(x => [x.id, x.citizen_id, x.hp, x.maxHp, x.down])),
     'when it ends the server records how: who won, the rounds, each citizen\'s health and who is down', JSON.stringify(bt.result).slice(0, 110));
+  // What the battle taught: shown for a practice field, kept for nobody.
+  {
+    const rw = r.body.rewards, XP = require('../lib/tactics_xp');
+    if (mine.status === 'victory') {
+      const worth = XP.xpOf(bt.setup.enemies.map(e => e.key), bt.tier);
+      const rows = rw && rw.party || [];
+      check(rw && rw.kept === false && rw.xp === worth && rows.length === 4 && rows.every(x => x.name && x.class_label && x.gain > 0 && x.before && x.after && x.after.xp === Math.round((x.before.xp + x.gain) * 100) / 100 && x.levels === x.after.level - x.before.level),
+        'the answer to the last choice says what the battle taught each citizen: the class, the gain, where they were and where they would be', rows.map(x => `${x.class_label} +${x.gain}`).join(', '));
+      const kept = (await query('SELECT result FROM tactics_battles WHERE id=$1', [bt.id])).rows[0].result;
+      const now = (await query('SELECT citizen_id, class_key, xp FROM citizen_classes WHERE citizen_id = ANY($1::int[])', [rows.map(x => x.citizen_id)])).rows;
+      check(kept.rewards && kept.rewards.kept === false && kept.rewards.party.length === 4 && rows.every(x => { const row = now.find(y => y.citizen_id === x.citizen_id && y.class_key === x.class_key); return (Number(row && row.xp) || 0) < x.before.xp + Math.min(x.gain, 5); }),
+        'a practice field keeps none of it (it is stored with the battle to be read again)');
+    } else check(r.body.rewards == null, 'a practice battle that is lost teaches nothing');
+  }
   check((await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n, action: { t: 'end' } })).status === 400 && (await call(adminId, 'GET', '/api/tactics/battles/current')).body.battle === null, 'a finished battle takes no more choices, and the town has no open battle');
   const stored = (await query('SELECT actions, status FROM tactics_battles WHERE id=$1', [bt.id])).rows[0];
   const again = E.replay(bt.setup, stored.actions);

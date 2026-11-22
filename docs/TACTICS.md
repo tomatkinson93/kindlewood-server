@@ -53,6 +53,10 @@ Left out on purpose: charge times and magic points, friendly fire, line of sight
 - Full screen. The party are their villager sprites; foes are an emoji each until they have art (`docs/TACTICS_ASSETS.md` §1).
 - **Going in:** something closes over the screen, the battle's name is shown on it, and it opens onto the board. Nothing acts until it has opened. **Leaving** fades out. With reduced motion the screen goes dark and then shows the board. There are five ways in: a fade through dark, a page turning, tiles turning over, leaves blowing across, a closing circle. **Each battle picks one at random, never the one before** (the owner liked all five, 2026-11-21). Dev Tools can ask for one by name, or for none. No sound plays until `start` exists in the sounds folder.
 - **Things that fly and burst.** Every ability has a look, drawn by code, so none needs art. *In flight:* an arrow, a sling stone, a venom dart, a thrown bottle and a boulder arc to their target; fire, embers, frost, a hex, venom, spores and a curse fly as glowing orbs; a spark leaps the gap, lightning strikes from the sky, and a gale curls down a row. *On landing:* a slash for a blade, three claw marks for talons and teeth, a straight flash for a spear, a dusty thud for a club, a puff, a flare, a splat, shards of ice. *Over an area:* fire blooms, a boulder cracks the ground, spores hang as a green cloud, a curse as a purple murk. *On those it touches:* a shield for a ward, a glow with rising sparks for healing, rising chevrons for a boon, a closing reticle for Mark, bubbles for poison, stars for a stun; a howl, a shriek or a rally spreads as a ring. A heavy blow, or one from behind, jolts the board. A class ability's look is a table in `js/tactics.js`; a foe's ability names its own (`look` in `lib/tactics_foes.js`), and the sound follows the look. With reduced motion none is drawn.
+- **When it ends** (2026-11-22, the owner's design). First a big word over the board as the battle left it: **Victory** in gold, **Defeat** in red, for about two seconds, with the win or loss sound. Then the party, one to a row: a face (from the villager sheet), the name, the class, and
+  - **won:** an experience bar for each. The bar grows from where the citizen was to where they are while the number beside it counts down from the gain to nothing; crossing a level, the row flashes and says **Level up!**. On a practice field the same is shown and a line says nothing is kept.
+  - **lost, or a run that ended with someone fallen:** each citizen's **injury roll, one at a time**: the words spin (Unhurt, A scratch, A wound, A scar, Crippled…), slow, and stop on what the server rolled, coloured by how bad it is, with the line the chronicle keeps. After a won last fight the rolls follow the experience.
+  The numbers come with the server's answer to the last choice, so nothing plays until it has come. Once the word has gone, the panel of abilities is hidden so the box has the whole height (it did not fit a phone otherwise). A memorial for someone who died waits until the battle's screen is closed. With reduced motion there is no splash and everything is simply shown.
 - **The screen holds still.** The panel below the board is one fixed height. What an action would do, and its Confirm, float over the top of the board.
 - **⟲ ⟳ turn the view a quarter** (Q, R): a hill in front hides what stands behind it.
 - **Zoom**: pinch with two fingers, the mouse wheel, or − and ＋. One finger (or the mouse) drags the board once it is zoomed.
@@ -130,6 +134,17 @@ Two simulators, both with the engine's own mind playing both sides and the party
 **What to watch in real play:** yellow and red taken boldly (about seven in ten), where most losses are at the boss; and that the mind almost never raises the fallen in these runs (0.1 to 0.2 a run), since only the orange, red and purple parties here have a Hearthkeeper. A real player will do better at both.
 
 ## 6. Abilities in place of cards
+
+### Experience from battle (built 2026-11-22)
+
+**A battle on the board that is won pays experience into the class levels the game already has** (`citizen_classes`, levels 1 to 20, `lib/careers`; the curve is `lib/career_math.js`: about 180 experience for level 5, 1,800 for level 10, 15,000 for level 20; a citizen at their job at home earns 10 an hour). It is the first piece of Phase 4: the ladder below climbs these levels. `lib/tactics_xp.js`:
+
+- **How much.** Each foe is worth its rank (minion 6, regular 10, heavy 16, elite 30, boss 60), times the skull (green ×1, yellow ×1.3, orange ×1.7, red ×2.2, purple ×3). Three brigands at green: 26. An ogre's band at red: 79. Grum and two of his at purple: 258. Everyone who fought gets the whole figure; it is not shared out.
+- **Who.** A Guard, Archer, Wizard or Hearthkeeper earns it in their own class. Anyone else earns **half, as Guard training**, as card battles already paid them. Whoever **lay fallen when it ended earns half**. A battle that is lost pays nothing.
+- **When.** At once, as each fight of a dungeon is won, so the screen can show it. The careers' own listener (`lib/career_subscriber.js`, 12 + 4 a foe for a card battle) is told it has been paid and only counts the battle.
+- **A practice field** shows what would have been earned and keeps none of it.
+- **What a level does today:** it lifts the citizen's combat skill and gives a perk point, as before. **What it will do** is unlock abilities (below).
+- **Scale, to be watched:** a green dungeon is about 100 experience to each fighter, a purple one about 1,000. From nothing, one green run makes a level 4; about fifteen purple runs make a master. If that is too fast, the two tables at the top of `lib/tactics_xp.js` are the only numbers to change.
 
 The owner's direction: "instead of unlocking cards we can just allow villagers to train spells or gain abilities as they level up or as they train or study. We could tie technology in, we could tie in equipment."
 
@@ -216,8 +231,9 @@ Each phase ends with something playable behind the switch.
 | The same rules on the server (kept identical to the browser's; a test compares them) | server `lib/tactics_engine.js` |
 | Battles the server keeps: create, each choice, the result, leaving | server `lib/tactics_battles.js`, `migrations/0NN_tactics.sql` |
 | Routes (admins only) | server `routes/tactics.js` |
+| What a battle teaches: experience by rank and skull, paid into class levels | server `lib/tactics_xp.js` |
 | Numbers | server `scripts/tactics_sim.js` (one battle), `scripts/tactics_run_sim.js` (a whole dungeon) |
-| Tests | frontend `verify/tactics_proofs.js` (124 checks), server `scripts/tactics_test.js` (55), `scripts/dungeon_board_test.js` (33) |
+| Tests | frontend `verify/tactics_proofs.js` (137 checks), server `scripts/tactics_test.js` (60), `scripts/dungeon_board_test.js` (38) |
 
 - **The engine is pure**: no clock, no `Math.random`, no DOM. A battle is a plain object changed only by `move`, `use` and `endTurn`, and the same seed and choices always give the same battle.
 - **How the server decides.** A battle is stored as its two sides, frozen when it begins, and the player's choices in order (`tactics_battles`). Creatures have no entries: their mind is part of the rules, so both sides reach the same turns from the same choices. The browser plays each choice at once, so the screen never waits, and sends it; the server plays it on top of the ones before and refuses what the rules do not allow. Every answer carries a fingerprint of the board; if the browser's differs, or a choice is refused, the screen is put back to the battle as the server has it. A choice sent twice is taken once.
