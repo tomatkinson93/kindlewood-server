@@ -19,7 +19,7 @@ The earlier objections, for the record, and what answered them: battles of this 
 Dev Tools → 💀 Dungeons → **Tactics battle**, at the bottom. On a narrow phone, Dev Tools is in the profile menu.
 
 - **A class for each of the four** (front left, front right, back left, back right): Guard, Archer, Wizard, Hearthkeeper or Villager. Any citizen can be tried as any class.
-- **Their level**: what the skull expects, one of the four levels by name, or the citizens as they really are.
+- **Their level**: what the skull expects, one of the four levels by name, or the citizens as they really are. A level brings its class level, which decides how much of the kit is known (below): villager 1, novice 3, trained 6, veteran 10. Choose Trained or Veteran to see every ability.
 - **Skull, land, seed**: the same three always give the same field and foes.
 - **Against**: an ordinary fight, the hardest fight, or the boss.
 - **Whose**: whoever lives in that land (the seed picks the band), or one band by name. A band by name gives its showcase: someone who shoots, someone who heals or casts, someone to stand in front; for the boss fight, its boss.
@@ -72,6 +72,8 @@ Left out on purpose: charge times and magic points, friendly fire, line of sight
 
 Every ability is a class card (`lib/class_cards.js`) and takes its numbers from that card's formula with the citizen's own stats. The board adds how far each reaches, its shape, and how often it can be used.
 
+**The ladder (built 2026-11-22):** a class begins with its first two abilities and learns the third at class level 2, the fourth at 4 and the fifth at 6. The order below is the order learned, except that an Archer learns Mark (4) before Piercing Arrow (6), a Wizard Chill (4) before Ember Burst (6), and a Hearthkeeper Embolden (4) before Steady Now (6). What is not learned yet shows greyed in the row of abilities with the level that brings it.
+
 | Class | Move / Jump | Kit (reach; "every Nth turn" from its cooldown) |
 |---|---|---|
 | Guard | 3 / 1 | Strike (1) · Shield Up (self, every 2nd) · Cover (a friend within 2, every 2nd) · Shove (1, pushes back, weak; every 3rd) · Heavy Blow (1, every 4th) |
@@ -107,7 +109,7 @@ Two simulators, both with the engine's own mind playing both sides and the party
 | Skull (foe health / strength) | Party | Ordinary fight: your turns · health lost | Hardest fight | Boss: wins · your turns · health lost |
 |---|---|---|---|---|
 | 🟢 Green (+30% / +5%) | 4 villagers | 18 · 27% | 19 · 27% | 99% · 22 · 34% |
-| 🟡 Yellow (+70% / +25%) | guard, archer, 2 villagers | 16 · 22% | 18 · 34% | 100% · 18 · 29% |
+| 🟡 Yellow (+55% / +18%) | guard, archer, 2 villagers (class level 3: three abilities each) | 16 · 23% | 18 · 34% | 100% · 19 · 29% |
 | 🟠 Orange (+140% / +60%) | guard, hearthkeeper, 2 archers | 14 · 15% | 18 · 30% | 100% · 20 · 34% |
 | 🔴 Red (+150% / +65%) | all four classes | 16 · 17% | 20 · 32% | 100% · 23 · 41% |
 | 🟣 Purple (+170% / +70%) | all four classes | 17 · 18% | 19 · 29% | 100% · 22 · 34% |
@@ -117,7 +119,7 @@ Two simulators, both with the engine's own mind playing both sides and the party
 | Skull | Fights on a route, boss and all | Careful: cleared · fights · minutes · health at the boss's door | Bold: cleared · fights · minutes · health at the boss's door |
 |---|---|---|---|
 | 🟢 Green | 2 to 3 | 96% · 2.5 · 9 · 89% | 93% · 2.9 · 11 · 83% |
-| 🟡 Yellow | 3 to 4 | 87% · 3.0 · 10 · 79% | 74% · 3.6 · 11 · 68% |
+| 🟡 Yellow | 3 to 4 | 90% · 3.0 · 11 · 79% | 73% · 3.7 · 13 · 68% |
 | 🟠 Orange | 3 to 5 | 97% · 3.9 · 13 · 91% | 94% · 4.9 · 16 · 83% |
 | 🔴 Red | 4 to 6 | 87% · 4.5 · 17 · 90% | 67% · 5.5 · 20 · 81% |
 | 🟣 Purple | 5 to 7 | 87% · 5.2 · 19 · 78% | 83% · 6.8 · 24 · 71% |
@@ -128,6 +130,8 @@ Two simulators, both with the engine's own mind playing both sides and the party
 2. **A rest gives back half** on the board (`DUNGEON_BOARD_REST`, a tunable; a card run's rest stays at three tenths).
 3. **The boss has less company and a little less health**: one minion beside it at green, one regular at yellow, two from orange up.
 4. **Gentler skulls at both ends**: green and yellow a little lower (a town's first dungeons, fought by villagers), red and purple a good deal lower than the card numbers they started from.
+
+**Yellow was eased again when the ladder came in** (the same day): a yellow party is at class level 3 and knows three abilities each, not five, and cleared 73% on the careful road at the old numbers. At +55% / +18% it is back to nine in ten. Orange and above are at class level 6 or more and know the whole kit, so nothing else moved.
 
 **Fights are not larger.** The plan said "fewer, larger fights". Groups of four and five were tried at red and purple and the party lost ordinary fights most of the time, so a fight stays at three foes, sometimes four (3.1 on average; a boss with one or two). Fewer is what mattered for the length; larger can come back with ground that matters and smarter placing in Phase 6.
 
@@ -143,10 +147,16 @@ Two simulators, both with the engine's own mind playing both sides and the party
 - **Who.** A Guard, Archer, Wizard or Hearthkeeper earns it in their own class. Anyone else earns **half, as Guard training**, as card battles already paid them. Whoever **lay fallen when it ended earns half**. A battle that is lost pays nothing.
 - **When.** At once, as each fight of a dungeon is won, so the screen can show it. The careers' own listener (`lib/career_subscriber.js`, 12 + 4 a foe for a card battle) is told it has been paid and only counts the battle.
 - **A practice field** shows what would have been earned and keeps none of it.
-- **What a level does today:** it lifts the citizen's combat skill and gives a perk point, as before. **What it will do** is unlock abilities (below).
+- **What a level does:** it lifts the citizen's combat skill and gives a perk point, as before, and **it teaches abilities** (the ladder, next).
 - **Scale, to be watched:** a green dungeon is about 100 experience to each fighter, a purple one about 1,000. From nothing, one green run makes a level 4; about fifteen purple runs make a master. If that is too fast, the two tables at the top of `lib/tactics_xp.js` are the only numbers to change.
 
 The owner's direction: "instead of unlocking cards we can just allow villagers to train spells or gain abilities as they level up or as they train or study. We could tie technology in, we could tie in equipment."
+
+### The ladder: abilities by class level (first rung built 2026-11-22)
+
+- **Built.** Each of the four classes knows two abilities at class level 1 and learns one more at levels 2, 4 and 6 (§4). The level is the citizen's own, in that class (`citizen_classes`); a villager's three are known from the start. On the board the unlearned ones sit greyed in the row with "learned at level N"; tapping anyone lists theirs too. When a battle's experience carries a citizen over one of those levels, the victory screen says **Learned: Cover** under their bar, and the next fight has it. Where: `KITS[…].at` and `learnedBetween` in `lib/tactics_setup.js`; `learned` on the rows of `lib/tactics_xp.js`.
+- **Why these levels.** A fresh Guard reaches level 2 in the first fight of a first dungeon and level 4 by the end of it, so the first run already teaches two things; level 6 takes three or four green runs or one orange one. The whole starting kit is known before the skulls that were tuned for it (orange and up).
+- **Next rungs, not built:** levels 8 to 20 teach from the rest of the catalogue (below), which is when **readying five** is needed, and with it the Abilities page on a citizen.
 
 ### The shape of it
 
@@ -189,9 +199,15 @@ The owner's direction: "instead of unlocking cards we can just allow villagers t
 
 ## 8. What happens to the cards
 
-**Kept:** the classes, careers and class buildings; the creatures; the formulas; the dungeon run (the path, rooms, wounds that carry, rests, endings, the generator); injuries; loot.
+**The owner's word, 2026-11-22:** "we can peel away/archive the card combat system we had originally planned, I am confident in tactics replacing it." So cards go. They go in three steps, because one part of them is still what players fight with today:
 
-**Retired, in Phase 5:** the card engine (both copies) and the card hand; the home deck and deck builder; the card collection, card drops and unlocks; in dungeons, the door pick, the card after a fight, honing and prepared cards. The card editor in Dev Tools becomes an ability editor.
+| Step | What | State |
+|---|---|---|
+| 1 | **Dungeons with cards cannot be started any more.** Dev Tools offers no "with cards"; the admin routes always start a board dungeon. `docs/DUNGEON_CLASS_DECKS.md` is marked archived. | **Done 2026-11-22** |
+| 2 | **Delete the dungeon card layer**: `lib/dungeon_decks.js`, the door pick, the card after a fight, honing and prepared cards in `lib/dungeons.js` and `js/dungeons.js`, the card runs' callbacks in `routes/combat.js`, the two card simulators. Its test (`scripts/dungeons_test.js`, 243 checks) is mostly about the run itself (the path, rests, loot, endings, injuries), played through card battles: those checks are ported to board battles first, so nothing about the run goes untested. Nobody outside Dev Tools ever saw this layer, so no player loses anything. | Next |
+| 3 | **Quests, camps, raids and clan quests on the board**, then delete the card battler itself: both copies of the card engine, the card hand, the battle screen, the home deck and deck builder, the card collection, drops and unlocks, the card editor. This is Phase 5. It is the only step players will notice, so it goes behind a switch the owner turns on, as dungeons are. | Phase 5 |
+
+**Kept:** the classes, careers and class buildings; the formulas (`lib/class_cards.js` is the catalogue the abilities are read from, and will be renamed when step 3 is done); the dungeon run (the path, rooms, wounds that carry, rests, endings, the generator); injuries; loot.
 
 **Nothing a player earned is lost.** Every card a town has unlocked becomes an ability its class building can teach.
 
@@ -226,6 +242,7 @@ Each phase ends with something playable behind the switch.
 | The rules: map, turns, moving, reach, facing, height, abilities, the creatures' mind | frontend `js/tactics-engine.js` |
 | The screen: the board, taps and keys, zoom, facing, animation, sound, the Dev Tools box | frontend `js/tactics.js`, `css/tactics.css` |
 | The list of art and sound that exists: foe pictures, ability icons, sounds, music | frontend `scripts/pack_tactics.js` → `assets/tactics/manifest.json` |
+| Is what is live what is in the repository? Run after every upload | frontend `scripts/check_live.js` (`npm run check-live`) |
 | Who the party fights: the thirty foes, the bands, a dungeon's cast, the showcase fights | server `lib/tactics_foes.js` |
 | The two sides: kits, levels, a foe as a unit, the board's skull numbers | server `lib/tactics_setup.js` |
 | The same rules on the server (kept identical to the browser's; a test compares them) | server `lib/tactics_engine.js` |
@@ -233,7 +250,7 @@ Each phase ends with something playable behind the switch.
 | Routes (admins only) | server `routes/tactics.js` |
 | What a battle teaches: experience by rank and skull, paid into class levels | server `lib/tactics_xp.js` |
 | Numbers | server `scripts/tactics_sim.js` (one battle), `scripts/tactics_run_sim.js` (a whole dungeon) |
-| Tests | frontend `verify/tactics_proofs.js` (137 checks), server `scripts/tactics_test.js` (60), `scripts/dungeon_board_test.js` (38) |
+| Tests | frontend `verify/tactics_proofs.js` (144 checks), server `scripts/tactics_test.js` (65), `scripts/dungeon_board_test.js` (41) |
 
 - **The engine is pure**: no clock, no `Math.random`, no DOM. A battle is a plain object changed only by `move`, `use` and `endTurn`, and the same seed and choices always give the same battle.
 - **How the server decides.** A battle is stored as its two sides, frozen when it begins, and the player's choices in order (`tactics_battles`). Creatures have no entries: their mind is part of the rules, so both sides reach the same turns from the same choices. The browser plays each choice at once, so the screen never waits, and sends it; the server plays it on top of the ones before and refuses what the rules do not allow. Every answer carries a fingerprint of the board; if the browser's differs, or a choice is refused, the screen is put back to the battle as the server has it. A choice sent twice is taken once.

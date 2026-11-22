@@ -73,6 +73,24 @@ console.log('The kits');
     'a foe takes the skull\'s health and strength and a room\'s boost; a rally reaches its friends around it');
   check(Object.keys(F.SHOWCASE).length === Object.keys(F.BANDS).length && Object.values(F.SHOWCASE).every(sc => ['first', 'hard', 'boss'].every(k => sc[k].length >= 3 && sc[k].every(x => F.FOES[x])) && F.FOES[sc.boss[sc.boss.length - 1]].rank === 'boss'),
     'each band has a showcase fight of each kind, the boss at the back');
+  console.log('The class ladder: abilities learned by class level');
+  {
+    const c = { id: 1, name: 'x', role: 'soldier', unit: null }, keys = u => u.abilities.map(a => a.key).join();
+    const at = (cls, lvl) => T.partyUnit(c, cls, null, null, lvl);
+    const stub = { maxHp: 40, armour: 0, agility: 8, strength: 8, endurance: 8, intelligence: 8, charisma: 8, combatSkill: 1 };
+    c.unit = stub;
+    check(['guard', 'archer', 'wizard', 'hearthkeeper'].every(k => T.KITS[k].abilities.map(a => a.at).sort((a, b) => a - b).join() === '1,1,2,4,6') && T.KITS.villager.abilities.every(a => !a.at || a.at === 1),
+      'each class begins with two abilities and learns one more at levels 2, 4 and 6; a villager\'s are known from the start');
+    check(keys(at('guard', 1)) === 'g_strike,g_shield' && keys(at('guard', 2)) === 'g_strike,g_shield,g_cover' && keys(at('guard', 5)) === 'g_strike,g_shield,g_cover,g_shove' && at('guard', 6).abilities.length === 5 && at('guard', 20).abilities.length === 5,
+      'a Guard at level 1 has Strike and Shield Up; Cover at 2, Shove at 4, Heavy Blow at 6');
+    const w1 = at('wizard', 1);
+    check(w1.class_level === 1 && w1.locked.map(x => `${x.key}@${x.at}`).join() === 'w_bolt@2,w_chill@4,w_burst@6' && w1.locked.every(x => x.name && x.icon) && at('wizard', 6).locked.length === 0,
+      'a unit says its class level and what it has yet to learn, in the order it will learn it');
+    check(wiz.abilities.length === 5 && wiz.class_level === 6 && T.partyUnit(c, 'archer', 'novice', null, 1).abilities.length === 3 && T.partyUnit(c, 'archer', 'villager', null, 9).abilities.length === 2,
+      'a playtest level brings its own class level: novice 3, trained 6, veteran 10');
+    check(JSON.stringify(T.learnedBetween('hearthkeeper', 1, 4).map(x => x.key)) === '["h_kindle","h_bold"]' && T.learnedBetween('guard', 6, 9).length === 0 && T.learnedBetween('villager', 1, 20).length === 0 && T.learnedBetween('nobody', 1, 9).length === 0,
+      'the levels gained say what was learned: a Hearthkeeper from 1 to 4 learns Kindle and Embolden');
+  }
   console.log('What a battle teaches (lib/tactics_xp.js)');
   {
     const XP = require('../lib/tactics_xp'), M = require('../lib/career_math');
