@@ -17,14 +17,14 @@ It lists what is there in `assets/tactics/manifest.json`, and the game uses it f
 | # | What | Tool | Why now |
 |---|---|---|---|
 | 1 | Sounds: the nineteen in §5 | freesound, Kenney, pixabay | an afternoon's work; the battle is nearly silent without them |
-| 2 | Music: two or three more of the tracks in §6 | a music generator | one track is in; variety sets the mood |
+| 2 | ~~Music~~ | | **In (2026-11-23):** thirteen pieces. Still wanted: the hills, the ruins, a second for the meadows, winter (§6) |
 | 3 | The first band of foes (§1): the six Brigands | PixelLab | the foes are emoji today, and an emoji cannot face anywhere or wear a neckerchief |
-| 4 | Ability icons for the four classes (§4.1): 28 icons | PixelLab or a pixel editor | seen on every turn; wired, so they show the moment they exist |
+| 4 | Ability icons: the villager's and the trades' eight (§4.1) | the same generator as the classes' | **The four classes' twenty are in (2026-11-23).** These eight finish the set |
 | 5 | The mouse's battle animations (§2) | PixelLab | attacks read as a nudge until these exist |
 | 6 | Class looks for the mouse (§2) | PixelLab | a Guard and a Wizard look the same |
 | 7 | The other four bands (§1), then the seven bosses | PixelLab | a band at a time: each is a dungeon's worth |
 | 8 | Icons for what foes do (§4.1): 21 shared icons | PixelLab or a pixel editor | one set covers every foe |
-| 9 | Status pips, portraits, band emblems, backdrops (§4.2, §4.4) | PixelLab or ChatGPT | polish that makes it look finished |
+| 9 | Portraits, band emblems, backdrops (§4.4) | PixelLab or ChatGPT | polish that makes it look finished. **The six status pips are in (2026-11-23)** |
 | 10 | Trees, rocks and ground (§3) | PixelLab or ChatGPT | the code-drawn ones are decent |
 | 11 | Effect art (§4.3) | PixelLab | last: the code-drawn effects already work, and only a few would gain |
 | 12 | The other six species | PixelLab | the largest job in the game; last |
@@ -179,7 +179,21 @@ If made, for PixelLab or ChatGPT with the mouse attached for style:
 
 **Wired. Folder:** `assets/tactics/icons/`. One PNG for each ability, **named by the ability's key** (`g_strike.png`). It replaces the emoji on the ability's button and in the list of what a unit can do.
 
-**Size and style:** 32 × 32 pixels, transparent background (the button gives it its frame). One bold shape that reads at a glance, a 1-pixel dark brown outline (#2a180c), flat shading in two or three tones, and one main colour for each class so a kit reads as a set: **steel blue** for the Guard, **leaf green** for the Archer, **violet** for the Wizard, **warm orange** for the Hearthkeeper, **straw yellow** for a Villager, **red-brown** for what foes do. No letters or numbers.
+**In the game (2026-11-23):** all twenty of the Guard's, Archer's, Wizard's and Hearthkeeper's, from the owner's four sheets. Still to make: the eight for a villager and the trades, and the twenty-one for what foes do (both below).
+
+**From a sheet to icons.** A generator gives a row of icons on white. This cuts the row into one PNG each, takes the white away from around each icon (and only from around it: a snowflake keeps its white), and sets each square at 64 pixels:
+
+```bash
+python3 scripts/cut_icons.py the-sheet.png assets/tactics/icons g_strike g_shield g_cover g_shove g_heavy
+```
+
+```bash
+node scripts/pack_tactics.js
+```
+
+The names are the icons from left to right. The sheets themselves are kept in `art/tactics/icons/`. (Status pips: the same, into `assets/tactics/status`, with `--size=48`.)
+
+**Size and style:** drawn large and cut down to 64 × 64 (the sheets that worked were about 350 pixels an icon), on plain white, which the cutter removes. One bold shape that reads at a glance, a 1-pixel dark brown outline (#2a180c), flat shading in two or three tones, and one main colour for each class so a kit reads as a set: **steel blue** for the Guard, **leaf green** for the Archer, **violet** for the Wizard, **warm orange** for the Hearthkeeper, **straw yellow** for a Villager, **red-brown** for what foes do. No letters or numbers.
 
 Make them five to a sheet and cut them apart. The opener:
 
@@ -266,7 +280,7 @@ Make them five to a sheet and cut them apart. The opener:
 
 ### 4.2 Status pips
 
-**Not wired yet.** A unit under an effect shows a small glyph by its health bar today. Six little pictures would replace them. **Folder (when wired):** `assets/tactics/status/`, 16 × 16 pixels, transparent, readable on any ground colour, so each has a dark outline and one bright colour.
+**Wired, and in (2026-11-23).** A unit under an effect shows its pip above the health bar with how much of it, and beside its name in the unit's card. **Folder:** `assets/tactics/status/<status>.png` (`weak`, `vulnerable`, `slow`, `poison`, `stun`, `bold`), cut from one sheet with `scripts/cut_icons.py`. A status with no picture keeps its glyph. For a new set: 16 × 16 pixels as drawn on the board, transparent, readable on any ground colour, so each has a dark outline and one bright colour.
 
 > A sheet of six pixel-art status icons in a row with gaps, each 16 × 16 pixels, for a storybook tactics game. Very simple, one shape each, one-pixel dark brown outline, one bright flat colour each, transparent background, no text. Left to right: [the six].
 
@@ -400,9 +414,30 @@ If you use a sound generator, a line that works: "A [length] sound effect for a 
 
 ## 6. Music
 
-**Wired. Folder:** `assets/audio/tactics/music/`. Any file names. The game picks one at random for each battle and loops it. **A file whose name starts with `boss`** (`boss-1.mp3`) is kept for boss fights; the others play for the rest.
+**Wired. Folder:** `assets/audio/tactics/music/`. **A file is named `<place>-<title-in-words>.mp3`**, and the name is everything the game knows about it:
 
-**For every track:** instrumental, no singing; 90 seconds to two and a half minutes; the same tempo and energy from start to end so it loops without a lurch; ends as it began; MP3 at 128 to 160 kbps. Battle music here should feel like a game of chess in a meadow with something at stake, not a war film.
+- **The place** is a land (`plains`, `forest`, `hills`, `mountain`, `river`, `marsh`, `ruins`), or `boss`, or `boss-withered`. A battle plays a piece of its own land; a boss fight plays a `boss` piece, and a boss of the Withered a `boss-withered` one. A land with no piece of its own borrows a neighbour's: the hills the mountains', the ruins the marsh's, and so on.
+- **The title** is the rest of the name, read as words: `forest-under-the-old-oaks.mp3` is "Under the Old Oaks". To rename a piece, rename its file.
+
+After adding, renaming or removing one, run `node scripts/pack_tactics.js`.
+
+**In the game (2026-11-23), thirteen pieces:**
+
+| Place | Pieces |
+|---|---|
+| The meadows (`plains`) | The Meadow Gambit |
+| The deep wood (`forest`) | Under the Old Oaks · Lanterns in the Deep Wood |
+| The mountains (`mountain`; the hills borrow these) | The High Pass · Stormcrow Ridge |
+| The river (`river`) | The Ford at Dawn · Reeds and Rapids |
+| The marsh (`marsh`; the ruins borrow these) | Mist on the Fen · The Sunken Road |
+| A boss (`boss`) | The Last Door · No Way but Through |
+| The Withered's boss (`boss-withered`) | The Hollow King · A Crown of Rot |
+
+The owner's twelve new files were given these names (they came as `deep_wood-1`, `boss-wither-2` and the like; the titles are placeholders chosen by place, not by ear: rename any that do not fit) and encoded again at 96 kbps: 73 MB became 29 MB, about 2 MB a piece. **Still wanted:** a piece each for the hills and the ruins, a second for the meadows, and winter (prompts 3, 4 and 8 below).
+
+**The jukebox** (`jukebox.html` on the site: a page of its own, with nothing to sign in to) plays every piece over the kind of battle it is for, the battle playing itself, and takes stars and a comment from anyone with the link. It is for asking friends which pieces work. The stars' averages show to everyone; the comments show only to an admin of the game, signed in on the same browser, at the foot of that page.
+
+**For every track:** instrumental, no singing; 90 seconds to two and a half minutes; the same tempo and energy from start to end so it loops without a lurch; ends as it began; MP3 at about 96 kbps (the game's own were made at that; `ffmpeg -i in.mp3 -codec:a libmp3lame -b:a 96k out.mp3`). Battle music here should feel like a game of chess in a meadow with something at stake, not a war film.
 
 Prompts for a music generator (Suno, Udio or the like). Make two or three takes of each and keep the one that loops best.
 
