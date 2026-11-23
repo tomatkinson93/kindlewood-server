@@ -10,7 +10,7 @@
 //
 //    node scripts/tactics_run_sim.js [runs a skull] [skull …]
 //    TACTICS_TIERS='{"red":{"hp":1.6,"str":0.7}}' node scripts/tactics_run_sim.js 60 red
-//    DUNGEON_REST=0.4 node scripts/tactics_run_sim.js      (the board's rest; lib/tuning.js DUNGEON_BOARD_REST)
+//    DUNGEON_REST=0.4 node scripts/tactics_run_sim.js      (the rest's share; lib/tuning.js DUNGEON_BOARD_REST)
 //
 //  Two ways of walking: "careful" takes the road with fewest fights and rests
 //  whenever it can; "bold" takes every fight and elite it can reach. A real
@@ -52,7 +52,7 @@ function choose(rooms, byId, policy, hurt) {
 }
 
 function runOne(base, tier, land, seed, policy) {
-  const story = GEN.generate({ seed, tier, terrain: land, creatures: F.castFor(land, seed).creatures, items: null, board: true });
+  const story = GEN.generate({ seed, tier, terrain: land, creatures: F.castFor(land, seed).creatures, items: null });
   const state = base.map(u => ({ hp: u.maxHp, max: u.maxHp, down: false, fell: false }));
   const out = { cleared: false, fights: 0, turns: 0, raised: 0, lostAt: null, bossDoor: null, rests: 0 };
   const rest = () => { out.rests++; for (const st of state) { const gain = Math.max(1, Math.round(st.max * REST)); if (st.down) { st.down = false; st.hp = Math.min(st.max, gain); } else st.hp = Math.min(st.max, st.hp + gain); } };

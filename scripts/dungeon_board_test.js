@@ -62,14 +62,14 @@ async function main() {
     console.log('A dungeon on the board');
     const a = await player('Board');
     const party = a.cits.slice(0, 4);
-    let r = await D.startTest(a.id, 'test_green', party, { combat: 'board' });
+    let r = await D.startTest(a.id, 'test_green', party);
     let v = r.run;
-    check(v.status === 'active' && v.combat === 'board' && v.pending === null && v.moves.join() === 'a' && v.party.every(m => m.deck === null),
+    check(v.status === 'active' && v.combat === 'board' && v.pending === null && v.moves.join() === 'a' && v.party.every(m => !('deck' in m)),
       'a run on the board starts at the door: no decks, no card to choose, the way in open');
     r = await api(a, 'POST', '/api/dungeons/run/move', { room: 'a' });
     v = r.body.run;
     const b1 = r.body.board_battle_id;
-    check(r.status === 200 && b1 > 0 && v.pending.kind === 'battle' && v.pending.board === true && v.pending.battle_id === b1 && v.can_flee && !v.can_leave && r.body.quest_run_id === null,
+    check(r.status === 200 && b1 > 0 && v.pending.kind === 'battle' && v.pending.board === true && v.pending.battle_id === b1 && v.can_flee && !v.can_leave,
       'entering a fight room opens a battle on the board, not a card battle');
     let bt = (await api(a, 'GET', '/api/tactics/battles/' + b1)).body.battle;
     check(bt.source === 'dungeon' && bt.dungeon_run_id === v.id && bt.setup.party.length === 4 && bt.setup.party.map(u => u.cls).join() === 'guard,archer,villager,villager'
@@ -141,7 +141,7 @@ async function main() {
     r = await api(a, 'POST', '/api/dungeons/run/move', { room: 'c2' });
     check(r.body.run.pending.kind === 'rest' && r.body.run.pending.options.map(o => o.key).join() === 'rest', 'a rest room on the board offers a rest (there are no cards to hone)');
     const hurt = r.body.run.party.map(m => m.hp), half = D.CONFIG.BOARD_REST;
-    check(half === 0.5 && D.CONFIG.REST === 0.3 && /gets back 50% of their full health/.test(r.body.run.pending.options[0].text), 'a rest on the board gives back half, where a card run\'s gives three tenths');
+    check(half === 0.5 && D.CONFIG.REST === undefined && /gets back 50% of their full health/.test(r.body.run.pending.options[0].text), 'a rest gives back half of full health (the board\'s own share)');
     r = await api(a, 'POST', '/api/dungeons/run/choose', { option: 'rest' });
     check(r.body.run.party.every((m, i) => !m.down && m.hp === Math.min(m.max, (hurt[i] || 0) + Math.max(1, Math.round(m.max * half)))), 'resting gives each of them that much, and stands the fallen up',
       r.body.run.party.map((m, i) => `${hurt[i]}→${m.hp}/${m.max}`).join(' '));
@@ -159,7 +159,7 @@ async function main() {
 
     console.log('Losing, fleeing, and the shortcuts');
     const weak = await player('Weak', false);
-    await D.startTest(weak.id, 'test_orange', weak.cits.slice(0, 4), { combat: 'board' });
+    await D.startTest(weak.id, 'test_orange', weak.cits.slice(0, 4));
     r = await api(weak, 'POST', '/api/dungeons/run/move', { room: 'a' });
     f = await fight(weak, r.body.board_battle_id);
     const lost = f.last.body.dungeon;
@@ -173,7 +173,7 @@ async function main() {
     }
     check(f.st.status === 'defeat' && lost.ended === true && lost.run.status === 'defeat' && lost.run.result.rolled.length === 4, 'a defeat on the board ends the run, and everyone rolls for injury', JSON.stringify({ st: f.st.status, ended: lost && lost.ended, run: lost && lost.run && lost.run.status, rolled: lost && lost.run && lost.run.result && lost.run.result.rolled }));
     const fl = await player('Flee');
-    await D.startTest(fl.id, 'test_green', fl.cits.slice(0, 4), { combat: 'board' });
+    await D.startTest(fl.id, 'test_green', fl.cits.slice(0, 4));
     r = await api(fl, 'POST', '/api/dungeons/run/move', { room: 'a' });
     await fight(fl, r.body.board_battle_id);
     r = await api(fl, 'POST', '/api/dungeons/run/move', { room: 'b2' });
@@ -184,12 +184,12 @@ async function main() {
       'fleeing a fight on the board ends the run with half the loot', `${carriedLoot} → ${r.body.run && r.body.run.result.kept.wealth}`);
     check((await api(fl, 'GET', '/api/tactics/battles/' + fb)).body.battle.status === 'left' && (await api(fl, 'POST', `/api/tactics/battles/${fb}/act`, { n: 0, action: { t: 'end' } })).status !== 200, 'and the battle is closed: it takes no more choices');
     const wo = await player('Walk');
-    await D.startTest(wo.id, 'test_green', wo.cits.slice(0, 4), { combat: 'board' });
+    await D.startTest(wo.id, 'test_green', wo.cits.slice(0, 4));
     r = await api(wo, 'POST', '/api/dungeons/run/move', { room: 'a' });
     r = await api(wo, 'POST', `/api/tactics/battles/${r.body.board_battle_id}/leave`);
     check(r.status === 200 && r.body.battle.status === 'left' && r.body.dungeon && r.body.dungeon.run.status === 'fled', 'walking out of a dungeon\'s battle is fleeing the dungeon');
     const win = await player('DevWin');
-    await D.startTest(win.id, 'test_green', win.cits.slice(0, 4), { combat: 'board' });
+    await D.startTest(win.id, 'test_green', win.cits.slice(0, 4));
     r = await api(win, 'POST', '/api/dungeons/run/move', { room: 'a' });
     const wb = r.body.board_battle_id;
     const won = await D.adminWin(win.id);
@@ -201,9 +201,9 @@ async function main() {
     const idle = (await q('SELECT status, board_battle_id FROM dungeon_runs WHERE settlement_id=$1 ORDER BY id DESC LIMIT 1', [win.sid])).rows[0];
     check(idle.status === 'timed_out' && idle.board_battle_id === null, 'a run left idle in a fight on the board ends by itself');
 
-    console.log('Generated dungeons, and cards still work');
+    console.log('Generated dungeons, and no cards');
     const g = await player('Gen');
-    r = await D.startGenerated(g.id, { tier: 'yellow', terrain: 'hills', seed: 4321 }, g.cits.slice(0, 4), { combat: 'board' });
+    r = await D.startGenerated(g.id, { tier: 'yellow', terrain: 'hills', seed: 4321 }, g.cits.slice(0, 4));
     let gv = r.run, rooms = 0, fights = 0;
     for (let guard = 0; gv && gv.status === 'active' && guard < 60; guard++) {
       if (gv.pending && gv.pending.kind === 'battle') { const x = await fight(g, gv.pending.battle_id); fights++; gv = x.last.body.dungeon.run; }
@@ -215,9 +215,12 @@ async function main() {
     const F = require('../lib/tactics_foes'), keys = lay.floors.flatMap(fl => fl.rooms.flatMap(x => x.enemies || []));
     check(lay.combat === 'board' && fights <= 4 && lay.floors.length === 1 && keys.every(k => F.FOES[k]) && F.FOES[lay.floors[0].rooms.find(x => x.type === 'boss').enemies.slice(-1)[0]].rank === 'boss',
       'it was made for the board: one floor, four fights at most on a route, the board\'s own foes, a real boss at the end', [...new Set(keys)].join(' '));
-    const c = await player('Cards');
+    // Fights with cards are gone from dungeons: every run is on the board, and the card routes are no more.
+    const c = await player('NoCards');
     r = await D.startTest(c.id, 'test_green', c.cits.slice(0, 4));
-    check(r.run.combat === 'cards' && r.run.pending && r.run.pending.kind === 'door', 'a run started the old way is still a card run, door pick and all');
+    check(r.run.combat === 'board' && r.run.pending === null && r.run.moves.join() === 'a' && r.run.party.every(m => !('deck' in m))
+      && (await api(c, 'POST', '/api/dungeons/run/pick', {})).status === 404 && (await api(c, 'GET', '/api/dungeons/cards')).status === 404,
+      'every run is fought on the board: no decks, no card to pick at the door, and the card routes are gone');
     await api(c, 'POST', '/api/dungeons/run/leave').catch(() => {});
     // Only the town whose battle it is.
     check((await api(weak, 'GET', '/api/tactics/battles/' + b1)).status === 404, 'another town cannot see or play this town\'s battle');
