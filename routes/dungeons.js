@@ -5,11 +5,7 @@
 //
 //    GET  /run            the town's unfinished run, or the last finished one
 //    POST /run/move       { room }    enter a connected room
-//    POST /run/pick       { citizen_id, card } at the door, { index } after a fight; null passes;
-//                         after a fight { hone: { citizen_id, card } } hones a card in place of taking one
-//    POST /run/choose     { option }  answer a rest room or a landing; 'hone' (rest and hone) adds { citizen_id, card }
-//    GET  /cards          the town's class cards: packs, what is unlocked, what is prepared
-//    POST /cards/prepare  { card, prepared }  set a card aside, or prepare it again
+//    POST /run/choose     { option }  answer a rest room or a landing ('rest', 'deeper')
 //    POST /run/leave      turn back (between rooms): keep everything
 //    POST /run/flee       leave a fight: the run ends, half the loot is kept
 //
@@ -20,13 +16,12 @@
 //    POST /admin/switch          { on }
 //    POST /admin/test            { story, citizen_ids? }  start a test dungeon (fought on the board)
 //    POST /admin/generate        { tier, terrain, seed?, citizen_ids? }  generate a dungeon and start it (on the board)
-//                                combat: 'board' fights the dungeon's battles on the board (docs/TACTICS.md), else with cards
+//                                (every fight is a battle on the board: docs/TACTICS.md)
 //    POST /admin/sweep           { idle_run? } end idle runs now (optionally age this town's run first)
 //    POST /admin/heal            the party back to full health, everyone up
 //    POST /admin/win             win the open fight outright (to walk a path quickly)
 //
-//  Fights are played through /api/combat (engage, action, resolve), like any
-//  other battle.
+//  Fights are battles on the board, played through /api/tactics (battles/:id/act).
 // ══════════════════════════════════════════════════════════════════════════
 'use strict';
 const express = require('express');
@@ -53,23 +48,8 @@ router.get('/run', requireAuth, async (req, res) => {
 router.post('/run/move', requireAuth, gate, async (req, res) => {
   try { res.json({ ok: true, ...(await D.move(req.user.userId, (req.body || {}).room)) }); } catch (e) { fail(res, e); }
 });
-router.post('/run/pick', requireAuth, gate, async (req, res) => {
-  try { res.json({ ok: true, ...(await D.pick(req.user.userId, req.body || {})) }); } catch (e) { fail(res, e); }
-});
 router.post('/run/choose', requireAuth, gate, async (req, res) => {
-  try { const b = req.body || {}; res.json({ ok: true, ...(await D.choose(req.user.userId, b.option, { citizen_id: b.citizen_id, card: b.card })) }); } catch (e) { fail(res, e); }
-});
-// The town's class cards (lib/dungeon_decks.js `collection`).
-const town = async (req) => (await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId])).rows[0];
-router.get('/cards', requireAuth, gate, async (req, res) => {
-  try { const s = await town(req); if (!s) return res.status(404).json({ error: 'No settlement.' }); res.json({ ok: true, ...(await require('../lib/dungeon_decks').collection(s.id)) }); } catch (e) { fail(res, e); }
-});
-router.post('/cards/prepare', requireAuth, gate, async (req, res) => {
-  try {
-    const s = await town(req); if (!s) return res.status(404).json({ error: 'No settlement.' });
-    const b = req.body || {};
-    res.json({ ok: true, ...(await require('../lib/dungeon_decks').setPrepared(s.id, b.card, b.prepared !== false)) });
-  } catch (e) { fail(res, e); }
+  try { res.json({ ok: true, ...(await D.choose(req.user.userId, (req.body || {}).option)) }); } catch (e) { fail(res, e); }
 });
 router.post('/run/leave', requireAuth, gate, async (req, res) => {
   try { res.json({ ok: true, ...(await D.leave(req.user.userId)) }); } catch (e) { fail(res, e); }
@@ -95,10 +75,10 @@ router.post('/admin/switch', requireAuth, requireAdmin, async (req, res) => {
 });
 router.post('/admin/test', requireAuth, requireAdmin, async (req, res) => {
   // Every dungeon is fought on the board now (docs/TACTICS.md §8): a run with cards can no longer be started from the game.
-  try { const b = req.body || {}; res.json({ ok: true, ...(await D.startTest(req.user.userId, b.story, b.citizen_ids, { combat: 'board' })) }); } catch (e) { fail(res, e); }
+  try { const b = req.body || {}; res.json({ ok: true, ...(await D.startTest(req.user.userId, b.story, b.citizen_ids)) }); } catch (e) { fail(res, e); }
 });
 router.post('/admin/generate', requireAuth, requireAdmin, async (req, res) => {
-  try { const b = req.body || {}; res.json({ ok: true, ...(await D.startGenerated(req.user.userId, { tier: b.tier, terrain: b.terrain, seed: b.seed }, b.citizen_ids, { combat: 'board' })) }); } catch (e) { fail(res, e); }
+  try { const b = req.body || {}; res.json({ ok: true, ...(await D.startGenerated(req.user.userId, { tier: b.tier, terrain: b.terrain, seed: b.seed }, b.citizen_ids)) }); } catch (e) { fail(res, e); }
 });
 router.post('/admin/sweep', requireAuth, requireAdmin, async (req, res) => {
   try {

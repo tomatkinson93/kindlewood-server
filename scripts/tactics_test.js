@@ -88,7 +88,7 @@ console.log('The kits');
       'a unit says its class level and what it has yet to learn, in the order it will learn it');
     check(wiz.abilities.length === 5 && wiz.class_level === 6 && T.partyUnit(c, 'archer', 'novice', null, 1).abilities.length === 3 && T.partyUnit(c, 'archer', 'villager', null, 9).abilities.length === 2,
       'a playtest level brings its own class level: novice 3, trained 6, veteran 10');
-    check(JSON.stringify(T.learnedBetween('hearthkeeper', 1, 4).map(x => x.key)) === '["h_kindle","h_bold"]' && T.learnedBetween('guard', 6, 9).length === 0 && T.learnedBetween('villager', 1, 20).length === 0 && T.learnedBetween('nobody', 1, 9).length === 0,
+    check(JSON.stringify(T.learnedBetween('hearthkeeper', 1, 4).map(x => x.key)) === '["h_ward","h_bold"]' && T.learnedBetween('guard', 6, 9).length === 0 && T.learnedBetween('villager', 1, 20).length === 0 && T.learnedBetween('nobody', 1, 9).length === 0,
       'the levels gained say what was learned: a Hearthkeeper from 1 to 4 learns Kindle and Embolden');
   }
   console.log('What a battle teaches (lib/tactics_xp.js)');
@@ -115,7 +115,7 @@ console.log('The kits');
     const want = { green: [2, 3], yellow: [3, 4], orange: [3, 5], red: [4, 6], purple: [5, 7] };
     let made = 0, bad = 0, safe = 0, wrong = 0, big = 0, fightsN = 0, foesN = 0;
     for (const tier of Object.keys(want)) for (const land of GEN.LANDS) for (let seed = 1; seed <= 25; seed++) {
-      const d = GEN.generate({ seed, tier, terrain: land, creatures: F.castFor(land, seed).creatures, items: null, board: true });
+      const d = GEN.generate({ seed, tier, terrain: land, creatures: F.castFor(land, seed).creatures, items: null });
       made++; if (GEN.check(d).length) bad++; if (d.notes.safe_layout) safe++;
       let lo = 0, hi = 0;
       for (const fl of d.floors) {
@@ -128,9 +128,13 @@ console.log('The kits');
     }
     check(bad === 0 && safe === 0 && wrong === 0 && big === 0, 'a dungeon made for the board obeys every rule, and a route has 2 to 3 fights at green, up to 5 to 7 at purple, boss and all',
       `${made} dungeons, ${(foesN / fightsN).toFixed(1)} foes a fight`);
-    const card = GEN.generate({ seed: 7, tier: 'red', terrain: 'forest', creatures: F.list(), items: null });
-    check(!card.combat && card.floors.length === GEN.SHAPES.red.floors && !GEN.check(card).length && GEN.fightRange(3).join() === '2,4' && GEN.fightRange([1, 2]).join() === '1,2',
-      'a dungeon made for cards is shaped as it always was');
+    const one = GEN.generate({ seed: 7, tier: 'red', terrain: 'forest', creatures: F.list(), items: null });
+    check(one.combat === 'board' && one.floors.length === GEN.SHAPES.red.floors && !GEN.check(one).length && !GEN.BOARD_SHAPES && GEN.fightRange([1, 2]).join() === '1,2',
+      'there is one shape for a dungeon now, the board\'s: the longer card shapes went with the cards');
+    const LK = require('../lib/tuning').LIFE_KEYS;
+    check(Object.keys(T.TIERS).every(k => LK['DUNGEON_FOE_HP_' + k.toUpperCase()].default === T.TIERS[k].hp && LK['DUNGEON_FOE_POW_' + k.toUpperCase()].default === T.TIERS[k].str)
+      && !LK.DUNGEON_HP_GREEN && !LK.DUNGEON_REST && T.tierNow('orange').hp === T.TIERS.orange.hp && T.tierNow('nonsense').hp === T.TIERS.green.hp,
+      'the skull numbers Dev Tools can change are the board\'s own, starting from the same figures; the card skulls\' numbers are gone');
     check(T.TIERS.green.hp < T.TIERS.yellow.hp && T.TIERS.yellow.hp < T.TIERS.orange.hp && T.TIERS.orange.hp < T.TIERS.red.hp && T.TIERS.red.hp < T.TIERS.purple.hp
       && require('../lib/tuning').LIFE_KEYS.DUNGEON_BOARD_REST.default === 0.5, 'each skull is harder than the last, and a rest on the board gives back half');
   }

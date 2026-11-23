@@ -35,3 +35,11 @@ CREATE INDEX IF NOT EXISTS tactics_battles_by_town ON tactics_battles (settlemen
 ALTER TABLE dungeon_runs ADD COLUMN IF NOT EXISTS combat TEXT NOT NULL DEFAULT 'cards';
 ALTER TABLE dungeon_runs ADD COLUMN IF NOT EXISTS board_battle_id BIGINT;
 ALTER TABLE tactics_battles ADD COLUMN IF NOT EXISTS dungeon_run_id INTEGER;
+
+-- Fights with cards were retired from dungeons on 2026-11-23 (docs/TACTICS.md §8). A run that was begun the old
+-- way (only ever from Dev Tools) cannot go on: it is closed as "left", and its open card battle with it.
+UPDATE dungeon_runs SET status = 'left', room_open = FALSE, battle_run_id = NULL, ended_at = COALESCE(ended_at, NOW())
+ WHERE status IN ('travelling', 'active') AND COALESCE(combat, 'cards') <> 'board';
+UPDATE settlement_quests SET status = 'collected', combat_status = 'resolved', combat_outcome = 'defeat', combat_resolved_at = NOW(), completes_at = NOW()
+ WHERE quest_id = 'dungeon_room' AND status = 'active';
+
