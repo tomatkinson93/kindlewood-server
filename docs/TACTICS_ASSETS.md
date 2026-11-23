@@ -18,7 +18,7 @@ It lists what is there in `assets/tactics/manifest.json`, and the game uses it f
 |---|---|---|---|
 | 1 | Sounds: the nineteen in §5 | freesound, Kenney, pixabay | an afternoon's work; the battle is nearly silent without them |
 | 2 | ~~Music~~ | | **In (2026-11-23):** thirteen pieces. Still wanted: the hills, the ruins, a second for the meadows, winter (§6) |
-| 3 | The first band of foes (§1): the six Brigands | PixelLab | the foes are emoji today, and an emoji cannot face anywhere or wear a neckerchief |
+| 3 | The Stoat Captain and Redtooth (§1) | PixelLab | **Five Brigands are in (2026-11-23)**; these two finish the band. Then walking for the four diagonals |
 | 4 | Ability icons: the villager's and the trades' eight (§4.1) | the same generator as the classes' | **The four classes' twenty are in (2026-11-23).** These eight finish the set |
 | 5 | The mouse's battle animations (§2) | PixelLab | attacks read as a nudge until these exist |
 | 6 | Class looks for the mouse (§2) | PixelLab | a Guard and a Wizard look the same |
@@ -35,16 +35,25 @@ It lists what is there in `assets/tactics/manifest.json`, and the game uses it f
 
 **Who they are.** Everyone in Kindlewood walks on two legs and wears clothes, and so do those who mean it harm. No animal here walks on four legs: a foe is an outlaw, a raider, one of the marsh folk, a villager the blight has hollowed out, or something out of a story (an ogre, a harpy; the owner's rule is "no four-legged animals", and anything mythical is welcome). There are 30, in five bands, and every band has someone who fights up close, someone who strikes from far off, and someone who heals or casts. The list, with what each does, is `lib/tactics_foes.js` on the server.
 
-**Two pictures for each foe:**
+**In the game (2026-11-23): five of the Brigands**, from the owner's PixelLab exports: the Rat Cutpurse, Weasel Slinger, Fox Footpad, Polecat Sawbones and Boar Bruiser. They turn to face all four ways, stand at their own height beside a citizen, and show their faces in the row of who acts next. **Next to make:** the Stoat Captain and Redtooth, which finishes the band; then a band at a time.
 
-| File | The view |
-|---|---|
-| `<key>_front.png` | Seen from the front and a little above, **looking down and to the left**, towards the viewer. |
-| `<key>_back.png` | The same foe seen from behind, **looking up and to the right**, away from the viewer. |
+**How a foe gets in.** Export the character from PixelLab with its **eight rotations** (that is what the five came as), unzip it into `art/tactics/foes/<key>/` in the frontend repo so that it has a `rotations` folder (`south-east.png` and the other seven), then:
 
-The game mirrors each for the other two directions, so two pictures give all four facings. With only a front picture the foe still appears (it just never turns its back).
+```bash
+python3 scripts/pack_foes.py
+```
 
-**Size and style:** 128 × 128 pixels, transparent background, the foe standing in the middle with its **feet about nine tenths of the way down** the picture. Pixel art in the same style as the mouse villager: a 1-pixel dark brown outline, flat shading in three or four tones, a warm storybook palette. **Draw at the mouse's pixel size**: the mouse is about 60 pixels tall in its sheet, and the game draws a foe's pixels the same size as the mouse's. So a foe "as tall as the mouse" is about 60 pixels tall in its picture, and a boss, twice that, fills the frame.
+```bash
+node scripts/pack_tactics.js
+```
+
+The first makes, for each foe, a sheet of the four views the board uses (south-east, south-west, north-east, north-west: a unit on the board always faces one of them, so nothing is mirrored) and a 64 × 64 face. The second lists them for the game.
+
+**How tall it stands** is set in `art/tactics/foes/sizes.json`, in mouse-heights (a citizen is 1): the Rat Cutpurse 0.85, the Boar Bruiser 1.3, a boss about 1.9. The art can be drawn at any size; the game scales it to that height. Add a line there for each new foe (the "Small / as tall as / twice the mouse's height" in the tables below).
+
+**Walking.** PixelLab's walking comes facing north, east, south and west, and the board needs the four diagonals, so today a foe hops along in its standing pose. **Export walking for south-east, south-west, north-east and north-west** (PixelLab offers all eight) and it can be wired; the cardinal walks that came with the five are kept in `art/tactics/foes/<key>/walking/` and not used.
+
+**Size and style:** a 128 × 128 canvas, transparent background, the foe standing in the middle. Pixel art in the same style as the mouse villager: a 1-pixel dark brown outline, flat shading in three or four tones, a warm storybook palette. The size it is drawn at does not matter: its height on the board is set in `sizes.json` (above).
 
 **Tone:** fierce, never gory. Rogues from a picture book, not monsters. The Withered are sad more than frightening.
 
@@ -60,13 +69,11 @@ For an ogre or a harpy, change the opener's "An anthropomorphic woodland animal 
 | The Mire Folk | a **cloak of woven green reeds**; a small glowing fungus lantern | marsh, river |
 | The Withered | **grey, dull fur and hollow eyes with a dim green glow**; the torn, faded clothes of a villager | ruins, marsh, the deep forest |
 
-**In PixelLab**, attach the mouse's idle sheet as the style reference every time, make the character at a three-quarter top-down ("high top-down" or "isometric") view, and export the south-west and north-east views. Start each with this, unchanged:
+**In PixelLab**, attach the mouse's idle sheet as the style reference every time, make the character at a three-quarter top-down ("high top-down") view with **eight directions**, and export the whole character. Start each with this, unchanged:
 
 > Pixel art game sprite for a tactics battle, three-quarter top-down view from above and in front. An anthropomorphic woodland animal standing upright on two legs like a person, wearing clothes, the same build and proportions as the attached mouse villager. Full body, standing still, weapon in hand, facing down and to the left towards the viewer. Chunky, readable silhouette. One-pixel dark brown outline (#2a180c), flat cel shading with three or four tones per colour, warm storybook palette, the same style and pixel size as the attached mouse villager. A storybook rogue: fierce but charming, not gory. Transparent background, no ground, no shadow, no text.
 
-Then the foe's own line from the tables. For the back view, in the same conversation:
-
-> The exact same character, same size, clothes and colours, seen from behind and a little above, facing up and to the right, away from the viewer. Transparent background.
+Then the foe's own line from the tables.
 
 "Stands in for" is the creature of the card battles whose place the foe takes on the board, so a dungeon written for cards still works.
 
