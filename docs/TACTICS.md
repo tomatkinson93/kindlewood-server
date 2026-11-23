@@ -57,6 +57,7 @@ Left out on purpose: charge times and magic points, friendly fire, line of sight
   - **won:** an experience bar for each. The bar grows from where the citizen was to where they are while the number beside it counts down from the gain to nothing; crossing a level, the row flashes and says **Level up!**. On a practice field the same is shown and a line says nothing is kept.
   - **lost, or a run that ended with someone fallen:** each citizen's **injury roll, one at a time**: the words spin (Unhurt, A scratch, A wound, A scar, Crippled…), slow, and stop on what the server rolled, coloured by how bad it is, with the line the chronicle keeps. After a won last fight the rolls follow the experience.
   The numbers come with the server's answer to the last choice, so nothing plays until it has come. Once the word has gone, the panel of abilities is hidden so the box has the whole height (it did not fit a phone otherwise). A memorial for someone who died waits until the battle's screen is closed. With reduced motion there is no splash and everything is simply shown.
+- **Pictures and music (2026-11-23).** The four classes' abilities show their own icons, a status shows its pip with how much of it, and a battle plays the music of its land (a boss the boss's, a boss of the Withered theirs): `docs/TACTICS_ASSETS.md` §4 and §6.
 - **The screen holds still.** The panel below the board is one fixed height. What an action would do, and its Confirm, float over the top of the board.
 - **⟲ ⟳ turn the view a quarter** (Q, R): a hill in front hides what stands behind it.
 - **Zoom**: pinch with two fingers, the mouse wheel, or − and ＋. One finger (or the mouse) drags the board once it is zoomed.
@@ -243,6 +244,8 @@ Each phase ends with something playable behind the switch.
 | The screen: the board, taps and keys, zoom, facing, animation, sound, the Dev Tools box | frontend `js/tactics.js`, `css/tactics.css` |
 | The list of art and sound that exists: foe pictures, ability icons, sounds, music | frontend `scripts/pack_tactics.js` → `assets/tactics/manifest.json` |
 | Is what is live what is in the repository? Run after every upload | frontend `scripts/check_live.js` (`npm run check-live`) |
+| Cutting a sheet of icons into one PNG each | frontend `scripts/cut_icons.py` |
+| The jukebox: a public page that plays the battle music over a battle that plays itself, and takes ratings | frontend `jukebox.html`, `js/jukebox.js`, `css/jukebox.css`, `KWTactics.demo` in `js/tactics.js`; server `routes/jukebox.js`, `migrations/0NN_jukebox.sql`, `scripts/make_tactics_demo.js` (writes the frontend's `assets/tactics/demo.json`) |
 | Who the party fights: the thirty foes, the bands, a dungeon's cast, the showcase fights | server `lib/tactics_foes.js` |
 | The two sides: kits, levels, a foe as a unit, the board's skull numbers | server `lib/tactics_setup.js` |
 | The same rules on the server (kept identical to the browser's; a test compares them) | server `lib/tactics_engine.js` |
@@ -250,7 +253,7 @@ Each phase ends with something playable behind the switch.
 | Routes (admins only) | server `routes/tactics.js` |
 | What a battle teaches: experience by rank and skull, paid into class levels | server `lib/tactics_xp.js` |
 | Numbers | server `scripts/tactics_sim.js` (one battle), `scripts/tactics_run_sim.js` (a whole dungeon) |
-| Tests | frontend `verify/tactics_proofs.js` (144 checks), server `scripts/tactics_test.js` (65), `scripts/dungeon_board_test.js` (41) |
+| Tests | frontend `verify/tactics_proofs.js` (161 checks), server `scripts/tactics_test.js` (65), `scripts/dungeon_board_test.js` (41), `scripts/jukebox_test.js` (13) |
 
 - **The engine is pure**: no clock, no `Math.random`, no DOM. A battle is a plain object changed only by `move`, `use` and `endTurn`, and the same seed and choices always give the same battle.
 - **How the server decides.** A battle is stored as its two sides, frozen when it begins, and the player's choices in order (`tactics_battles`). Creatures have no entries: their mind is part of the rules, so both sides reach the same turns from the same choices. The browser plays each choice at once, so the screen never waits, and sends it; the server plays it on top of the ones before and refuses what the rules do not allow. Every answer carries a fingerprint of the board; if the browser's differs, or a choice is refused, the screen is put back to the battle as the server has it. A choice sent twice is taken once.

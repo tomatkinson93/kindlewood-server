@@ -58,6 +58,7 @@ app.use('/api/cards', require('./routes/cards'));
 app.use('/api/raids', require('./routes/raids'));
 app.use('/api/dungeons', require('./routes/dungeons'));   // a party's run through a dungeon (docs/DUNGEONS.md)
 app.use('/api/tactics', require('./routes/tactics'));     // the tactics battle prototype, admins only (docs/TACTICS.md)
+app.use('/api/jukebox', require('./routes/jukebox'));     // ratings for the battle music, from jukebox.html: public, no sign-in
 const expeditionRoutes = require('./routes/expeditions');
 app.use('/api/expeditions', expeditionRoutes);
 const questRoutes = require('./routes/quests');
