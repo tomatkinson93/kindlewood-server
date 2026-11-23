@@ -69,4 +69,13 @@ router.post('/battles/:id/leave', requireAuth, mayPlay, async (req, res) => {
   try { const { dungeon, ...battle } = await B.leave(req.user.userId, Number(req.params.id)); res.json({ ok: true, battle, dungeon }); } catch (e) { failWith(res, e); }
 });
 
+// ── What a citizen knows and brings (lib/tactics_abilities.js; the Abilities page on a citizen) ──
+router.get('/abilities/:citizenId', requireAuth, mayPlay, async (req, res) => {
+  try { res.json({ ok: true, ...(await require('../lib/tactics_abilities').page(req.user.userId, req.params.citizenId)) }); } catch (e) { failWith(res, e); }
+});
+// { keys: [five ability keys] }: the ones this citizen brings to a battle from now on.
+router.post('/abilities/:citizenId/ready', requireAuth, mayPlay, async (req, res) => {
+  try { res.json({ ok: true, ...(await require('../lib/tactics_abilities').setReady(req.user.userId, req.params.citizenId, (req.body || {}).keys)) }); } catch (e) { failWith(res, e); }
+});
+
 module.exports = router;

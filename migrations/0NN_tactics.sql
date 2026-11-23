@@ -43,3 +43,7 @@ UPDATE dungeon_runs SET status = 'left', room_open = FALSE, battle_run_id = NULL
 UPDATE settlement_quests SET status = 'collected', combat_status = 'resolved', combat_outcome = 'defeat', combat_resolved_at = NOW(), completes_at = NOW()
  WHERE quest_id = 'dungeon_room' AND status = 'active';
 
+-- Readying (docs/TACTICS.md §6): which of the abilities a citizen knows they
+-- bring to a battle, as a list of ability keys. NULL: the first five learned.
+ALTER TABLE citizen_classes ADD COLUMN IF NOT EXISTS ready JSONB;
+

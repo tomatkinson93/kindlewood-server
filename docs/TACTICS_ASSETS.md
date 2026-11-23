@@ -35,7 +35,7 @@ It lists what is there in `assets/tactics/manifest.json`, and the game uses it f
 
 **Who they are.** Everyone in Kindlewood walks on two legs and wears clothes, and so do those who mean it harm. No animal here walks on four legs: a foe is an outlaw, a raider, one of the marsh folk, a villager the blight has hollowed out, or something out of a story (an ogre, a harpy; the owner's rule is "no four-legged animals", and anything mythical is welcome). There are 30, in five bands, and every band has someone who fights up close, someone who strikes from far off, and someone who heals or casts. The list, with what each does, is `lib/tactics_foes.js` on the server.
 
-**In the game (2026-11-23): five of the Brigands**, from the owner's PixelLab exports: the Rat Cutpurse, Weasel Slinger, Fox Footpad, Polecat Sawbones and Boar Bruiser. They turn to face all four ways, stand at their own height beside a citizen, and show their faces in the row of who acts next. **Next to make:** the Stoat Captain and Redtooth, which finishes the band; then a band at a time.
+**In the game (2026-11-23): all seven Redtooth Brigands**, from the owner's PixelLab exports: the Rat Cutpurse, Weasel Slinger, Fox Footpad, Polecat Sawbones, Boar Bruiser, the Stoat Captain and Redtooth himself. They turn to face all four ways, stand at their own height beside a citizen (Redtooth at 1.9 of a mouse), and show their faces in the row of who acts next. **Next to make:** a band at a time; the Night Pack is the one a forest dungeon meets, so it is the next most seen.
 
 **How a foe gets in.** Export the character from PixelLab with its **eight rotations** (that is what the five came as), unzip it into `art/tactics/foes/<key>/` in the frontend repo so that it has a `rotations` folder (`south-east.png` and the other seven), then:
 
@@ -186,7 +186,7 @@ If made, for PixelLab or ChatGPT with the mouse attached for style:
 
 **Wired. Folder:** `assets/tactics/icons/`. One PNG for each ability, **named by the ability's key** (`g_strike.png`). It replaces the emoji on the ability's button and in the list of what a unit can do.
 
-**In the game (2026-11-23):** all twenty of the Guard's, Archer's, Wizard's and Hearthkeeper's, from the owner's four sheets. Still to make: the eight for a villager and the trades, and the twenty-one for what foes do (both below).
+**In the game (2026-11-23):** the first twenty of the Guard's, Archer's, Wizard's and Hearthkeeper's, from the owner's four sheets. Still to make: **the twenty of the higher rungs** (class levels 8 to 20, added 2026-11-23: four more sheets of five, below; until they exist those abilities show their emoji), the eight for a villager and the trades, and the twenty-one for what foes do.
 
 **From a sheet to icons.** A generator gives a row of icons on white. This cuts the row into one PNG each, takes the white away from around each icon (and only from around it: a snowflake keeps its white), and sets each square at 64 pixels:
 
@@ -245,6 +245,35 @@ Make them five to a sheet and cut them apart. The opener:
 | `h_kindle.png` | Kindle | a small heart with a flame inside it |
 | `h_steady.png` | Steady Now | a lantern with soft rings of light spreading from it |
 | `h_bold.png` | Embolden | a small banner on a pole with an upward arrow of light behind it |
+
+**The higher rungs (class levels 8, 10, 13, 16 and 20).** One sheet of five for each class, in the class's colour, cut with the names in this order:
+
+```bash
+python3 scripts/cut_icons.py guard-2.png assets/tactics/icons g_stand_fast g_shield_bash g_oath g_hold_line g_hammer
+```
+
+| File | Ability | What the icon shows |
+|---|---|---|
+| `g_stand_fast.png` | Stand Fast (Guard, 8) | two boots planted wide on the ground behind a tall shield, small stones flying from the heels |
+| `g_shield_bash.png` | Shield Bash (10) | a round shield thrust forward edge-on, a ring of small stars where it lands |
+| `g_oath.png` | Guard's Oath (13) | a raised paw in a gauntlet, palm out, with a small shield glowing above it |
+| `g_hold_line.png` | Hold the Line (16) | three shields side by side in a row, overlapping, a line of light along their tops |
+| `g_hammer.png` | Hammer Blow (20) | a great two-handed war hammer coming down, cracks spreading in the ground beneath |
+| `a_aimed.png` | Aimed Shot (Archer, 8) | an arrowhead seen point-on at the centre of a thin sight ring, very still |
+| `a_hamstring.png` | Hamstring (10) | an arrow low to the ground crossing a bent leg in outline |
+| `a_arrow_rain.png` | Arrow Rain (13) | five arrows falling at a slant like rain |
+| `a_pin.png` | Pin Down (16) | an arrow stuck upright through the hem of a cloak, pinning it to the ground |
+| `a_hail.png` | Hail of Arrows (20) | a dark cloud of many arrows arcing down together, the sky behind them bright |
+| `w_scorch.png` | Scorch (Wizard, 8) | a paw-print burning with small orange flames, smoke curling up |
+| `w_ice_ward.png` | Ice Ward (10) | a wall of three pale blue ice shards standing in a curve |
+| `w_frost_lance.png` | Frost Lance (13) | one long spear of ice flying point-first, frost trailing behind |
+| `w_chain.png` | Chain Lightning (16) | a jagged bolt that forks through three small rings in a line |
+| `w_fireball.png` | Fireball (20) | a large ball of fire with a bright core and a wide flaming tail |
+| `h_ember_ward.png` | Ember Ward (Hearthkeeper, 8) | a shield shape of glowing coals with a ring of small embers round it |
+| `h_banish.png` | Banish the Blight (10) | a bright white-gold coal bursting through a wisp of grey rot |
+| `h_battle_cry.png` | Battle Cry (13) | a hunting horn with three bold rings of sound coming from it |
+| `h_hearthlight.png` | Hearthlight (16) | a hearth fire in a small stone ring, soft light spreading wide to either side |
+| `h_rekindle.png` | Rekindle (20) | a large heart with a tall flame rising out of it, sparks lifting |
 
 **A Villager and their trade** (straw yellow)
 

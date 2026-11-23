@@ -81,6 +81,19 @@ Every ability is a class card (`lib/class_cards.js`) and takes its numbers from 
 | Archer | 3 / 2 | Shoot (2 to 5) · Sidestep (self, every 2nd) · Parting Shot (1 to 3, then steps back; every 3rd) · Piercing Arrow (down a row to 5, every 4th) · Mark (1 to 5, quick; every 3rd) |
 | Wizard | 3 / 1 | Spark (1 to 4) · Ward (anyone within 3, every 2nd) · Firebolt (1 to 4, every 2nd) · Ember Burst (1 to 4, and those beside; every 4th) · Chill (1 to 4, slow and weak; every 3rd) |
 | Hearthkeeper | 3 / 1 | Cinder (1 to 3) · Hearth Ward (anyone within 3, every 2nd) · Kindle (heal within 3, twice a battle) · Steady Now (every friend within 2, every 3rd) · Embolden (a friend within 3, quick; every 3rd) |
+
+**The higher rungs (built 2026-11-23):** five more for each class, at class levels 8, 10, 13, 16 and 20, from the cards that were never in a kit. A citizen **brings five** to a battle, so from level 8 there is a choice (§6: knowing and readying).
+
+| Class | 8 | 10 | 13 | 16 | 20 |
+|---|---|---|---|---|---|
+| Guard | Stand Fast (self, more block; every 2nd) | Shield Bash (1, the foe loses a turn; every 4th) | Guard's Oath (a friend within 3, a strong block; every 3rd) | Hold the Line (block for all within 2; once a battle) | Hammer Blow (1, heavy and leaves it weak; every 4th) |
+| Archer | Aimed Shot (2 to 6, harder; every 2nd) | Hamstring (1 to 4, weak and slow; every 3rd) | Arrow Rain (2 to 5, and those beside; every 4th) | Pin Down (2 to 5, slow 3 and weak 3; every 3rd) | Hail of Arrows (2 to 5, all within 2 of the target; once a battle) |
+| Wizard | Scorch (1 to 4, burns each turn; every 2nd) | Ice Ward (anyone within 3; every 2nd) | Frost Lance (1 to 5, slow and weak; every 3rd) | Chain Lightning (down a row to 5; every 4th) | Fireball (2 to 5, all within 2 of the target; every 5th) |
+| Hearthkeeper | Ember Ward (anyone within 3; every 2nd) | Banish the Blight (1 to 4; every 2nd) | Battle Cry (next attack of all within 2 lands harder; every 4th) | Hearthlight (heals all within 2; once a battle) | Rekindle (a great heal within 3; once a battle) |
+
+- **Stronger, not twice as strong.** The same citizens bringing only these five win the same fights in about a fifth fewer turns than with the first five (24 battles at red and at purple, `scripts/tactics_test.js` plays twelve of them on every run). The first five are still what the skulls were tuned with, and what a playtest level brings.
+- **Each is described for the board** (`SAY` in `lib/tactics_setup.js`): the cards' own lines spoke of "the creature in front" and "draw a card".
+- **Not carried over from the cards:** Banish the Blight's extra against the Withered and the "later blocks hold better" of Guard's Oath and Ember Ward (the board has no rule for either yet). The mind never uses Battle Cry; a player can.
 | Villager | 3 / 1 | Swing (1) · Duck (self, every 2nd) · their trade card |
 
 ### Who they fight
@@ -157,7 +170,11 @@ The owner's direction: "instead of unlocking cards we can just allow villagers t
 
 - **Built.** Each of the four classes knows two abilities at class level 1 and learns one more at levels 2, 4 and 6 (§4). The level is the citizen's own, in that class (`citizen_classes`); a villager's three are known from the start. On the board the unlearned ones sit greyed in the row with "learned at level N"; tapping anyone lists theirs too. When a battle's experience carries a citizen over one of those levels, the victory screen says **Learned: Cover** under their bar, and the next fight has it. Where: `KITS[…].at` and `learnedBetween` in `lib/tactics_setup.js`; `learned` on the rows of `lib/tactics_xp.js`.
 - **Why these levels.** A fresh Guard reaches level 2 in the first fight of a first dungeon and level 4 by the end of it, so the first run already teaches two things; level 6 takes three or four green runs or one orange one. The whole starting kit is known before the skulls that were tuned for it (orange and up).
-- **Next rungs, not built:** levels 8 to 20 teach from the rest of the catalogue (below), which is when **readying five** is needed, and with it the Abilities page on a citizen.
+- **The higher rungs (built 2026-11-23):** levels 8, 10, 13, 16 and 20 teach one more each (§4), ten in all.
+- **Knowing and readying (built 2026-11-23).** A citizen knows what their class level has taught and **brings five** to a battle. Until they choose, those are the first five they learned; a level that teaches a sixth says so on the victory screen ("Learned: Stand Fast, ready it on their Abilities page"). The choice is the citizen's own, made at home and kept until changed (`citizen_classes.ready`, a list of keys); it cannot be changed from inside a dungeon. A choice that no longer fits (a class changed, a key gone) is filled out from the earliest learned, so nobody ever goes in with fewer than five or with something they do not know. `lib/tactics_abilities.js`, `GET /api/tactics/abilities/:citizenId`, `POST …/ready { keys }`.
+- **The Abilities tab on a citizen (built 2026-11-23).** Beside Career on a citizen's page: the class and level with its bar, what the next level teaches, and the ten in the order learned, each with its picture, what it does in that citizen's hands, its reach and how often it can be used; a tick for each one brought, "5 of 5 chosen", Save. Someone with no class sees a villager's three and is told what a class would teach. Frontend `js/abilities.js`, `css/abilities.css`. **The tab shows only where battles on the board are open:** to admins, and to everyone once `dungeons.on` is switched on.
+- **In a battle** the row is still five wide: the readied ones, then (while fewer than five are known) the ones still to learn, greyed. Tapping a citizen also names the next one to come and how many they left at home.
+- **Not built:** study at the class buildings, research, equipment, family, mastery, a reaction and a passive (below).
 
 ### The shape of it
 
@@ -168,7 +185,7 @@ The owner's direction: "instead of unlocking cards we can just allow villagers t
 
 | Way | How it works | Stands on |
 |---|---|---|
-| **Class level** | Each class has a ladder. A new Guard knows Strike, Shield Up and Cover; more come at levels 3, 6, 10, 15 and 20. | Careers and their levels |
+| **Class level** | **Built.** Each class has a ladder of ten: two to begin with, then one at levels 2, 4, 6, 8, 10, 13, 16 and 20. | Careers and their levels |
 | **Study** | A citizen is set to study one ability at their class's building. It takes hours of real time and one of the building's seats. The building's level sets which abilities it can teach. | The Watchtower, Wizard's Tower and Hearth Shrine, and their level ladders (`DUNGEON_CLASS_DECKS.md` §4.3) |
 | **Research** | Town-wide improvements from the Library: "Fletching" (bows reach one further), "Field Medicine" (Kindle a third time), "Stone Wards" (Ward lasts two turns). | The research tree |
 | **Equipment** | A weapon shapes the basic attack and can carry an ability of its own: a longbow reaches further, a shield strengthens Shield Up, a staff adds to spells, a boss's trophy grants something nobody else has. The weapon's dice finally count (a gap noted in `DUNGEON_CONTENT.md` §2). | Crafting, the smithy, dungeon loot |
@@ -222,7 +239,7 @@ Each phase ends with something playable behind the switch.
 | 1 | Feel | Choosing a facing, zoom and drag, a phone on its side, hooks for art, sound and music. **Done.** | |
 | 2 | The server decides | The same rules run on the server from a list of the player's choices; a battle is stored, survives a reload and cannot be cheated. **Done** (§10). | |
 | 3 | **Dungeons on the board** | A dungeon's fights are tactics battles. Health and who is down carry between them; rests, loot, fleeing and the endings as now. The door pick and the card after a fight are gone. A dungeon made for the board has fewer fights; a foe leaves what it carried; the fallen lie on the board and a heal stands them up; the numbers are set for whole runs (§5). **Done (2026-11-22).** | |
-| 4 | **Abilities** | Knowing and readying; class ladders; study at the class buildings; research; equipment; mastery. An Abilities page on each citizen. | Large |
+| 4 | **Abilities** | Knowing and readying; class ladders; study at the class buildings; research; equipment; mastery. An Abilities page on each citizen. **Built so far:** experience from battle, the ladder to level 20 (ten abilities a class), knowing and readying, the Abilities tab (2026-11-23). **Left:** study, research, equipment, mastery. | Large; half done |
 | 5 | **Everywhere, and the cards go** | Quests, camps and raids on the board, with a quick result for small fights. Raids on a map of the town. The card systems are removed. | Large |
 | 6 | **Content** | Ground that matters, the seasons, other ways to win, placing the party; bosses that resist being stunned or pushed; a second form or a trick for each boss. **The cast is in (2026-11-21):** thirty foes in five bands with board behaviour, and the seven bosses (§4). | Large; alongside the art |
 | 7 | **The way in, and polish** | Dungeons on the map for players, a first battle that teaches, art and sound in, tuning from real play, slow phones. | Medium |
@@ -252,8 +269,9 @@ Each phase ends with something playable behind the switch.
 | Battles the server keeps: create, each choice, the result, leaving | server `lib/tactics_battles.js`, `migrations/0NN_tactics.sql` |
 | Routes (admins only) | server `routes/tactics.js` |
 | What a battle teaches: experience by rank and skull, paid into class levels | server `lib/tactics_xp.js` |
+| What a citizen knows and brings: the Abilities tab | server `lib/tactics_abilities.js`; frontend `js/abilities.js`, `css/abilities.css` |
 | Numbers | server `scripts/tactics_sim.js` (one battle), `scripts/tactics_run_sim.js` (a whole dungeon) |
-| Tests | frontend `verify/tactics_proofs.js` (170 checks), `verify/dungeons_proofs.js` (74); server `scripts/tactics_test.js` (66), `scripts/dungeon_board_test.js` (41), `scripts/dungeons_test.js` (177: the run itself, through board battles), `scripts/jukebox_test.js` (13) |
+| Tests | frontend `verify/tactics_proofs.js` (192 checks), `verify/dungeons_proofs.js` (74); server `scripts/tactics_test.js` (the kits, the ladder, readying, the routes), `scripts/tactics_abilities_test.js` (17), `scripts/dungeon_board_test.js` (41), `scripts/dungeons_test.js` (177: the run itself, through board battles), `scripts/jukebox_test.js` (13) |
 
 - **The engine is pure**: no clock, no `Math.random`, no DOM. A battle is a plain object changed only by `move`, `use` and `endTurn`, and the same seed and choices always give the same battle.
 - **How the server decides.** A battle is stored as its two sides, frozen when it begins, and the player's choices in order (`tactics_battles`). Creatures have no entries: their mind is part of the rules, so both sides reach the same turns from the same choices. The browser plays each choice at once, so the screen never waits, and sends it; the server plays it on top of the ones before and refuses what the rules do not allow. Every answer carries a fingerprint of the board; if the browser's differs, or a choice is refused, the screen is put back to the battle as the server has it. A choice sent twice is taken once.
