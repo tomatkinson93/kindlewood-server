@@ -51,7 +51,17 @@ The first makes, for each foe, a sheet of the four views the board uses (south-e
 
 **How tall it stands** is set in `art/tactics/foes/sizes.json`, in mouse-heights (a citizen is 1): the Rat Cutpurse 0.85, the Boar Bruiser 1.3, a boss about 1.9. The art can be drawn at any size; the game scales it to that height. Add a line there for each new foe (the "Small / as tall as / twice the mouse's height" in the tables below).
 
-**Walking.** PixelLab's walking comes facing north, east, south and west, and the board needs the four diagonals, so today a foe hops along in its standing pose. **Export walking for south-east, south-west, north-east and north-west** (PixelLab offers all eight) and it can be wired; the cardinal walks that came with the five are kept in `art/tactics/foes/<key>/walking/` and not used.
+**Moving and standing (wired 2026-11-23).** A foe on the board moves and looks along one of the four diagonals. What the first seven came with:
+
+- **A walk, facing north, east, south and west** (eight frames each). The board cannot use north and south, so for now **the walk east serves both ways right and the walk west both ways left**. It reads as walking, where before a foe hopped in its standing pose, but it turns side-on to walk and back to its three-quarter stance when it stops.
+- **No idle animation.** The export's folder is called `Idle`, but it holds the eight standing pictures only. So the game makes a standing foe **breathe by itself** (it grows and settles by a hair, from the feet up).
+
+**What to export to make it right**, for each foe, in PixelLab's animation list, choosing the four diagonal directions (**south-east, south-west, north-east, north-west**):
+
+1. **Walking** (the same one as now, in those four directions).
+2. **Breathing idle** (or whichever idle you like best; four to eight frames is plenty).
+
+Unzip so that the frames sit at `art/tactics/foes/<key>/walking/<direction>/frame_000.png …` and `art/tactics/foes/<key>/idle/<direction>/…`, run the two commands above, and the game uses them in place of the side walk and the made-up breath: nothing else to change. An attack and a hurt animation would be the next step after that, and are not wired yet.
 
 **Size and style:** a 128 × 128 canvas, transparent background, the foe standing in the middle. Pixel art in the same style as the mouse villager: a 1-pixel dark brown outline, flat shading in three or four tones, a warm storybook palette. The size it is drawn at does not matter: its height on the board is set in `sizes.json` (above).
 
