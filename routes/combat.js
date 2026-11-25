@@ -287,6 +287,8 @@ router.get('/pending', requireAuth, async (req, res) => {
     const board = await require('../lib/tactics_quests').mode(req.user);
     const begun = battles.length ? (await query(`SELECT id, quest_run_id FROM tactics_battles WHERE settlement_id=$1 AND status='active' AND quest_run_id = ANY($2::int[])`, [sett.id, battles.map(b => b.id)])).rows : [];
     for (const b of battles) { const on = begun.find(x => Number(x.quest_run_id) === Number(b.id)); b.board_battle = on ? Number(on.id) : null; }
+    // Who a creature is on the board (lib/tactics_foes.js), for the list to name once battles are fought there.
+    if (board !== 'off') { const F = require('../lib/tactics_foes'); for (const b of battles) { const enc = Array.isArray(b.combat_encounter) ? b.combat_encounter : []; b.board_foes = enc.map(k => (F.foe(k) || {}).name || null).filter(Boolean); } }
     res.json({ ok: true, battles, count: battles.length, board });
   } catch (e) {
     console.error('combat pending error', e);
@@ -888,6 +890,8 @@ router.get('/report/:questRunId', requireAuth, async (req, res) => {
       encounter:   encounter || [],
       log:         combatLog || [],
       battle_state: battleState,
+      // Fought on the board (lib/tactics_quests.js): who they fought there, by name.
+      foes: (battleState && battleState.board && Array.isArray(battleState.foes)) ? battleState.foes : null,
       party:       partyRes.rows,
       injury_events: eventsRes.rows,
       reward_wealth: run.combat_outcome === 'victory' ? (run.reward_gold || 0) : 0,

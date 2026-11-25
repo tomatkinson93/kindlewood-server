@@ -91,7 +91,7 @@ async function main() {
     const again = await api(a, 'POST', '/api/tactics/quest/' + run1);
     check(again.status === 200 && again.body.battle.id === bt.id, 'asked again, it is the same battle (to pick it up after closing the page)');
     r = await api(a, 'GET', '/api/combat/pending');
-    check(r.body.battles[0].board_battle === bt.id, 'the Battles list knows the fight has been begun on the board');
+    check(r.body.battles[0].board_battle === bt.id && r.body.battles[0].board_foes.join() === 'Wolf Raider', 'the Battles list knows the fight has been begun on the board, and who the creature is there');
     check((await api(a, 'POST', '/api/combat/engage/' + run1)).status === 400, 'begun on the board, it cannot also be fought with cards');
     check((await api(a, 'GET', '/api/tactics/battles/current')).body.battle === null, 'a quest\'s battle is not the town\'s "current" battle: it is reached from its quest');
     // Stepping away leaves it open.
@@ -140,6 +140,43 @@ async function main() {
     check(rolls.length === 2 && rolls.every(x => kinds.includes(x.severity) && x.name && x.no_fatal === false) && rolls.filter(x => x.severity !== 'none').length === lq.injuries.length
       && rolls.filter(x => x.narrative).every(x => /Boar Bruiser/.test(x.narrative) && /^[A-Z]/.test(x.narrative)),
       'everyone who lost rolls for injury, shown one by one, and the line names the foe of the board', rolls.map(x => x.severity).join(', '));
+
+    console.log('The record, and a fight left to be decided');
+    r = await api(a, 'GET', '/api/combat/report/' + run1);
+    check(r.status === 200 && r.body.outcome === 'victory' && r.body.foes && r.body.foes.join() === 'Wolf Raider' && r.body.battle_state.board === true
+      && r.body.battle_state.units.filter(u => u.side === 'player').length === 1 && r.body.battle_state.units[0].citizen_id === guard && /Fought on the board: won in \d+ round/.test(r.body.log[0]),
+      'the battle report of a fight on the board says who was fought there, who stood at the end, and how it went', r.body.log && r.body.log[0]);
+    r = await api(weak, 'GET', '/api/combat/report/' + run3);
+    check(r.body.outcome === 'defeat' && r.body.foes.join() === 'Boar Bruiser,Wolf Raider,Wolf Raider' && r.body.injury_events.length === lq.injuries.length, 'and a lost one, with the wounds it left');
+    // Left to be decided, with the switch on: the board's mind decides it as the fight is triggered.
+    const auto = async (p, citizen, encounter, seed) => (await q(
+      `INSERT INTO settlement_quests (settlement_id, user_id, quest_id, citizen_id, party_ids, completes_at, status, quest_type, combat_status, combat_trigger_at, combat_seed, combat_encounter, auto_resolve_combat)
+       VALUES ($1,$2,'q_gather_herbs',$3,'[]',NOW() + interval '1 hour','active','solo','rolled',NOW() - interval '1 minute',$4,$5,TRUE) RETURNING id`, [p.sid, p.id, citizen, seed, JSON.stringify(encounter)])).rows[0].id;
+    const quests = require('../routes/quests');
+    const run8 = await auto(a, guard, ['marsh_rat'], 77);
+    await quests.processCombatTriggers(a.sid);
+    let dec = await runOf(run8);
+    check(dec.combat_status === 'resolved' && dec.combat_outcome === 'victory' && dec.status === 'active' && dec.combat_state && dec.combat_state.board === true && dec.combat_state.foes.join() === 'Rat Cutpurse'
+      && /^Decided on the board: won in \d+ round/.test(dec.combat_log[0]) && (await q(`SELECT COUNT(*)::int AS n FROM tactics_battles WHERE quest_run_id=$1`, [run8])).rows[0].n === 0,
+      'with the switch on, a fight left to be decided is decided by the board\'s mind, out of sight: no battle is kept for it, and the quest goes on', dec.combat_log && dec.combat_log[0]);
+    check((await api(a, 'GET', '/api/combat/report/' + run8)).body.foes.join() === 'Rat Cutpurse' && (await api(a, 'GET', '/api/combat/pending')).body.battles.every(b => b.id !== run8), 'it has its report, and never waits in the Battles list');
+    const run9 = await auto(weak, weak.cits[2], ['thornback_boar', 'night_wolf'], 78);
+    await quests.processCombatTriggers(weak.sid);
+    dec = await runOf(run9);
+    check(dec.combat_outcome === 'defeat' && dec.status === 'failed' && dec.combat_state.board === true && dec.combat_state.units.find(u => u.side === 'player').flags.downed === true, 'a weak citizen left to it loses, and the quest fails');
+    // The same battle decided twice is decided the same way.
+    const TQ = require('../lib/tactics_quests');
+    const setupA = await TQ.build(await runOf(run8), { q }), setupB = await TQ.build(await runOf(run8), { q });
+    const endA = E.autoplay({ seed: setupA.seed, land: setupA.land, party: setupA.party, enemies: setupA.enemies }, 600), endB = E.autoplay({ seed: setupB.seed, land: setupB.land, party: setupB.party, enemies: setupB.enemies }, 600);
+    check(endA.status === 'victory' && E.checksum(endA) === E.checksum(endB), 'the decision comes from the quest\'s own seed: the same fight is always decided the same way');
+    // With the switch off the card engine decides, as before.
+    await TU.setSwitch('tactics.quests', false);
+    const run10 = await auto(a, guard, ['marsh_rat'], 79);
+    await quests.processCombatTriggers(a.sid);
+    dec = await runOf(run10);
+    check(dec.combat_status === 'resolved' && !(dec.combat_state && dec.combat_state.board) && !/on the board/.test(JSON.stringify(dec.combat_log)), 'with the switch off, a fight left to be decided is the card engine\'s, as before');
+    await TU.setSwitch('tactics.quests', true);
+    r = await api(a, 'GET', '/api/combat/pending');
 
     console.log('Giving up, and the admin\'s choice');
     const run4 = await waiting(a, { citizen: archer });

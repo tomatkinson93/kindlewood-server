@@ -992,6 +992,14 @@ async function processCombatTriggers(settlementId) {
       const combatMods = combatResolver.withParty(combatResolver.combatModsOf(await questMods(ownerUserId)),
         await require('../lib/careers').combatDeltas(settlementId, fightIds).catch(() => ({})));
 
+      // Once quest battles are on the board (the switch `tactics.quests`), a fight left to be decided is decided
+      // there too, by the board's own mind (lib/tactics_quests.js decide), and the card engine is not asked.
+      if (run.auto_resolve_combat && await require('../lib/tuning').switchOn('tactics.quests')) {
+        const done = await require('../lib/tactics_quests').decide(client, settlementId, run, encounter, combatMods);
+        pendingEvents.push(...done.events);
+        pendingGameEvents.push(...done.game);
+        continue;
+      }
       if (run.auto_resolve_combat) {
         const partyIds = (run.quest_type === 'party' && Array.isArray(run.party_ids))
           ? run.party_ids
