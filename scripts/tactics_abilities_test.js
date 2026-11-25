@@ -41,7 +41,7 @@ async function main() {
     await TU.setSwitch('dungeons.on', false);
     const a = await player('Know');
     const [guard, wiz, farmer, child, c4, c5] = a.cits;
-    check((await api(a, 'GET', `/api/tactics/abilities/${guard}`)).status === 403, 'while battles on the board are not open to players, the Abilities page is not either');
+    check((await api(a, 'GET', `/api/tactics/abilities/${guard}`)).status === 200, 'the Abilities page is every player\'s, whether or not dungeons are open: every battle is fought on the board');
     await TU.setSwitch('dungeons.on', true);
     let r = await api(a, 'GET', `/api/tactics/abilities/${guard}`);
     let pg = r.body;

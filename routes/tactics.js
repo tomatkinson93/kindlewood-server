@@ -51,9 +51,18 @@ const failWith = (res, e) => { if (!e.status) console.error('[tactics]', e); res
 router.post('/battles', requireAuth, requireAdmin, async (req, res) => {
   try { res.json({ ok: true, battle: await B.create(req.user.userId, req.body || {}) }); } catch (e) { failWith(res, e); }
 });
-// A battle a town has (a quest's, its dungeon's) is its own to play. (Starting a practice battle is for admins,
-// above; a dungeon is gated where a run is started and walked: routes/dungeons.js.)
-const mayPlay = (req, res, next) => next();
+// A battle a town has is its own to play: a quest's is every player's. A dungeon's battle is for whoever may be in
+// a dungeon (admins, and everyone once `dungeons.on` is switched on), so switching dungeons off closes its fights too.
+const mayPlay = async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (Number.isFinite(id) && id > 0) {
+      const b = (await require('../db').query('SELECT source FROM tactics_battles WHERE id=$1', [id])).rows[0];
+      if (b && b.source === 'dungeon' && !(await require('../lib/dungeons').allowed(req.user))) return res.status(403).json({ error: 'Dungeons are not open yet.' });
+    }
+    next();
+  } catch (e) { failWith(res, e); }
+};
 router.get('/battles/current', requireAuth, mayPlay, async (req, res) => {
   try { res.json({ ok: true, battle: await B.current(req.user.userId) }); } catch (e) { failWith(res, e); }
 });
