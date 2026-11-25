@@ -25,7 +25,7 @@ const T = require('../lib/tactics_setup');
 const router = express.Router();
 const fail = (res, e) => { if (!e.status) console.error('[tactics]', e); res.status(e.status || 500).json({ error: e.status ? e.message : 'The battle could not be set up.' }); };
 
-router.get('/admin/options', requireAuth, requireAdmin, (req, res) => {
+router.get('/admin/options', requireAuth, requireAdmin, async (req, res) => {
   try {
     const CC = require('../lib/class_cards'), DEFS = require('../lib/dungeon_defs');
     res.json({
@@ -37,6 +37,8 @@ router.get('/admin/options', requireAuth, requireAdmin, (req, res) => {
       fights: [{ key: 'first', label: 'An ordinary fight' }, { key: 'hard', label: 'The hardest fight' }, { key: 'boss', label: 'The boss' }],
       // Whose fight: as the land and the seed decide, or one band's showcase (lib/tactics_foes.js SHOWCASE).
       bands: [{ key: '', label: 'Whoever lives in that land' }].concat(Object.keys(T.FOES.BANDS).map(k => ({ key: k, label: T.FOES.BANDS[k].name }))),
+      // Are quest battles on the board for every player (the switch `tactics.quests`)?
+      quests_on: await require('../lib/tuning').switchOn('tactics.quests'),
     });
   } catch (e) { fail(res, e); }
 });
