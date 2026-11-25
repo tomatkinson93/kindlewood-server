@@ -3,7 +3,7 @@
 > **Combat is changing (2026-11-20).** Dungeon fights are becoming tactics battles on a board (`docs/TACTICS.md`, Phase 3). From 2026-11-21 a dungeon started from Dev Tools is fought that way by default (`dungeon_runs.combat = 'board'`); a card run is still possible. The run described here stays: the path, rooms, wounds that carry, rests, endings, loot and the generator. The parts about cards and decks are being replaced. **On the board the creatures are replaced too (2026-11-21):** nobody there is a beast on four legs; a dungeon belongs to one of five bands of foes (`lib/tactics_foes.js`, `docs/TACTICS.md` §4), and each creature named in this document has a foe that stands in its place. **Phase 3 is finished (2026-11-22):** a dungeon made for the board has fewer fights (a route has 2 to 3 at green, up to 5 to 7 at purple), a rest there gives back half, a foe leaves what it carried, and the fallen lie on the board until a heal or a rest stands them up; the numbers are in `docs/TACTICS.md` §5. **The card battles left the dungeons on 2026-11-23** (`docs/TACTICS.md` §8, step 2): every run is fought on the board; decks, the door draft, the card after a fight, honing and the Class cards window are deleted, and wherever this document describes them it describes history. The skull numbers under Dev Tools → Life → Dungeons are now the board's (each skull's foe health and foe power), and a rest gives back half.
 
 
-Status: **design agreed 2026-11-15 (three rounds of answers), with a fourth round on 2026-11-18. Build steps 1 to 3 are built (§12); the rest is not. On 2026-11-19 the door draft (§3.4) was replaced by a deck for each citizen: `docs/DUNGEON_CLASS_DECKS.md`.** Classes, cards, creatures, events, treasure and the numbers behind the difficulty table are in `docs/DUNGEON_CONTENT.md`. The roadmap placed dungeons after the remaining 1.0 phases; the owner brought them forward on 2026-11-18. They are started from Dev Tools only and stay behind the switch `dungeons.on` until they are ready for players. The same file is in both repos.
+Status: **design agreed 2026-11-15 (three rounds of answers), with a fourth round on 2026-11-18. Build steps 1 to 4 are built (§12, §13: step 4, dungeons on the map, on 2026-11-25); the rest is not. On 2026-11-19 the door draft (§3.4) was replaced by a deck for each citizen: `docs/DUNGEON_CLASS_DECKS.md`.** Classes, cards, creatures, events, treasure and the numbers behind the difficulty table are in `docs/DUNGEON_CONTENT.md`. The roadmap placed dungeons after the remaining 1.0 phases; the owner brought them forward on 2026-11-18. They are started from Dev Tools only and stay behind the switch `dungeons.on` until they are ready for players. The same file is in both repos.
 
 ## 1. What a dungeon is
 
@@ -356,7 +356,7 @@ This is the larger part of the work.
 1. Starting health carried into a battle; the run table; a fixed test dungeon of three fights played end to end.
 2. The path, room types, turning back, run loot, endings and the single injury roll.
 3. The generator and difficulty tiers.
-4. Map dungeons: spawner, 72-hour cycle, markers, once per town.
+4. Map dungeons: spawner, 72-hour cycle, markers, once per town. **Built 2026-11-25 (§13).**
 5. The draft, and cards found inside.
 6. Events, rest rooms, blessings and curses; reviving; chronicle lines.
 7. Quest dungeons: story format, rumours.
@@ -451,3 +451,37 @@ The spread is the player's choice of route: a floor's routes hold one fewer or o
 9. **Honing in place of a rest is a trap.** The first build of honing offered "rest, or hone a card". Simulated, honing cost 15 to 20 points of clear rate at every skull, because a rest heals the whole party. A rest now hones as well, and the choice is after a fight: a new card, or a hone (`DUNGEON_CLASS_DECKS.md` §4.2 and §6.4).
 10. **A citizen with no cards left was handed someone else's hand.** With every heal spent, a deck can be empty; the battle then left that citizen out of its decks. Every citizen now has a deck of their own, even an empty one.
 11. **Weak and vulnerable still do not wear off.** The simulator assumes the agreed rule (they drop by 1 each turn); the game does not do it yet, so Mark, Shove and Chill last longer in play than in the numbers. It is the next rule change to make, in both engine copies.
+
+## 13. Built 2026-11-25: step 4, dungeons on the map
+
+Dungeons are in the game itself now, not only in Dev Tools. `dungeons.on` is on by default (there are no players to gate: `TACTICS.md`, status).
+
+**What a player does.** A skull appears on the map near the town, ringed in its colour, and the town's news says "Word has reached the town of a dungeon nearby". Clicking the tile shows the dungeon's card (name, skull, floors, which band lives there, who it is written for, how long it has left, which town cleared it first) and four pickers; **Send them in** opens the path screen at the door. The Land → **Dungeons** lists every dungeon the town knows, nearest first, each with a button that centres the map on it. While the party is inside the ring is gold; once the town has had its go the skull is faint and the card says how it went.
+
+**The rules as built** (`lib/dungeon_map.js`; numbers at the top of the file).
+
+| Rule | Value | Note |
+|---|---|---|
+| How long a dungeon stays | 72 hours, give or take 4 | so the map never changes all at once (§6.2) |
+| Dungeons each town has within reach | 2, one of them green or yellow | the top-up runs every 30 minutes (§6.1) |
+| Where a new one is put | a free tile 2 to 6 tiles from the town it is for | no town, village, outpost, camp or other dungeon; its land is the tile's |
+| How far a party walks | 8 tiles | the same as a camp assault |
+| Which skull | green 30, yellow 26, orange 20, red 14, purple 10 (weights) | after the town's easy one is in place |
+| A party inside when the dungeon goes | 2 hours to finish, then it comes home with what it found | `dungeons.sweep` |
+| Attempts | one per town per dungeon, any ending | as §6.3 |
+
+**Four things differ from §6, on purpose.**
+
+1. **A town is told; it does not have to scout.** §6 left "how is a dungeon found" open, and the first build used the fog of war, as camps do. Tried, a town could have its two dungeons sitting unseen four tiles away. So word of a dungeon reaches every town near enough to walk there: its tile is lit on that town's map and its news says so, once (`dungeon_sightings`). A town founded later hears of the ones already there. Scouting still finds dungeons further off; they show as too far to walk.
+2. **The walk there is not played.** The party stands at the door the moment it is sent, and is busy until the run ends. A march across the map (time, a line on the map, being met on the road) is worth doing with the journeys system, and is its own piece of work.
+3. **No two dungeons a town can see share a name**, and there are twelve names a land now, not six.
+4. **Time-of-day gates (§6.4) are not built.** Nothing has asked for them yet.
+
+**Where it lives.** Server: `lib/dungeon_map.js` (`spawn`, `tell`, `listFor`, `card`, `enter`, `tileMap`, `tick` from the quest worker); `routes/dungeons.js` (`GET /api/dungeons`, `GET /api/dungeons/:id`, `POST /api/dungeons/:id/enter`, `POST /api/dungeons/admin/map`); `routes/map.js` puts `dungeon` on the tile; `lib/dungeons.js` marks the first clear and gives a party the two hours. Browser: `js/kwmap-dungeons.js` (the skull), `js/dungeons.js` (`tileHtml`, `wireTile`, `listOpen`, `onEvent`), a line each in `js/main.js`, `js/kwmap-core.js`, `js/places.js`, `js/realtime.js`. Dev Tools → 💀 Dungeons has **Top the map up now** and **Clear them all and make new ones**. Tests: `scripts/dungeon_map_test.js` (38), `verify/dungeons_proofs.js` §12.
+
+**Found on the way.**
+
+- A boss was worded "an Old Greyfeather grown great and old" on the path screen. A real boss goes by its own name now; only a lesser creature standing in for one is "grown great and old".
+- A dungeon's band is the seed's choice among the bands with two ordinary members in that land, and where the band has no boss there the land's boss leads it. So a forest dungeon of the Redtooth Brigands ends with Old Greyfeather. It reads oddly on the card once noticed. Either give each band a boss in every land it lives in (art), or word it ("…in the pay of Old Greyfeather"). Not changed.
+
+**Next for dungeons:** the walk there; a reason to race (a reward for the first clear beyond the line in the chronicle); quest dungeons (step 7); events and blessings (step 6, parts of which the card removal took out).

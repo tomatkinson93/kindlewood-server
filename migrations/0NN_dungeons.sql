@@ -57,6 +57,17 @@ CREATE INDEX IF NOT EXISTS idx_dungeon_runs_idle ON dungeon_runs (last_action_at
 -- dungeon that towns are already walking through.
 ALTER TABLE dungeons ADD COLUMN IF NOT EXISTS layout JSONB;
 
+-- Dungeons on the world map (lib/dungeon_map.js). Word of a dungeon reaches
+-- every town within reach of it: one row per town that has been told, so
+-- each is told once (its tile is lit on that town's map at the same time).
+CREATE TABLE IF NOT EXISTS dungeon_sightings (
+  dungeon_id    INTEGER NOT NULL REFERENCES dungeons(id) ON DELETE CASCADE,
+  settlement_id INTEGER NOT NULL REFERENCES settlements(id) ON DELETE CASCADE,
+  told_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (dungeon_id, settlement_id)
+);
+CREATE INDEX IF NOT EXISTS idx_dungeons_map_live ON dungeons (expires_at) WHERE source = 'map';
+
 -- Class decks (docs/DUNGEON_CLASS_DECKS.md). Each citizen's deck for the run
 -- lives in dungeon_runs.deck: { cards: { citizenId: { card: copies } },
 -- spent: { citizenId: [heal cards gone until the party rests] } }. A choice

@@ -201,26 +201,6 @@ async function main() {
     f = await fight(d, r.body.battle.id);
     check(f.last.body.quest && (await api(d, 'GET', '/api/dungeons/run')).body.run.pending.battle_id === db, 'and finishing the one leaves the other as it was');
     await api(d, 'POST', '/api/dungeons/run/flee');
-    console.log('The cards a town had are bought back, once');
-    {
-      const fs = require('fs'), path = require('path');
-      const sql = fs.readFileSync(path.join(__dirname, '..', 'migrations', fs.readdirSync(path.join(__dirname, '..', 'migrations')).find(f => f.endsWith('_cards_retired.sql'))), 'utf8');
-      const town = await player('Cards');
-      await q(`INSERT INTO settlement_unlocked_cards (settlement_id, card_key, source) VALUES ($1,'arrow_rain','battle'), ($1,'riposte','quest'), ($1,'last_stand','village:3'), ($1,'bulwark','test'), ($1,'venom_edge',NULL)`, [town.sid]);
-      const w0 = await wealth(town);
-      await q(sql);
-      const news = (await q(`SELECT message FROM settlement_events WHERE settlement_id=$1 AND type='cards_retired'`, [town.sid])).rows;
-      check((await wealth(town)) === w0 + 320 + 200 + 520 && news.length === 1 && /For the 3 cards your town had collected, it has been paid 1040 wealth\./.test(news[0].message),
-        'a card won in battle, found on a quest or bought from a village is paid for at a village\'s price for its rarity; one from a test or Dev Tools is not', news[0] && news[0].message);
-      await q(sql); await q(sql);
-      check((await wealth(town)) === w0 + 1040 && (await q(`SELECT COUNT(*)::int AS n FROM settlement_events WHERE settlement_id=$1 AND type='cards_retired'`, [town.sid])).rows[0].n === 1
-        && (await q(`SELECT COUNT(*)::int AS n FROM settlement_unlocked_cards WHERE settlement_id=$1 AND bought_back_at IS NOT NULL`, [town.sid])).rows[0].n === 5,
-        'once: however often the server starts, nobody is paid twice, and the rows are kept');
-      const none = await player('NoCards');
-      const n0 = await wealth(none);
-      await q(sql);
-      check((await wealth(none)) === n0 && (await q(`SELECT COUNT(*)::int AS n FROM settlement_events WHERE settlement_id=$1 AND type='cards_retired'`, [none.sid])).rows[0].n === 0, 'a town with no cards is paid nothing and told nothing');
-    }
   } finally { await TU.setSwitch('dungeons.on', wasD); await pool.end(); }
 }
 const LANDS = () => ['plains', 'forest', 'hills', 'mountain', 'river', 'marsh', 'ruins'];

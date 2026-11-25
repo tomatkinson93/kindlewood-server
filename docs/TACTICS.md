@@ -1,6 +1,8 @@
 # Tactics battles
 
-Status: **the game's combat (chosen by the owner 2026-11-20; the only combat from 2026-11-26).** Every battle is fought or decided on the board: a quest's, a camp's, a sally's, a clan quest's, a dungeon's. The card battler is deleted (§8). Dungeons are still started from Dev Tools only, behind `dungeons.on`. What is left is depth (the rest of Phase 4), content (6) and the way in (7): §9.
+Status: **the game's combat (chosen by the owner 2026-11-20; the only combat from 2026-11-26).** Every battle is fought or decided on the board: a quest's, a camp's, a sally's, a clan quest's, a dungeon's. The card battler is deleted (§8). Dungeons are on the world map (2026-11-25, `DUNGEONS.md` §13): a party of four is sent from a tile's panel. What is left is depth (the rest of Phase 4), content (6) and the rest of the way in (7): §9.
+
+**There are no players yet** (the owner, 2026-11-25): it is a test server with one tester. Nothing is gated for players' sake, nothing is bought back or migrated gently, and a switch is only worth having where the owner wants to turn something off while testing.
 
 ## 1. The decision
 
@@ -244,16 +246,16 @@ The owner's direction: "instead of unlocking cards we can just allow villagers t
 - **Frontend:** the card battle screen (`js/combat-ui.js`), both card engines, the card hand, the deck builder, the card collection, the card editor, their stylesheets and proofs; the Decks button and menu entry.
 - **Two small rewards went with them:** a finished quest's small chance of a new card, and an Allied village teaching two cards a week for wealth. **Neither has a replacement yet**: an Allied village has one perk fewer. (A natural one, when study is built: an Allied village teaches an ability no class ladder has.)
 
-### What was kept, and what players got for their cards
+### What was kept
 
 - **Kept:** the classes, careers and class buildings; the ability formulas, now a plain catalogue (`lib/class_abilities.js`, which was `class_cards.js`); the citizen-as-fighter (`lib/citizen_unit.js`, the same health and stats as before); the creature list and its editor (a quest still rolls its creatures from it, and each has a foe that stands in for it on the board); injuries; loot; the Battles list; the battle report.
 - **A weapon's dice count at last.** The card battles rolled a weapon's dice only for a plain attack and never for a card. On the board a weapon with dice adds their average, and its bonus, to every blow (`weaponEdge` in `lib/tactics_setup.js`). Only two weapons have dice today (the Obsidian Blade and the Mithril Blade); every other weapon counts through the combat skill it gives, as before.
-- **Cards a town had collected are bought back, once.** Each card it had won in battle, found on a quest or bought from a village is paid for at what a village charged for a card of that rarity (120 wealth for a common one up to 800 for a legendary), and the town is told in its news. Cards from Dev Tools or a test are not paid for. `migrations/0NN_cards_retired.sql`; the card tables themselves are left in the database, unread.
+- **Collected cards are simply gone.** A one-time buy-back was built on 2026-11-25 and taken out the same day at the owner's word: there are no players to pay. The card tables are left in the database, unread.
 - **A battle left half-played with cards** when the server was updated starts again on the board: nobody is stranded.
 
 ## 9. The roadmap
 
-Each phase ends with something playable behind the switch.
+Each phase ends with something playable.
 
 | # | Phase | What it delivers | Size |
 |---|---|---|---|
@@ -264,7 +266,7 @@ Each phase ends with something playable behind the switch.
 | 4 | **Abilities** | Knowing and readying; class ladders; study at the class buildings; research; equipment; mastery. An Abilities page on each citizen. **Built so far:** experience from battle, the ladder to level 20 (ten abilities a class), knowing and readying, the Abilities tab (2026-11-23). **Left:** study, research, equipment, mastery. | Large; half done |
 | 5 | **Everywhere, and the cards go** | Quests, camps, raids and clan quests on the board, with a quick result for a fight left to be decided. The card systems are removed. **Done 2026-11-26** (§8). | |
 | 6 | **Content** | **Raids on a map of the town** (moved here from Phase 5: it is new content, and nothing about retiring the cards waited on it; today a raid is met by a sally, which is a battle on the board, or weathered by the town's defences). Ground that matters, the seasons, other ways to win, placing the party; bosses that resist being stunned or pushed; a second form or a trick for each boss. **The cast is in (2026-11-21):** thirty foes in five bands with board behaviour, and the seven bosses (§4). | Large; alongside the art |
-| 7 | **The way in, and polish** | Dungeons on the map for players, a first battle that teaches, art and sound in, tuning from real play, slow phones. | Medium |
+| 7 | **The way in, and polish** | Dungeons on the map, a first battle that teaches, art and sound in, tuning from real play, slow phones. **Built so far:** dungeons on the map (2026-11-25, `DUNGEONS.md` §13). | Medium; begun |
 
 **A change of order (2026-11-25).** Phase 5 was begun, and finished, before Phase 4 was. What is left of Phase 4 (study, research, equipment, mastery) is depth; nothing a player did reached the board until Phase 5, and what players find when they fight real quests there should shape that depth. Abilities enough to replace cards existed: ten a class, five brought.
 
