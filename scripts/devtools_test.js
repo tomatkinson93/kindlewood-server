@@ -24,7 +24,7 @@ const check = (c, m) => { if (c) { passed++; console.log('  ok  ', m); } else { 
   check(player.status === 403 && !/cheat-modal/.test(player.body), 'a player: 403, and none of the markup');
   if (ADMIN) {
     const a = await get(jwt.sign({ userId: ADMIN, username: 'admin', species: 'Mice' }, SECRET));
-    check(a.status === 200 && /text\/html/.test(a.type) && /<div class="cheat-backdrop" id="cheat-modal">/.test(a.body) && (a.body.match(/class="cheat-tab( active)?"/g) || []).length === 15, 'an admin: the markup, 15 tabs');
+    check(a.status === 200 && /text\/html/.test(a.type) && /<div class="cheat-backdrop" id="cheat-modal">/.test(a.body) && (a.body.match(/class="cheat-tab( active)?"/g) || []).length === 13 && !/ct-cards|ct-combat|KWCards/.test(a.body), 'an admin: the markup, 13 tabs (the card editor and the old combat simulator went with the cards)');
     check(/no-store/.test(a.cache), 'never cached');
   }
   await pool.end();
