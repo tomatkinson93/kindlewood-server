@@ -35,3 +35,7 @@ console.log(' 2 villagers vs wolf+wolf    ', run('villager', ['villager', 'villa
 console.log(' 4 villagers vs boar+2 wolves', run('villager', ['villager', 'villager', 'villager', 'villager'], ['boar_bruiser', 'wolf_raider', 'wolf_raider'], N));
 console.log(' guard+archer(novice) vs 2 wolves', run('novice', ['guard', 'archer'], ['wolf_raider', 'wolf_raider'], N));
 console.log(' 4 novices vs boar+2 wolves  ', run('novice', ['guard', 'archer', 'wizard', 'hearthkeeper'], ['boar_bruiser', 'wolf_raider', 'wolf_raider'], N));
+// A camp assault or a sally (lib/raid_camps.js): up to three citizens against one to four of the Withered and their like.
+const CAMP = ['hollow_thrall', 'rot_shaman', 'hollow_thrall', 'newt_darter'];
+console.log(' camp, 2 foes: 3 villagers', run('villager', ['villager', 'villager', 'villager'], CAMP.slice(0, 2), N), '| 3 novices:', run('novice', ['guard', 'archer', 'hearthkeeper'], CAMP.slice(0, 2), N));
+console.log(' camp, 4 foes: 3 villagers', run('villager', ['villager', 'villager', 'villager'], CAMP, N), '| 3 novices:', run('novice', ['guard', 'archer', 'hearthkeeper'], CAMP, N), '| 3 trained:', run('trained', ['guard', 'archer', 'hearthkeeper'], CAMP, N));
