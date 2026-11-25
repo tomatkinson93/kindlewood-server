@@ -107,24 +107,20 @@ const def = (id, rule, effects) => ({ id, title: id, enabled: true, archived: fa
 // 8. Combat: enemy scaling + party bonus, frozen per battle
 {
   const R = require('../lib/combat_resolver');
-  const E = require('../lib/combat_engine');
   check('8. combatModsOf keeps only combat stats (null when none)',
         JSON.stringify(R.combatModsOf({ enemy_health: 0.5, happiness: 5 })) === '{"enemy_health":0.5}' && R.combatModsOf({ happiness: 5 }) === null);
-  R._installRosterForTest(null);
-  const base = JSON.parse(JSON.stringify(E.ENEMIES()));
-  const k = Object.keys(base)[0];
-  R._installRosterForTest({ enemy_health: 0.5, enemy_strength: -0.2 });
-  const up = E.ENEMIES()[k].stats;
-  const b = base[k].stats;
-  const ok = up.maxHp === Math.round(b.maxHp * 1.5) && up.strength === Math.max(1, Math.round(b.strength * 0.8)) && up.agility === b.agility;
-  R._installRosterForTest(null);
-  const back = E.ENEMIES()[k].stats.maxHp === b.maxHp;
-  check('8b. enemy_health +50% / enemy_strength −20% scale the roster; no mods → back to base', ok && back, k + ' hp ' + b.maxHp + '→' + up.maxHp);
-  const src = fs.readFileSync(path.join(__dirname, '..', 'routes', 'combat.js'), 'utf8');
-  check('8c. every quest-battle replay passes the frozen combat_mods', (src.match(/mods: (run|questRun)\.combat_mods/g) || []).length === 4);
+  // On the board a Happening's hand on the creatures is added to the foes' health and power for that battle (lib/tactics_quests.js).
+  const T = require('../lib/tactics_setup'), F = require('../lib/tactics_foes');
+  const plain = T.foeUnit(F.foe('wolf_raider'), 0, 'quest', { hp: 0, str: 0 }), up = T.foeUnit(F.foe('wolf_raider'), 0, 'quest', { hp: 0.5, str: -0.2 });
+  const b = F.foe('wolf_raider');
+  check('8b. enemy_health +50% / enemy_strength −20% scale a battle\'s foes; no mods → as they are',
+        up.maxHp === Math.round(b.hp * (1 + T.QUEST.hp + 0.5)) && plain.maxHp === Math.round(b.hp * (1 + T.QUEST.hp)) && up.abilities[0].dmg < plain.abilities[0].dmg, 'wolf hp ' + plain.maxHp + '→' + up.maxHp);
+  const tq = fs.readFileSync(path.join(__dirname, '..', 'lib', 'tactics_quests.js'), 'utf8');
+  check('8c. a quest\'s battle is built from the frozen combat_mods: the party\'s and the creatures\'',
+        /const boost = \{ hp: Number\(\(frozen \|\| \{\}\)\.enemy_health\) \|\| 0, str: Number\(\(frozen \|\| \{\}\)\.enemy_strength\) \|\| 0 \};/.test(tq) && /SETUP\.partyFor\(citizenIds, \{ mods: frozen \|\| null \}\)/.test(tq) && /mods \|\| run\.combat_mods \|\| null/.test(tq));
   const qsrc = fs.readFileSync(path.join(__dirname, '..', 'routes', 'quests.js'), 'utf8');
-  check('8d. the trigger stores combat_mods on the run and passes them to auto-resolve',
-        /combat_encounter=\$1, combat_mods=\$3/.test(qsrc) && /mods: combatMods,/.test(qsrc));
+  check('8d. the trigger stores combat_mods on the run and passes them to the fight that is decided for the player',
+        /combat_encounter=\$1, combat_mods=\$3/.test(qsrc) && /decide\(client, settlementId, run, encounter, combatMods\)/.test(qsrc));
 }
 
 // 9. Fishing

@@ -122,32 +122,21 @@ function part1() {
   check(GEN.checkRoutes(rich, { fights: 2 }).some(p => /two treasure rooms in a row/.test(p)) && GEN.checkRoutes(rich, { fights: 2 }).some(p => /3 treasure rooms/.test(p)), 'treasure is never the safe road: two in a row, or three on one route, are refused');
   check(GEN.rankOf({ max_hp: 22 }) === 'minion' && GEN.rankOf({ max_hp: 44 }) === 'regular' && GEN.rankOf({ max_hp: 60 }) === 'heavy' && GEN.rankOf({ max_hp: 22, rank: 'boss' }) === 'boss', "a creature's rank is its own when it has one, else read from its health");
 
-  // ── Class cards (lib/class_cards.js): the board reads an ability's numbers from its card ────
-  console.log('Class cards');
-  const CC = require('../lib/class_cards'), FM = require('../lib/card_formula');
-  const badFormula = CC.allKeys().filter(k => FM.parseFormula(CC.card(k).formula).errors.length);
-  check(Object.keys(CC.CARDS).length === 59 && CC.allKeys().length === 118 && badFormula.length === 0, 'every class card, and its honed form, has a formula the engine can read', badFormula.join());
-  const size = d => Object.values(d).reduce((n, x) => n + x, 0);
-  check(['guard', 'archer', 'wizard', 'hearthkeeper'].every(k => size(CC.PACKS[k].deck) === 10 && Object.keys(CC.PACKS[k].deck).every(c => CC.CARDS[c].cls === k)), 'each class pack is ten of its own cards');
-  check(['guard', 'archer', 'wizard', 'hearthkeeper'].every(k => Object.keys(CC.PACKS[k].deck).filter(c => CC.CARDS[c].basic).length === 2 && Object.keys(CC.PACKS[k].deck).length === 5), 'two kinds of plain card and three of the class\'s own in every pack');
-  const pk = role => CC.packFor({ role });
-  check(pk('soldier').cls === 'guard' && pk('archer').cls === 'archer' && pk('wizard').cls === 'wizard' && pk('hearthkeeper').cls === 'hearthkeeper', 'a Guard, Archer, Wizard or Hearthkeeper takes the class pack');
-  check(pk('farmer').cls === 'villager' && pk('farmer').deck.t_tool === 2 && pk('scout').deck.t_spot === 2 && pk('blacksmith').deck.t_shore === 2 && pk('porter').deck.t_ration === 2 && pk('tavernkeep').deck.t_drink === 2 && pk('scholar').deck.t_signs === 2
-    && ['farmer', 'scout', 'blacksmith', 'porter', 'tavernkeep', 'scholar'].every(r => size(pk(r).deck) === 10), 'anyone else takes the Villager pack with two copies of their job\'s trade card');
-  check(pk('idle').deck.v_swing === 6 && pk('idle').deck.v_duck === 4 && pk('idle').trade === null && size(pk(undefined).deck) === 10, 'a citizen with no job takes one more Swing and one more Duck');
-  check(CC.card('g_strike_honed').formula === 'damage: (strength*0.7 + combat*0.8 + 5)*1.3' && CC.card('g_strike_honed').name === 'Strike ✦' && CC.card('g_strike_honed').cost === 1
-    && CC.card('a_part_honed').formula === 'damage: (agility*0.5 + combat*0.6 + 3)*1.3\nblock: (agility*0.3 + 2)*1.3\nmove: 1', 'a honed card does about a third more; what it does besides stays as it was');
-  check(CC.honedFormula('draw: 1\nenergy: 1').touched === false && CC.honedFormula('if target_species withered: damage: 4').formula === 'if target_species withered: damage: (4)*1.3', 'a condition is kept; a card with no numbers to raise costs one less instead');
-  check(CC.honed('g_strike_honed') === 'g_strike_honed' && CC.baseOf('g_strike_honed') === 'g_strike' && CC.isClassCard('g_strike_honed') && !CC.isClassCard('strike'), 'a honed card knows the card it came from');
-  check(Object.values(CC.CARDS).filter(c => c.heal).every(c => c.wither) && CC.CARDS.h_kindle.heal && CC.CARDS.t_ration.heal && CC.CARDS.c_second_wind.heal && !CC.CARDS.g_hold_line.heal, 'every healing card is marked as one, and cannot be played twice in a fight');
-  // What can be offered.
-  const pool = (cls, trade, owned, off) => CC.poolFor(cls, trade, new Set(owned || []), new Set(off || [])).sort().join();
-  check(pool('guard', null) === 'g_cover,g_heavy,g_shove', 'with nothing unlocked a Guard is offered more of the pack\'s own class cards, never a plain Strike');
-  check(pool('guard', null, ['g_stand_fast', 'g_shield_bash', 'a_aimed']) === 'g_cover,g_heavy,g_shield_bash,g_shove,g_stand_fast', 'what the town has unlocked for that class joins them, and no other class\'s cards');
-  check(pool('villager', 't_tool') === 'c_cleave,c_expose,c_quick_jab,c_rally,c_weaken,t_tool', 'a villager is offered their trade card and the plain cards every town starts with');
-  check(pool('guard', null, ['g_stand_fast'], ['g_stand_fast', 'g_cover']) === 'g_heavy,g_shove', 'a card that is not prepared is never offered');
-  check(pool('guard', null, [], ['g_cover', 'g_heavy', 'g_shove']) === 'g_cover,g_heavy,g_shove', 'with everything set aside the pack\'s own cards are offered all the same');
-  check(CC.isUnlock('g_stand_fast') && CC.isUnlock('g_shield_bash') && !CC.isUnlock('g_cover') && /Watchtower level 1/.test(CC.howTo('g_stand_fast')) && /Wizard's Tower level 3/.test(CC.howTo('w_fireball')), 'each unlock says how the town comes by it');
+  // ── The catalogue of abilities (lib/class_abilities.js): the board reads an ability's numbers from its formula ────
+  console.log('The abilities');
+  const CA = require('../lib/class_abilities'), TS = require('../lib/tactics_setup');
+  const stats = { strength: 10, agility: 10, endurance: 10, intelligence: 10, charisma: 10, combatSkill: 3 };
+  const reads = k => { const n = TS.read(CA.ability(k).formula, stats); return !!(n.dmg || n.block || n.heal || Object.keys(n.fx).length); };
+  check(Object.keys(CA.ABILITIES).length === 59 && Object.keys(CA.ABILITIES).every(reads), 'every ability in the catalogue has a formula the board can read into something it does', Object.keys(CA.ABILITIES).filter(k => !reads(k)).join());
+  const cf = role => CA.classFor({ role });
+  check(cf('soldier').cls === 'guard' && cf('archer').cls === 'archer' && cf('wizard').cls === 'wizard' && cf('hearthkeeper').cls === 'hearthkeeper' && cf('soldier').trade === null, 'a Guard, Archer, Wizard or Hearthkeeper fights as their class');
+  check(cf('farmer').cls === 'villager' && cf('farmer').trade === 't_tool' && cf('scout').trade === 't_spot' && cf('blacksmith').trade === 't_shore' && cf('porter').trade === 't_ration' && cf('tavernkeep').trade === 't_drink' && cf('scholar').trade === 't_signs',
+    'anyone else fights as a villager, with the one ability their kind of job gives them');
+  check(cf('idle').cls === 'villager' && cf('idle').trade === null && cf(undefined).cls === 'villager', 'a citizen with no job is a villager with no trade ability');
+  check(CA.CLASS_ORDER.join() === 'guard,archer,wizard,hearthkeeper,villager' && CA.CLASS_ORDER.every(k => CA.CLASSES[k].label && CA.CLASSES[k].icon) && CA.CLASSES.guard.career === 'soldier' && CA.CLASSES.villager.career === null
+    && Object.values(TS.KITS).every(kit => kit.abilities.every(a => CA.ability(a.key))) && Object.values(TS.TRADE_KIT).every(a => CA.ability(a.key)),
+    'five ways to fight, each with its job, and every ability in a kit is in the catalogue');
+  check(!CA.PACKS && !CA.honed && !CA.poolFor && !CA.seed, 'packs, honing, pools and the card table went with the cards');
   const CR = require('../lib/combat_resolver');
   let fatal = 0, fatalSafe = 0;
   for (let i = 0; i < 4000; i++) { if (CR.rollInjuryFor({}).severity === 'fatal') fatal++; if (CR.rollInjuryFor({ no_fatal: true }).severity === 'fatal') fatalSafe++; }

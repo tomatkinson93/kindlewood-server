@@ -5,23 +5,23 @@ const fs = require('fs');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 const T = require('../lib/tactics_setup');
-const CC = require('../lib/class_cards');
+const CC = require('../lib/class_abilities');
 let pass = 0, fail = 0;
 const check = (ok, name, extra) => { console.log((ok ? '  ok   ' : '  FAIL ') + name + (extra ? ' — ' + extra : '')); ok ? pass++ : fail++; };
 
-console.log('Reading a card into numbers');
+console.log('Reading a formula into numbers');
 {
   const stats = { strength: 11, agility: 8, endurance: 10, intelligence: 8, charisma: 8, combatSkill: 4 };
   check(T.calc('strength*0.7 + combat*0.8 + 5', stats) === 11 * 0.7 + 4 * 0.8 + 5 && T.calc('(2 + 3) * 4 - 6 / 2', {}) === 17, 'the calculator reads stat names, brackets and the four sums');
-  const shove = T.read(CC.card('g_shove').formula, stats);
+  const shove = T.read(CC.ability('g_shove').formula, stats);
   check(shove.dmg === 9 && shove.fx.push === 1 && shove.fx.weak === 2, 'Shove: its damage, the push and the weakness', JSON.stringify(shove));
-  const part = T.read(CC.card('a_part').formula, { agility: 11, combatSkill: 4 });
+  const part = T.read(CC.ability('a_part').formula, { agility: 11, combatSkill: 4 });
   check(part.dmg === 11 && part.block === 5 && part.fx.step === 1, 'Parting Shot: damage, block and the step back');
   check(T.read('draw: 1\nenergy: 1\nif target_has weak: damage: 9', stats).dmg === undefined, 'what a board has no use for (drawing, energy, conditions) is left out');
 }
 console.log('The kits');
 {
-  const every = Object.keys(T.KITS).every(k => T.KITS[k].abilities.every(a => CC.card(a.key)) && CC.PACKS[k]);
+  const every = Object.keys(T.KITS).every(k => T.KITS[k].abilities.every(a => CC.ability(a.key)) && CC.CLASSES[k]);
   check(Object.keys(T.KITS).join() === 'guard,archer,wizard,hearthkeeper,villager' && every, 'a kit for each class, every ability a real class card');
   check(Object.keys(CC.TRADES).every(kind => T.TRADE_KIT[CC.TRADES[kind]]), 'and a board form of every trade card');
   const guard = T.partyUnit({ id: 1, name: 'G', role: 'soldier' }, 'guard', 'trained', null), wiz = T.partyUnit({ id: 2, name: 'W', role: 'farmer' }, 'wizard', 'trained', null), vil = T.partyUnit({ id: 3, name: 'V', role: 'farmer' }, 'villager', 'villager', 't_ration');
@@ -110,7 +110,7 @@ console.log('The kits');
         'at level 20 a class knows all ten, and every one of them does something on the board');
       // The ten learned from level 8 up, in real battles: each party brings only those, the rules' own mind plays both sides.
       {
-        const CE = require('../lib/combat_engine'), E2 = require('../lib/tactics_engine');
+        const CE = require('../lib/citizen_unit'), E2 = require('../lib/tactics_engine');
         const NEW = Object.fromEntries(['guard', 'archer', 'wizard', 'hearthkeeper'].map(k => [k, T.KITS[k].abilities.filter(a => a.at >= 8).map(a => a.key)]));
         const used = {}; let refused = 0, ended = 0;
         const N = 12;
@@ -243,7 +243,7 @@ async function part2() {
   const E = require('../lib/tactics_engine');
   const fe = path.join(process.env.KW_FRONTEND_DIR || path.join(__dirname, '..', '..', 'kindlewood-frontend'), 'js', 'tactics-engine.js');
   if (fs.existsSync(fe)) check(fs.readFileSync(fe, 'utf8') === fs.readFileSync(path.join(__dirname, '..', 'lib', 'tactics_engine.js'), 'utf8'), 'the server and the browser run the same rules, byte for byte');
-  check((await call(stranger, 'POST', '/api/tactics/battles', {})).status === 403 && (await call(stranger, 'GET', '/api/tactics/battles/current')).status === 403, 'only admins, for now');
+  check((await call(stranger, 'POST', '/api/tactics/battles', {})).status === 403 && [200, 404].includes((await call(stranger, 'GET', '/api/tactics/battles/current')).status), 'a practice battle is for admins; the battle routes themselves are every player\'s (a quest\'s battle is fought there)');
   const opts = { classes: ['guard', 'hearthkeeper', 'archer', 'wizard'], level: 'trained', tier: 'green', terrain: 'plains', seed: 77 };
   let r = await call(adminId, 'POST', '/api/tactics/battles', opts);
   let bt = r.body.battle;

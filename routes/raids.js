@@ -5,7 +5,7 @@
 //                       defence, and whether the Withered can reach you
 //  GET  /calls          raids on clanmates' clan-land spots you can help hold
 //  POST /:id/reinforce  { citizen_id } send a Guard/Archer to hold one
-//  POST /:id/sally      { citizen_ids } meet them in a card battle first
+//  POST /:id/sally      { citizen_ids } meet them in a battle on the board first
 //  GET  /camps          Withered camps you have found · POST /camps/:id/assault { citizen_ids }
 //  POST /tribute        24 hours of peace (escalating; turns back a raid on its way at double)
 //  Dev Tools (admins):
@@ -66,7 +66,7 @@ router.post('/:id/reinforce', requireAuth, async (req, res) => {
   catch (e) { if (e.status) return res.status(e.status).json({ error: e.message }); console.error('[raids] reinforce', e); res.status(500).json({ error: 'Failed to send them.' }); }
 });
 
-// POST /:id/sally { citizen_ids } — meet the raiders in a card battle first.
+// POST /:id/sally { citizen_ids } — meet the raiders in a battle first.
 router.post('/:id/sally', requireAuth, async (req, res) => {
   try { res.json({ ok: true, ...(await require('../lib/raid_camps').startSally(req.user.userId, parseInt(req.params.id, 10), req.body && req.body.citizen_ids)) }); }
   catch (e) { if (e.status) return res.status(e.status).json({ error: e.message }); console.error('[raids] sally', e); res.status(500).json({ error: 'Failed to sally out.' }); }
@@ -89,7 +89,7 @@ router.get('/camps', requireAuth, async (req, res) => {
   } catch (e) { console.error('[raids] camps', e); res.status(500).json({ error: 'Failed to load camps.' }); }
 });
 
-// POST /camps/:id/assault { citizen_ids } — attack a camp (party card battle).
+// POST /camps/:id/assault { citizen_ids } — attack a camp (a party's battle).
 router.post('/camps/:id/assault', requireAuth, async (req, res) => {
   try { res.json({ ok: true, ...(await require('../lib/raid_camps').startAssault(req.user.userId, parseInt(req.params.id, 10), req.body && req.body.citizen_ids)) }); }
   catch (e) { if (e.status) return res.status(e.status).json({ error: e.message }); console.error('[raids] assault', e); res.status(500).json({ error: 'Failed to attack the camp.' }); }

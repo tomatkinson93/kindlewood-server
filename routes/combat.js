@@ -1,29 +1,29 @@
 // ══════════════════════════════════════════════════════════════════════════
-//  COMBAT — server-side resolution endpoint
+//  /api/combat — what stands around a battle: the creatures a quest can
+//  meet, the list of battles that wait on the player, giving one up, the
+//  report of one that is over, and a citizen's injuries.
 //
-//  First pass: small, focused. The browser runs the actual battle (state,
-//  damage, AI, all of it) and posts the *outcome* here. Server is the keeper
-//  of truth for persistent rewards: settlement wealth + a small combat-skill
-//  bump on surviving citizens.
+//    GET    /enemies, POST/PATCH/DELETE /enemies…   the creature editor (Dev Tools)
+//    GET    /pending                  battles waiting on the player (the Battles list)
+//    POST   /forfeit/:questRunId      give one up: the quest fails
+//    GET    /report/:questRunId       how a battle went ("View Battle")
+//    GET    /citizen/:id/events       a citizen's scars and memories
+//    POST   /admin/inflict, /admin/heal
 //
-//  This kept the MVP a one-endpoint problem. When we add status effects,
-//  injuries, or proper XP curves, this is where they hook in.
+//  The battle itself is fought on the board: POST /api/tactics/quest/:id
+//  opens it (lib/tactics_quests.js) and /api/tactics/battles/:id/act plays
+//  it. Until 2026-11-26 it was fought here with cards (/engage, /action,
+//  /resolve); those routes went with the card battler (docs/TACTICS.md §8).
 // ══════════════════════════════════════════════════════════════════════════
 
 const express = require('express');
 const { query } = require('../db');
 const requireAuth = require('../middleware/auth');
-const { requireAdmin, isAdminUser } = require('../middleware/admin');
+const { requireAdmin } = require('../middleware/admin');
 const combatResolver = require('../lib/combat_resolver');
 const eventBus = require('../lib/event_bus');
-const gameEvents = require('../lib/game_events');
 
 const router = express.Router();
-
-// Anti-abuse: cap a single battle's reward so a malicious client can't just
-// post {wealth_reward: 9999999}. Tunable.
-const MAX_BATTLE_WEALTH = 200;
-const COMBAT_SKILL_CAP = 10;
 
 // ── Enemy definitions ────────────────────────────────────────────────────
 // Default seed roster — kept in sync with the engine's hardcoded fallback so
@@ -282,215 +282,18 @@ router.get('/pending', requireAuth, async (req, res) => {
       return { ...row, party_members: partyNames };
     }));
 
-    // Where these are fought: on the board ('on'), with cards ('off'), or the player's choice (an admin, while the
-    // switch is off): lib/tactics_quests.js. `board_battle`: the quest's battle on the board, if it has been begun there.
-    const board = await require('../lib/tactics_quests').mode(req.user);
+    // `board_battle`: the quest's battle on the board, if it has been begun (lib/tactics_quests.js).
     const begun = battles.length ? (await query(`SELECT id, quest_run_id FROM tactics_battles WHERE settlement_id=$1 AND status='active' AND quest_run_id = ANY($2::int[])`, [sett.id, battles.map(b => b.id)])).rows : [];
     for (const b of battles) { const on = begun.find(x => Number(x.quest_run_id) === Number(b.id)); b.board_battle = on ? Number(on.id) : null; }
     // Who a creature is on the board (lib/tactics_foes.js), for the list to name once battles are fought there.
-    if (board !== 'off') { const F = require('../lib/tactics_foes'); for (const b of battles) { const enc = Array.isArray(b.combat_encounter) ? b.combat_encounter : []; b.board_foes = enc.map(k => (F.foe(k) || {}).name || null).filter(Boolean); } }
-    res.json({ ok: true, battles, count: battles.length, board });
+    { const F = require('../lib/tactics_foes'); for (const b of battles) { const enc = Array.isArray(b.combat_encounter) ? b.combat_encounter : []; b.board_foes = enc.map(k => (F.foe(k) || {}).name || null).filter(Boolean); } }
+    res.json({ ok: true, battles, count: battles.length, board: 'on' });
   } catch (e) {
     console.error('combat pending error', e);
     res.status(500).json({ error: e.message });
   }
 });
 
-// ── POST /api/combat/engage/:questRunId — claim a battle ──
-//    First call: rolls initial state from {party, encounter, seed} and stores
-//    it on the quest run. Subsequent calls (resume after refresh/close) just
-//    return the persisted state. The server is the source of truth — the
-//    client never invents state.
-router.post('/engage/:questRunId', requireAuth, async (req, res) => {
-  try {
-    const runId = parseInt(req.params.questRunId);
-    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
-    const sett = settRes.rows[0];
-    if (!sett) return res.status(404).json({ error: 'No settlement.' });
-
-    const r = await query(
-      `SELECT sq.*, qd.title as quest_title, qd.icon as quest_icon
-       FROM settlement_quests sq
-       LEFT JOIN quest_definitions qd ON qd.id = sq.quest_id
-       WHERE sq.id=$1 AND sq.settlement_id=$2 AND sq.status='active'`,
-      [runId, sett.id]
-    );
-    const run = r.rows[0];
-    if (!run) return res.status(404).json({ error: 'Quest not found.' });
-    if (!['pending', 'in_progress'].includes(run.combat_status)) {
-      return res.status(400).json({ error: 'No battle awaiting on that quest.' });
-    }
-    // Begun on the board (lib/tactics_quests.js): it is finished there.
-    if ((await query(`SELECT 1 FROM tactics_battles WHERE quest_run_id=$1 AND status='active'`, [runId])).rows.length) {
-      return res.status(400).json({ error: 'This battle is being fought on the board. Finish it there.' });
-    }
-
-    let encounter = run.combat_encounter || [];
-    if (typeof encounter === 'string') {
-      try { encounter = JSON.parse(encounter); } catch(e) { encounter = []; }
-    }
-    if (!encounter.length) encounter = ['marsh_rat'];
-
-    const partyIds = (run.quest_type === 'party' && Array.isArray(run.party_ids))
-      ? run.party_ids
-      : [run.citizen_id];
-
-    // Mark in_progress (idempotent — re-engage is fine).
-    await query(`UPDATE settlement_quests SET combat_status='in_progress' WHERE id=$1`, [runId]);
-
-    // Resume path: persisted state already exists, hand it back. The action
-    // log is the canonical history — we replay rather than trusting the
-    // stored snapshot, which guards against state-poisoning if the JSON in
-    // the DB were ever tampered with.
-    let actions = run.combat_actions || [];
-    if (typeof actions === 'string') {
-      try { actions = JSON.parse(actions); } catch(e) { actions = []; }
-    }
-    if (!Array.isArray(actions)) actions = [];
-
-    let replay;
-    try {
-      replay = await combatResolver.replayBattle({
-        citizenIds: partyIds,
-        enemyKeys: encounter,
-        seed: parseInt(run.combat_seed) || 1,
-        actions,
-        settlementId: sett.id,
-        mods: run.combat_mods,   // Happening modifiers frozen at trigger
-      });
-    } catch (e) {
-      console.error('engage replay failed', e);
-      return res.status(500).json({ error: 'Battle state corrupt: ' + e.message });
-    }
-
-    const battle = combatResolver.serializeBattle(replay.battle);
-
-    // Persist canonical snapshot so /pending lists can show current HPs.
-    await query(
-      `UPDATE settlement_quests SET combat_state=$1 WHERE id=$2`,
-      [JSON.stringify(battle), runId]
-    );
-
-    res.json({
-      ok: true,
-      quest_run_id: runId,
-      quest_title: run.quest_title || run.quest_id,
-      quest_icon:  run.quest_icon || '⚔',
-      encounter,
-      seed: parseInt(run.combat_seed) || 1,
-      battle,
-      actions,
-    });
-  } catch (e) {
-    console.error('combat engage error', e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ── POST /api/combat/action/:questRunId — submit a player action ────────
-//    Server replays the full action log + this new action, validates it's
-//    the player's turn and the move is legal, and persists the new state.
-//    Returns the canonical state. The client's local state is throwaway —
-//    if it has drifted, the server's response is the truth.
-router.post('/action/:questRunId', requireAuth, async (req, res) => {
-  try {
-    const runId = parseInt(req.params.questRunId);
-    const { action_key, target_id, hand_index, delta } = req.body || {};
-    if (!action_key) return res.status(400).json({ error: 'action_key required.' });
-
-    const settRes = await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId]);
-    const sett = settRes.rows[0];
-    if (!sett) return res.status(404).json({ error: 'No settlement.' });
-
-    const r = await query(
-      `SELECT * FROM settlement_quests WHERE id=$1 AND settlement_id=$2 AND status='active'`,
-      [runId, sett.id]
-    );
-    const run = r.rows[0];
-    if (!run) return res.status(404).json({ error: 'Quest not found.' });
-    if (run.combat_status !== 'in_progress') {
-      return res.status(400).json({ error: 'Battle not in progress.' });
-    }
-
-    let encounter = run.combat_encounter || [];
-    if (typeof encounter === 'string') { try { encounter = JSON.parse(encounter); } catch(e){ encounter = []; } }
-    if (!encounter.length) encounter = ['marsh_rat'];
-
-    let actions = run.combat_actions || [];
-    if (typeof actions === 'string') { try { actions = JSON.parse(actions); } catch(e){ actions = []; } }
-    if (!Array.isArray(actions)) actions = [];
-
-    const partyIds = (run.quest_type === 'party' && Array.isArray(run.party_ids))
-      ? run.party_ids
-      : [run.citizen_id];
-
-    // Replay current state to find whose turn it is (we don't trust the
-    // client's claim of who's acting). The action's actor_id is set server-side.
-    let pre;
-    try {
-      pre = await combatResolver.replayBattle({
-        citizenIds: partyIds, enemyKeys: encounter,
-        seed: parseInt(run.combat_seed) || 1, actions,
-        settlementId: sett.id,
-        mods: run.combat_mods,   // Happening modifiers frozen at trigger
-      });
-    } catch (e) {
-      return res.status(500).json({ error: 'State corrupt: ' + e.message });
-    }
-    const cur = pre.nextActor;
-    if (!cur || cur.side !== 'player') {
-      return res.status(400).json({ error: "Not the player's turn." });
-    }
-
-    // Build the logged action. For card plays we persist hand_index so the
-    // replay can reproduce exactly which card left the hand. target_id is kept
-    // for enemy/ally-targeted cards (null lets the engine auto-pick).
-    const newAction = { actor_id: cur.id, action_key, target_id: target_id || null };
-    if (action_key === 'card' && hand_index != null) {
-      newAction.hand_index = hand_index | 0;
-    }
-    if (action_key === 'move') {
-      // Clamp to ±1 per action; the engine moves one step and spends 1 energy.
-      newAction.delta = (delta | 0) >= 0 ? 1 : -1;
-    }
-    const nextActions = actions.concat([newAction]);
-
-    let post;
-    try {
-      post = await combatResolver.replayBattle({
-        citizenIds: partyIds, enemyKeys: encounter,
-        seed: parseInt(run.combat_seed) || 1, actions: nextActions,
-        settlementId: sett.id,
-        mods: run.combat_mods,   // Happening modifiers frozen at trigger
-      });
-    } catch (e) {
-      return res.status(400).json({ error: 'Invalid move: ' + e.message });
-    }
-
-    const battle = combatResolver.serializeBattle(post.battle);
-
-    // Persist new state + log.
-    await query(
-      `UPDATE settlement_quests SET combat_state=$1, combat_actions=$2 WHERE id=$3`,
-      [JSON.stringify(battle), JSON.stringify(nextActions), runId]
-    );
-
-    res.json({
-      ok: true,
-      battle,
-      actions: nextActions,
-      battle_ended: battle.status !== 'active',
-    });
-  } catch (e) {
-    console.error('combat action error', e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ── POST /api/combat/forfeit/:questRunId — concede a battle ──
-//    Marks the quest failed without requiring battle state. Used to unstick
-//    battles that the player can't (or doesn't want to) complete — e.g.
-//    after a frontend bug, or just to surrender. No reward, no skill bump.
 router.post('/forfeit/:questRunId', requireAuth, async (req, res) => {
   try {
     const runId = parseInt(req.params.questRunId);
@@ -535,289 +338,6 @@ router.post('/forfeit/:questRunId', requireAuth, async (req, res) => {
     res.json({ ok: true, quest_failed: true });
   } catch (e) {
     console.error('forfeit error', e);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-router.post('/resolve', requireAuth, async (req, res) => {
-  try {
-    // Note: for *quest-linked* battles we ignore the client's claimed outcome
-    // and reward entirely. The server replays the persisted action log and
-    // derives the truth. The client's submission acts only as a "I'm done,
-    // please tally up" trigger. For non-quest test battles (Dev Tools button)
-    // we still trust the client because there's no server state to verify
-    // against — but rewards stay capped by MAX_BATTLE_WEALTH so even a bad
-    // actor can't print money.
-    const { outcome: clientOutcome, wealth_reward, citizen_ids, quest_run_id } = req.body || {};
-    // Test battles (no quest) trust the client's outcome, so they're a Dev
-    // Tools feature: admins only.
-    if (!quest_run_id && !isAdminUser(req.user)) return res.status(403).json({ error: 'Admins only.' });
-
-    const settRes = await query('SELECT id, wealth FROM settlements WHERE user_id=$1', [req.user.userId]);
-    const sett = settRes.rows[0];
-    if (!sett) return res.status(404).json({ error: 'No settlement.' });
-
-    let questRun = null;
-    let serverOutcome = null;
-    let serverReward = 0;
-    let serverSurvivors = [];
-    let serverFallen = [];
-    let serverLog = [];
-    let replayedBattle = null;     // surfaces outside the questRun block so
-    let resolvedEncounter = null;  // aftermath/aftermath-victory can use them.
-
-    if (quest_run_id) {
-      const r = await query(
-        `SELECT * FROM settlement_quests WHERE id=$1 AND settlement_id=$2`,
-        [quest_run_id, sett.id]
-      );
-      questRun = r.rows[0];
-      if (!questRun) return res.status(404).json({ error: 'Quest run not found.' });
-      if (!['pending', 'in_progress', 'rolled'].includes(questRun.combat_status)) {
-        return res.status(400).json({ error: 'No active battle on that quest.' });
-      }
-
-      // ── Replay-verify: replay the persisted action log, derive truth.
-      let actions = questRun.combat_actions || [];
-      if (typeof actions === 'string') { try { actions = JSON.parse(actions); } catch(e){ actions = []; } }
-      let encounter = questRun.combat_encounter || [];
-      if (typeof encounter === 'string') { try { encounter = JSON.parse(encounter); } catch(e){ encounter = []; } }
-      if (!encounter.length) encounter = ['marsh_rat'];
-      resolvedEncounter = encounter;
-      const partyIds = (questRun.quest_type === 'party' && Array.isArray(questRun.party_ids))
-        ? questRun.party_ids
-        : [questRun.citizen_id];
-
-      let replay;
-      try {
-        replay = await combatResolver.replayBattle({
-          citizenIds: partyIds, enemyKeys: encounter,
-          seed: parseInt(questRun.combat_seed) || 1, actions,
-          settlementId: sett.id,
-        mods: questRun.combat_mods,   // Happening modifiers frozen at trigger
-        });
-      } catch (e) {
-        console.error('resolve replay failed', e);
-        return res.status(500).json({ error: 'Could not verify battle: ' + e.message });
-      }
-      replayedBattle = replay.battle;
-
-      if (replay.battle.status === 'active') {
-        return res.status(400).json({ error: 'Battle is not yet finished.' });
-      }
-      serverOutcome = replay.battle.status;  // 'victory' | 'defeat'
-      serverReward  = (replay.battle.reward && replay.battle.reward.wealth) || 0;
-      serverLog     = replay.battle.log.slice();
-      serverSurvivors = replay.battle.units
-        .filter(u => u.side === 'player' && !u.flags.downed)
-        .map(u => ({ id: u.citizen_id, name: u.name, hp: u.hp }));
-      serverFallen = replay.battle.units
-        .filter(u => u.side === 'player' && u.flags.downed)
-        .map(u => ({ id: u.citizen_id, name: u.name }));
-
-      // ── Hybrid acceptance: if the client claims worse-than-or-equal,
-      //    accept silently; if the client claims better, log a warning.
-      //    Either way the SERVER outcome wins.
-      if (clientOutcome && clientOutcome !== serverOutcome) {
-        const clientClaimedBetter = clientOutcome === 'victory' && serverOutcome === 'defeat';
-        if (clientClaimedBetter) {
-          console.warn('[anti-cheat] resolve: client claimed victory, server says defeat. quest_run_id=' + quest_run_id);
-        }
-      }
-    }
-
-    // ── Defeat path. Quest fails; nothing for the citizens.
-    if ((questRun && serverOutcome === 'defeat') || (!questRun && clientOutcome !== 'victory')) {
-      // Aftermath BEFORE the response so the resolution screen can show injuries.
-      let injuryEvents = [];
-      if (questRun) {
-        try {
-          injuryEvents = await combatResolver.applyBattleAftermath({
-            battle: replayedBattle,
-            outcome: 'defeat',
-            settlementId: sett.id,
-            questRunId: quest_run_id,
-            encounter: resolvedEncounter,
-          });
-        } catch (e) {
-          console.error('aftermath (defeat) failed', e);
-        }
-
-        await query(
-          `UPDATE settlement_quests
-           SET combat_status='resolved', combat_outcome='defeat',
-               combat_resolved_at=NOW(), combat_log=$1,
-               status='failed', completes_at=NOW(),
-               combat_clock_paused_at=NULL
-           WHERE id=$2`,
-          [JSON.stringify(serverLog), quest_run_id]
-        );
-        // A sally or a camp assault (lib/raid_camps) settles its own outcome.
-        try { await require('../lib/raid_camps').onBattleEnded(questRun, 'defeat'); } catch (e) { console.error('raid battle (defeat) failed', e); }
-        // Push: manual battle ended in defeat. Quest now fails.
-        eventBus.publish(sett.id, {
-          type: 'combat_resolved',
-          quest_run_id,
-          outcome: 'defeat',
-        });
-        eventBus.publish(sett.id, {
-          type: 'quest_resolved',
-          quest_run_id,
-          outcome: 'failed',
-        });
-      }
-      return res.json({
-        ok: true,
-        wealth_after: sett.wealth,
-        outcome: 'defeat',
-        quest_failed: !!questRun,
-        survivors: serverSurvivors,
-        fallen: serverFallen,
-        injuries: injuryEvents,
-      });
-    }
-
-    // ── Victory path. Reward comes from server replay (quest battles) or
-    //    capped client claim (test battles).
-    const claimedWealth = parseInt(wealth_reward) || 0;
-    const wealth = questRun
-      ? Math.max(0, Math.min(MAX_BATTLE_WEALTH, serverReward))
-      : Math.max(0, Math.min(MAX_BATTLE_WEALTH, claimedWealth));
-
-    // Quest battles: record the victory first (conditional on the battle
-    // still being open), and pay out only if THIS request recorded it — a
-    // second resolve (retry, double tap) gets nothing.
-    let victoryRecorded = false;   // this request moved the battle to resolved
-    if (questRun) {
-      const pausedAt = questRun.combat_clock_paused_at;
-      let pauseMs = 0;
-      if (pausedAt) {
-        pauseMs = Date.now() - new Date(pausedAt).getTime();
-        if (pauseMs < 0) pauseMs = 0;
-      }
-      const upd = await query(
-        `UPDATE settlement_quests
-         SET combat_status='resolved', combat_outcome='victory',
-             combat_resolved_at=NOW(), combat_log=$1,
-             combat_clock_paused_at=NULL,
-             completes_at = completes_at + ($2 || ' milliseconds')::interval
-         WHERE id=$3 AND combat_status IN ('pending','in_progress','rolled')`,
-        [JSON.stringify(serverLog), String(pauseMs), quest_run_id]
-      );
-      victoryRecorded = upd.rowCount === 1;
-    }
-
-    let wealthAfter = sett.wealth;
-    const paid = questRun ? (victoryRecorded ? wealth : 0) : wealth;
-    if (paid > 0) {
-      const upd = await query(
-        'UPDATE settlements SET wealth = wealth + $1 WHERE id=$2 RETURNING wealth',
-        [paid, sett.id]
-      );
-      wealthAfter = upd.rows[0]?.wealth ?? sett.wealth + paid;
-    }
-    // Spoils from the server's replay: the enemies' loot into the stores, and
-    // now and then a new card (lib/spoils). Quest battles only — test battles
-    // are the client's word.
-    let spoils = null;
-    if (questRun && victoryRecorded) {
-      try {
-        spoils = await require('../lib/spoils').grant({ query }, sett.id, {
-          drops: (replayedBattle && replayedBattle.reward && replayedBattle.reward.drops) || [],
-          enemies: resolvedEncounter || [], seedKey: `q${quest_run_id}:${questRun.combat_seed}`,
-        });
-      } catch (e) { console.error('battle spoils failed', e); }
-    }
-
-    // Bump combat skill on surviving citizens. For quest battles we use the
-    // server-derived survivor list; for test battles we still take the
-    // client's word (no truth to verify against).
-    let upgraded = [];
-    const skillBumpIds = questRun
-      ? serverSurvivors.map(s => s.id).filter(Boolean)
-      : (Array.isArray(citizen_ids) ? citizen_ids.map(Number).filter(Boolean) : []);
-    if (skillBumpIds.length) {
-      const own = await query(
-        'SELECT id, name, skills FROM citizens WHERE id = ANY($1) AND settlement_id=$2',
-        [skillBumpIds, sett.id]
-      );
-      for (const c of own.rows) {
-        if (Math.random() > 0.5) continue;
-        const skills = c.skills || {};
-        const cur = skills.combat || 1;
-        if (cur >= COMBAT_SKILL_CAP) continue;
-        skills.combat = cur + 1;
-        await query('UPDATE citizens SET skills=$1 WHERE id=$2', [skills, c.id]);
-        upgraded.push({ id: c.id, name: c.name, combat: skills.combat });
-      }
-    }
-
-    // A sally or a camp assault (lib/raid_camps): break the raid / clear the camp.
-    let raidBattle = null;
-    if (questRun && victoryRecorded) {
-      try { raidBattle = await require('../lib/raid_camps').onBattleEnded(questRun, 'victory'); } catch (e) { console.error('raid battle (victory) failed', e); }
-    }
-    // (Quest clock resumption happened above with the victory record:
-    // completes_at moves on by the pause, so ignoring a battle for hours
-    // doesn't shorten the quest.)
-
-    // ── Victory aftermath: only fallen citizens roll for injury. Clean
-    //    victors walk away unscathed. Test battles (no questRun) skip this
-    //    since they have no DB-side citizen state to inject events into.
-    let injuryEvents = [];
-    if (questRun) {
-      try {
-        injuryEvents = await combatResolver.applyBattleAftermath({
-          battle: replayedBattle,
-          outcome: 'victory',
-          settlementId: sett.id,
-          questRunId: quest_run_id,
-          encounter: resolvedEncounter,
-        });
-      } catch (e) {
-        console.error('aftermath (victory) failed', e);
-      }
-    }
-
-    // Push: manual battle ended in victory. Quest continues — its timer
-    // will resume from where it was paused, so frontend re-fetches to pick
-    // up the new completes_at.
-    if (questRun) {
-      eventBus.publish(sett.id, {
-        type: 'combat_resolved',
-        quest_run_id,
-        outcome: 'victory',
-      });
-      // Server-verified victories only; client-trusted test battles
-      // (no questRun) never earn clan prestige.
-      if (victoryRecorded) {
-        gameEvents.emit('battle_won', {
-          settlementId: sett.id, userId: req.user.userId, enemyCount: (resolvedEncounter || []).length,
-          citizenIds: skillBumpIds,
-        });
-      }
-
-      const { resolveCompletedQuests } = require('./quests');
-      resolveCompletedQuests(sett.id).catch(e =>
-        console.error('post-combat resolve check failed', e)
-      );
-    }
-
-    res.json({
-      ok: true,
-      outcome: 'victory',
-      wealth_awarded: paid,
-      spoils,
-      raid_battle: raidBattle,
-      wealth_after: wealthAfter,
-      upgraded_citizens: upgraded,
-      quest_resumed: !!questRun,
-      survivors: serverSurvivors,
-      fallen: serverFallen,
-      injuries: injuryEvents,
-    });
-  } catch (e) {
-    console.error('Combat resolve error:', e);
     res.status(500).json({ error: e.message });
   }
 });

@@ -64,21 +64,21 @@ async function main() {
     }
     return { last, st };
   }
-  const wasQ = await TU.switchOn('tactics.quests'), wasD = await TU.switchOn('dungeons.on');
+  const wasD = await TU.switchOn('dungeons.on');
   try {
-    console.log('Who is offered the board');
-    await TU.setSwitch('tactics.quests', false); await TU.setSwitch('dungeons.on', false);
+    console.log('The board is where a quest\'s battle is fought');
+    await TU.setSwitch('dungeons.on', false);
     const a = await player('Quest');
     const [guard, archer, v1, v2] = a.cits;
     let run1 = await waiting(a, { citizen: guard });
     let r = await api(a, 'GET', '/api/combat/pending');
-    check(r.status === 200 && r.body.board === 'off' && r.body.battles.length === 1 && r.body.battles[0].board_battle === null, 'while the switch is off a player\'s Battles list says: with cards');
-    check((await api(a, 'POST', '/api/tactics/quest/' + run1)).status === 403 && (await api(a, 'GET', '/api/tactics/open')).body.quests === 'off', 'and the board is refused');
+    check(r.status === 200 && r.body.battles.length === 1 && r.body.battles[0].board_battle === null && r.body.battles[0].board_foes.join() === 'Wolf Raider', 'a player\'s Battles list has the quest\'s fight, and names who it is against on the board');
+    r = await api(a, 'GET', '/api/tactics/open');
+    check(r.body.quests === true && r.body.dungeons === false && !TU.SWITCHES['tactics.quests'], 'the board is open to every player for quest battles: there is no switch any more (dungeons keep theirs)');
     check((await TU.lifeAll()).filter(n => n.group === 'Quest battles').map(n => n.key).join() === 'QUEST_FOE_HP,QUEST_FOE_POW' && T.QUEST.hp === TU.LIFE_KEYS.QUEST_FOE_HP.default && T.QUEST.str === TU.LIFE_KEYS.QUEST_FOE_POW.default,
       'how tough a quest\'s foes are is two numbers in Dev Tools, starting from the game\'s own');
-    await TU.setSwitch('tactics.quests', true);
-    r = await api(a, 'GET', '/api/combat/pending');
-    check(r.body.board === 'on' && (await api(a, 'GET', '/api/tactics/open')).body.quests === 'on' && (await api(a, 'GET', '/api/tactics/open')).body.dungeons === false, 'with the switch on, every player\'s quest battles are on the board (dungeons stay as they were)');
+    check((await Promise.all([api(a, 'POST', '/api/combat/engage/' + run1), api(a, 'POST', '/api/combat/action/' + run1, {}), api(a, 'POST', '/api/combat/resolve', { quest_run_id: run1, outcome: 'victory' })])).every(x => x.status === 404),
+      'the card battle\'s routes are gone: a battle cannot be claimed won');
 
     console.log('A quest\'s battle on the board');
     r = await api(a, 'POST', '/api/tactics/quest/' + run1);
@@ -92,7 +92,6 @@ async function main() {
     check(again.status === 200 && again.body.battle.id === bt.id, 'asked again, it is the same battle (to pick it up after closing the page)');
     r = await api(a, 'GET', '/api/combat/pending');
     check(r.body.battles[0].board_battle === bt.id && r.body.battles[0].board_foes.join() === 'Wolf Raider', 'the Battles list knows the fight has been begun on the board, and who the creature is there');
-    check((await api(a, 'POST', '/api/combat/engage/' + run1)).status === 400, 'begun on the board, it cannot also be fought with cards');
     check((await api(a, 'GET', '/api/tactics/battles/current')).body.battle === null, 'a quest\'s battle is not the town\'s "current" battle: it is reached from its quest');
     // Stepping away leaves it open.
     r = await api(a, 'POST', `/api/tactics/battles/${bt.id}/leave`);
@@ -148,7 +147,7 @@ async function main() {
       'the battle report of a fight on the board says who was fought there, who stood at the end, and how it went', r.body.log && r.body.log[0]);
     r = await api(weak, 'GET', '/api/combat/report/' + run3);
     check(r.body.outcome === 'defeat' && r.body.foes.join() === 'Boar Bruiser,Wolf Raider,Wolf Raider' && r.body.injury_events.length === lq.injuries.length, 'and a lost one, with the wounds it left');
-    // Left to be decided, with the switch on: the board's mind decides it as the fight is triggered.
+    // Left to be decided: the board's mind decides it as the fight is triggered.
     const auto = async (p, citizen, encounter, seed) => (await q(
       `INSERT INTO settlement_quests (settlement_id, user_id, quest_id, citizen_id, party_ids, completes_at, status, quest_type, combat_status, combat_trigger_at, combat_seed, combat_encounter, auto_resolve_combat)
        VALUES ($1,$2,'q_gather_herbs',$3,'[]',NOW() + interval '1 hour','active','solo','rolled',NOW() - interval '1 minute',$4,$5,TRUE) RETURNING id`, [p.sid, p.id, citizen, seed, JSON.stringify(encounter)])).rows[0].id;
@@ -158,7 +157,7 @@ async function main() {
     let dec = await runOf(run8);
     check(dec.combat_status === 'resolved' && dec.combat_outcome === 'victory' && dec.status === 'active' && dec.combat_state && dec.combat_state.board === true && dec.combat_state.foes.join() === 'Rat Cutpurse'
       && /^Decided on the board: won in \d+ round/.test(dec.combat_log[0]) && (await q(`SELECT COUNT(*)::int AS n FROM tactics_battles WHERE quest_run_id=$1`, [run8])).rows[0].n === 0,
-      'with the switch on, a fight left to be decided is decided by the board\'s mind, out of sight: no battle is kept for it, and the quest goes on', dec.combat_log && dec.combat_log[0]);
+      'a fight left to be decided is decided by the board\'s mind, out of sight: no battle is kept for it, and the quest goes on', dec.combat_log && dec.combat_log[0]);
     check((await api(a, 'GET', '/api/combat/report/' + run8)).body.foes.join() === 'Rat Cutpurse' && (await api(a, 'GET', '/api/combat/pending')).body.battles.every(b => b.id !== run8), 'it has its report, and never waits in the Battles list');
     const run9 = await auto(weak, weak.cits[2], ['thornback_boar', 'night_wolf'], 78);
     await quests.processCombatTriggers(weak.sid);
@@ -169,27 +168,21 @@ async function main() {
     const setupA = await TQ.build(await runOf(run8), { q }), setupB = await TQ.build(await runOf(run8), { q });
     const endA = E.autoplay({ seed: setupA.seed, land: setupA.land, party: setupA.party, enemies: setupA.enemies }, 600), endB = E.autoplay({ seed: setupB.seed, land: setupB.land, party: setupB.party, enemies: setupB.enemies }, 600);
     check(endA.status === 'victory' && E.checksum(endA) === E.checksum(endB), 'the decision comes from the quest\'s own seed: the same fight is always decided the same way');
-    // With the switch off the card engine decides, as before.
-    await TU.setSwitch('tactics.quests', false);
-    const run10 = await auto(a, guard, ['marsh_rat'], 79);
-    await quests.processCombatTriggers(a.sid);
-    dec = await runOf(run10);
-    check(dec.combat_status === 'resolved' && !(dec.combat_state && dec.combat_state.board) && !/on the board/.test(JSON.stringify(dec.combat_log)), 'with the switch off, a fight left to be decided is the card engine\'s, as before');
-    await TU.setSwitch('tactics.quests', true);
     r = await api(a, 'GET', '/api/combat/pending');
 
-    console.log('Giving up, and the admin\'s choice');
+    console.log('Giving up, and battles side by side');
     const run4 = await waiting(a, { citizen: archer });
     bt = (await api(a, 'POST', '/api/tactics/quest/' + run4)).body.battle;
     await fight(a, bt.id, { until: st => st.round >= 2 });
     r = await api(a, 'POST', '/api/combat/forfeit/' + run4);
     check(r.status === 200 && (await runOf(run4)).status === 'failed' && (await api(a, 'GET', '/api/tactics/battles/' + bt.id)).body.battle.status === 'left', 'forfeiting from the Battles list fails the quest and closes its battle on the board');
     check((await api(a, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 0, action: { t: 'end' } })).status !== 200, 'which then takes no more turns');
-    // Begun with cards: it is finished with cards.
+    // A battle that was begun with cards before they were removed starts again on the board.
     const run5 = await waiting(a, { citizen: v2 });
-    await q(`UPDATE settlement_quests SET combat_actions='[{"action_key":"end_turn"}]' WHERE id=$1`, [run5]);
-    check((await api(a, 'POST', '/api/tactics/quest/' + run5)).status === 400, 'a battle already begun with cards is not moved to the board');
-    await q(`UPDATE settlement_quests SET status='failed', combat_status='resolved' WHERE id=$1`, [run5]);
+    await q(`UPDATE settlement_quests SET combat_status='in_progress', combat_actions='[{"action_key":"end_turn"}]', combat_state='{"units":[]}' WHERE id=$1`, [run5]);
+    r = await api(a, 'POST', '/api/tactics/quest/' + run5);
+    check(r.status === 200 && r.body.battle.count === 0 && (await runOf(run5)).combat_actions.length === 0, 'a battle left half-played with cards starts afresh on the board: nobody is stranded');
+    await api(a, 'POST', '/api/combat/forfeit/' + run5);
     const other = await player('Other');
     const run6 = await waiting(a, { citizen: v2 });
     check((await api(other, 'POST', '/api/tactics/quest/' + run6)).status === 404 && (await api(a, 'POST', '/api/tactics/quest/999999999')).status === 404 && (await api(a, 'POST', '/api/tactics/quest/abc')).status === 404, 'another town\'s quest, or no quest, is not found');
@@ -208,17 +201,7 @@ async function main() {
     f = await fight(d, r.body.battle.id);
     check(f.last.body.quest && (await api(d, 'GET', '/api/dungeons/run')).body.run.pending.battle_id === db, 'and finishing the one leaves the other as it was');
     await api(d, 'POST', '/api/dungeons/run/flee');
-    // The switch off: an admin is offered both.
-    await TU.setSwitch('tactics.quests', false);
-    const adminId = Number(process.env.CRAFTING_TEST_ADMIN_ID) || 0;
-    if (adminId) {
-      const adm = { token: jwt.sign({ userId: adminId, username: 'admin', species: 'Mice' }, SECRET) };
-      r = await api(adm, 'GET', '/api/tactics/open');
-      check(r.body.quests === 'choice' && (await api(adm, 'GET', '/api/combat/pending')).body.board === 'choice', 'with the switch off an admin is offered both ways to fight');
-      check((await api(adm, 'POST', '/api/tactics/admin/quests-switch', { on: true })).body.on === true && (await TU.switchOn('tactics.quests')) === true && (await api(a, 'POST', '/api/tactics/admin/quests-switch', { on: false })).status === 403,
-        'and an admin, and only an admin, can turn the switch');
-    }
-  } finally { await TU.setSwitch('tactics.quests', wasQ); await TU.setSwitch('dungeons.on', wasD); await pool.end(); }
+  } finally { await TU.setSwitch('dungeons.on', wasD); await pool.end(); }
 }
 const LANDS = () => ['plains', 'forest', 'hills', 'mountain', 'river', 'marsh', 'ruins'];
 
