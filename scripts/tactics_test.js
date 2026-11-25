@@ -117,7 +117,7 @@ console.log('The kits');
         for (let seed = 1; seed <= N; seed++) {
           const party = Object.keys(NEW).map((cls, i) => T.partyUnit({ id: i + 1, name: cls, role: 'idle', unit: CE.unitFromCitizen({ id: i + 1, name: cls, role: 'idle', stats: { strength: 22, agility: 20, endurance: 22, intelligence: 22, charisma: 14 }, skills: { combat: 9 }, armour: 2 }) }, cls, null, null, 20, NEW[cls]));
           const band = Object.keys(F.BANDS)[seed % 5], foes = F.SHOWCASE[band][seed % 3 === 0 ? 'boss' : 'hard'].map((k, i) => T.foeUnit(F.FOES[k], i, 'red', null));
-          const st = E2.createBattle({ seed, land: 'forest', party, enemies: foes });
+          const st = E2.replay({ seed, land: 'forest', party, enemies: foes }, []).state;      // replay: foes quicker than the party take their turns first
           for (let g = 0; g < 600 && st.status === 'active'; g++) {
             const u = E2.current(st), keep = st.r, plan = E2.plan(st); st.r = keep;
             const acts = [];

@@ -282,7 +282,12 @@ router.get('/pending', requireAuth, async (req, res) => {
       return { ...row, party_members: partyNames };
     }));
 
-    res.json({ ok: true, battles, count: battles.length });
+    // Where these are fought: on the board ('on'), with cards ('off'), or the player's choice (an admin, while the
+    // switch is off): lib/tactics_quests.js. `board_battle`: the quest's battle on the board, if it has been begun there.
+    const board = await require('../lib/tactics_quests').mode(req.user);
+    const begun = battles.length ? (await query(`SELECT id, quest_run_id FROM tactics_battles WHERE settlement_id=$1 AND status='active' AND quest_run_id = ANY($2::int[])`, [sett.id, battles.map(b => b.id)])).rows : [];
+    for (const b of battles) { const on = begun.find(x => Number(x.quest_run_id) === Number(b.id)); b.board_battle = on ? Number(on.id) : null; }
+    res.json({ ok: true, battles, count: battles.length, board });
   } catch (e) {
     console.error('combat pending error', e);
     res.status(500).json({ error: e.message });
@@ -312,6 +317,10 @@ router.post('/engage/:questRunId', requireAuth, async (req, res) => {
     if (!run) return res.status(404).json({ error: 'Quest not found.' });
     if (!['pending', 'in_progress'].includes(run.combat_status)) {
       return res.status(400).json({ error: 'No battle awaiting on that quest.' });
+    }
+    // Begun on the board (lib/tactics_quests.js): it is finished there.
+    if ((await query(`SELECT 1 FROM tactics_battles WHERE quest_run_id=$1 AND status='active'`, [runId])).rows.length) {
+      return res.status(400).json({ error: 'This battle is being fought on the board. Finish it there.' });
     }
 
     let encounter = run.combat_encounter || [];
@@ -506,6 +515,8 @@ router.post('/forfeit/:questRunId', requireAuth, async (req, res) => {
        WHERE id=$2`,
       [JSON.stringify(['The party forfeited.']), runId]
     );
+    // Its battle on the board, if it was being fought there, is closed with it.
+    await require('../lib/tactics_quests').closeFor(runId);
 
     // Push: forfeit ends both the battle and the quest.
     eventBus.publish(sett.id, {

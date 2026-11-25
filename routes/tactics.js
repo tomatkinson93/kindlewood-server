@@ -12,6 +12,9 @@
 //    GET  /battles/:id
 //    POST /battles/:id/act     { n, action }  the player's n-th choice; refused if the rules do not allow it
 //    POST /battles/:id/leave
+//    GET  /open                where the board is open to this player
+//    POST /quest/:questRunId   a quest's battle on the board (lib/tactics_quests.js); admins, or everyone once `tactics.quests` is on
+//    GET  /abilities/:id, POST /abilities/:id/ready   what a citizen knows and brings (lib/tactics_abilities.js)
 // ══════════════════════════════════════════════════════════════════════════
 'use strict';
 const express = require('express');
@@ -51,7 +54,7 @@ router.post('/battles', requireAuth, requireAdmin, async (req, res) => {
 });
 // A battle a town already has (its dungeon's, say) is open to whoever may play dungeons, not only admins.
 const mayPlay = async (req, res, next) => {
-  try { if (await require('../lib/dungeons').allowed(req.user)) return next(); res.status(403).json({ error: 'Battles on the board are not open yet.' }); }
+  try { if (await require('../lib/dungeons').allowed(req.user) || (await require('../lib/tactics_quests').mode(req.user)) !== 'off') return next(); res.status(403).json({ error: 'Battles on the board are not open yet.' }); }
   catch (e) { failWith(res, e); }
 };
 router.get('/battles/current', requireAuth, mayPlay, async (req, res) => {
@@ -62,11 +65,25 @@ router.get('/battles/:id', requireAuth, mayPlay, async (req, res) => {
 });
 router.post('/battles/:id/act', requireAuth, mayPlay, async (req, res) => {
   // A dungeon's battle that has just ended also says what became of the run: { dungeon: { run, found, ended, injuries } }.
+  // A quest's battle that has just ended says what became of the quest: { quest: { outcome, wealth, items, upgraded, injuries } }.
   // And any battle that has just ended: { rewards: { kept, xp, party: [rows] } } when it was won (lib/tactics_xp.js), { rolls } for injuries when a run ended.
-  try { const b = req.body || {}; const { dungeon, rewards, rolls, ...battle } = await B.act(req.user.userId, Number(req.params.id), b.n, b.action); res.json({ ok: true, battle, dungeon, rewards, rolls }); } catch (e) { failWith(res, e); }
+  try { const b = req.body || {}; const { dungeon, quest, rewards, rolls, ...battle } = await B.act(req.user.userId, Number(req.params.id), b.n, b.action); res.json({ ok: true, battle, dungeon, quest, rewards, rolls }); } catch (e) { failWith(res, e); }
 });
 router.post('/battles/:id/leave', requireAuth, mayPlay, async (req, res) => {
   try { const { dungeon, ...battle } = await B.leave(req.user.userId, Number(req.params.id)); res.json({ ok: true, battle, dungeon }); } catch (e) { failWith(res, e); }
+});
+
+// ── Where the board is open to this player: { dungeons, quests: 'on' | 'choice' | 'off' } ──
+router.get('/open', requireAuth, async (req, res) => {
+  try { res.json({ ok: true, dungeons: !!(await require('../lib/dungeons').allowed(req.user)), quests: await require('../lib/tactics_quests').mode(req.user) }); } catch (e) { failWith(res, e); }
+});
+// ── A quest's battle on the board (lib/tactics_quests.js): the one open for that quest, made if it is not there ──
+router.post('/quest/:questRunId', requireAuth, async (req, res) => {
+  try { res.json({ ok: true, battle: await require('../lib/tactics_quests').open(req.user, req.params.questRunId) }); } catch (e) { failWith(res, e); }
+});
+// Quest battles on the board for every player, or (off) for admins only, who are then offered both.
+router.post('/admin/quests-switch', requireAuth, requireAdmin, async (req, res) => {
+  try { res.json({ ok: true, on: await require('../lib/tuning').setSwitch('tactics.quests', !!(req.body || {}).on) }); } catch (e) { failWith(res, e); }
 });
 
 // ── What a citizen knows and brings (lib/tactics_abilities.js; the Abilities page on a citizen) ──

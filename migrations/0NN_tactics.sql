@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS tactics_battles (
   ended_at       TIMESTAMPTZ
 );
 -- A town has one battle on a board at a time.
-CREATE UNIQUE INDEX IF NOT EXISTS tactics_battles_one_active ON tactics_battles (settlement_id) WHERE status = 'active';
+-- (The first rule, one open battle of any kind a town, was tactics_battles_one_active; see the end of this file.)
 CREATE INDEX IF NOT EXISTS tactics_battles_by_town ON tactics_battles (settlement_id, id DESC);
 
 -- Dungeons on the board (docs/TACTICS.md §9, Phase 3). A run is fought with
@@ -47,3 +47,10 @@ UPDATE settlement_quests SET status = 'collected', combat_status = 'resolved', c
 -- bring to a battle, as a list of ability keys. NULL: the first five learned.
 ALTER TABLE citizen_classes ADD COLUMN IF NOT EXISTS ready JSONB;
 
+-- Quest battles on the board (docs/TACTICS.md §8 step 3; lib/tactics_quests.js): a battle that names the quest run
+-- it is fought for. A town may have one of these open for each quest that is waiting on a fight, beside its one
+-- dungeon or practice battle, so the "one open battle a town" rule now leaves them out.
+ALTER TABLE tactics_battles ADD COLUMN IF NOT EXISTS quest_run_id INTEGER;
+DROP INDEX IF EXISTS tactics_battles_one_active;
+CREATE UNIQUE INDEX IF NOT EXISTS tactics_battles_one_open ON tactics_battles (settlement_id) WHERE status = 'active' AND source <> 'quest';
+CREATE UNIQUE INDEX IF NOT EXISTS tactics_battles_one_per_quest ON tactics_battles (quest_run_id) WHERE status = 'active' AND quest_run_id IS NOT NULL;
