@@ -564,8 +564,8 @@ async function part2() {
     r = await api(wz, 'POST', '/api/dungeons/run/move', { room: 'a' });
     bt = await battleOf(wz, r.body.board_battle_id);
     const wU = bt.setup.party.find(u => u.citizen_id === wizId), hU = bt.setup.party.find(u => u.citizen_id === hkId);
-    check(wU.cls === 'wizard' && wU.abilities.length >= 2 && wU.abilities.every(x => x.key.startsWith('w_')) && wU.abilities.some(x => x.kind === 'attack' && x.max > 1), 'in a dungeon the Wizard fights as a Wizard: spells of their own, cast from a distance', wU.abilities.map(x => x.name).join(', '));
-    check(hU.cls === 'hearthkeeper' && hU.abilities.every(x => x.key.startsWith('h_')) && hU.abilities.some(x => x.kind === 'heal'), 'and the Hearthkeeper as a Hearthkeeper, with a heal', hU.abilities.map(x => x.name).join(', '));
+    check(wU.cls === 'wizard' && wU.abilities.length >= 2 && wU.abilities.filter(x => x.school !== 'basics').every(x => x.key.startsWith('w_') && x.school === 'wild') && wU.abilities[0].key === 'v_swing' && wU.abilities.some(x => x.kind === 'attack' && x.max > 1), 'in a dungeon the Wizard fights as a Wizard: the plain blow everyone has, and spells of their own, cast from a distance', wU.abilities.map(x => x.name).join(', '));
+    check(hU.cls === 'hearthkeeper' && hU.abilities.filter(x => x.school !== 'basics').every(x => x.key.startsWith('h_') && x.school === 'hearth') && hU.abilities.some(x => x.kind === 'heal'), 'and the Hearthkeeper as a Hearthkeeper, with a heal', hU.abilities.map(x => x.name).join(', '));
     await api(wz, 'POST', '/api/dungeons/run/flee');
 
     // ── The switch ──────────────────────────────────────────────────────
