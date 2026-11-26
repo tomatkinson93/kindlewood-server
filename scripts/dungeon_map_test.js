@@ -212,6 +212,14 @@ async function main() {
     'while they walk, the town has neither the wealth, the news nor the trophy on its wall');
     const homeRoad = (await require('../lib/travel').journeysFor({ id: b.sid, tile_q: b.q, tile_r: b.r }, 'mice')).filter(j => j.kind === 'dungeon');
     check(homeRoad.length === 1 && homeRoad[0].from.q === g.q && homeRoad[0].to.q === b.q && homeRoad[0].to.r === b.r && /^Coming home from /.test(homeRoad[0].title) && !homeRoad[0].can_recall, 'the map draws them coming home');
+    // Clanmates see each other's parties on the road; a town outside the clan does not.
+    const clanId = (await q("INSERT INTO clans (name, founder_user_id) VALUES ($1,$2) RETURNING id", ['MapClan' + RUN, a.id])).rows[0].id;
+    await q('INSERT INTO clan_members (user_id, clan_id) VALUES ($1,$2), ($3,$2)', [a.id, clanId, b.id]);
+    const seenByMate = (await require('../lib/travel').journeysFor({ id: a.sid, tile_q: a.q, tile_r: a.r }, 'mice')).filter(j => j.kind === 'dungeon');
+    const seenByOther = (await require('../lib/travel').journeysFor({ id: far.sid, tile_q: 5, tile_r: 5 }, 'mice')).filter(j => j.kind === 'dungeon');
+    check(seenByMate.length === 1 && seenByMate[0].clanmate && seenByMate[0].citizen.name === `A party from ${b.username}` && seenByMate[0].to.q === b.q && !seenByMate[0].can_recall && seenByMate[0].open === null
+      && seenByOther.length === 0, 'a clanmate sees the party on the road, named by its town; a town outside the clan does not');
+    await q('DELETE FROM clan_members WHERE clan_id=$1', [clanId]); await q('DELETE FROM clans WHERE id=$1', [clanId]);
     await walkHome(b);
     const line = await lastNews(b);
     check(/the first of any town to do it/.test(line) && (await wealthOf(b)) === hadWealth + res1.kept.wealth + want.wealth && line.includes(`🏆 ${want.title} hangs in the trophy hall (+${want.wealth} wealth)`)

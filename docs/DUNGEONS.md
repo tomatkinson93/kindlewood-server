@@ -548,6 +548,7 @@ Decided by the owner on 2026-11-26: half a minute a tile, the party walks home t
 | The race | The **trophy is won at the moment of the clear**, not on getting home, and the other towns are told then. It goes on the wall, and its wealth into the treasury, when the party is home. |
 | While walking home | The town may send another party (other citizens) to another dungeon. |
 | A test or Dev Tools dungeon | No walk: it is not on the map. |
+| Who sees a party on the road | Its own town, and **its clanmates** (the owner, 2026-11-26): they see "A party from <town>" walking to or from the dungeon. No other town does. |
 
 **Why the nearer town should win a tie.** With a walk, distance is a real head start in the race for the trophy, which is the point of putting dungeons at different distances from different towns.
 
