@@ -119,6 +119,62 @@ async function main() {
     await setLevel(a, farmer, 'soldier', 4);
     pg = (await api(a, 'GET', `/api/tactics/abilities/${farmer}`)).body;
     check(pg.cls === 'villager' && pg.second.cls === 'guard' && keys(pg.second.options[0].abilities.filter(x => x.ready)) === 'g_strike,g_shield,g_cover,g_shove', 'a villager who has trained as a Guard brings Arms as their second school');
+
+    console.log('Mastery: an ability used enough in battle');
+    const MA = require('../lib/tactics_mastery'), E = require('../lib/tactics_engine'), T = require('../lib/tactics_setup');
+    check(MA.USES === 25 && MA.EDGE === 1.2, 'twenty-five uses master an ability; mastered, it is a fifth stronger');
+    const stub = { maxHp: 40, armour: 0, agility: 8, strength: 12, endurance: 8, intelligence: 8, charisma: 8, combatSkill: 3 };
+    const plain = T.abilityOf(T.KITS.guard.abilities[0], stub), star = T.abilityOf(T.KITS.guard.abilities[0], stub, { star: true }), both = T.abilityOf(T.KITS.guard.abilities[0], stub, { off: true, star: true });
+    check(star.dmg === Math.round(plain.dmg * 1.2) && star.star === true && !plain.star && both.dmg === Math.round(Math.max(1, Math.round(plain.dmg * 0.75)) * 1.2) && star.cooldown === plain.cooldown && star.max === plain.max,
+      'the edge is on its numbers only, and on top of the second school\'s three-quarters', `${plain.dmg} → ${star.dmg}; brought ${both.dmg}`);
+    // One use short of mastering everything she brings; then a fight, played by the rules' own mind through the routes.
+    pg = (await api(a, 'GET', `/api/tactics/abilities/${guard}`)).body;
+    const everything = p2 => p2.abilities.concat(...p2.second.options.map(o => o.abilities));
+    check(pg.mastery.uses === 25 && pg.mastery.edge === 1.2 && everything(pg).every(x => x.uses === 0 && x.star === false), 'the page says how many times each ability has been used in battle: none yet');
+    for (const x of everything(pg)) await q(`INSERT INTO citizen_ability_uses (citizen_id, ability_key, uses) VALUES ($1,$2,24) ON CONFLICT (citizen_id, ability_key) DO UPDATE SET uses = 24`, [guard, x.key]);
+    pg = (await api(a, 'GET', `/api/tactics/abilities/${guard}`)).body;
+    const was = Object.fromEntries(everything(pg).map(x => [x.key, x]));
+    check(everything(pg).every(x => x.uses === 24 && x.star === false), 'twenty-four uses is not yet mastery');
+    await D.startTest(a.id, 'test_green', [guard, c4, c5]);
+    r = await api(a, 'POST', '/api/dungeons/run/move', { room: 'a' });
+    const bid = r.body.board_battle_id;
+    let bt2 = (await api(a, 'GET', '/api/tactics/battles/' + bid)).body.battle, last = null;
+    const st = E.replay(bt2.setup, bt2.actions).state;
+    let n = bt2.count;
+    for (let g = 0; g < 500 && st.status === 'active'; g++) {
+      const u = E.current(st), keep = st.r, plan = E.plan(st); st.r = keep;
+      const acts = [];
+      if (plan && plan.to && (plan.to.x !== u.x || plan.to.y !== u.y)) acts.push({ t: 'move', x: plan.to.x, y: plan.to.y });
+      if (plan && plan.ability) acts.push({ t: 'use', key: plan.ability, x: plan.x, y: plan.y });
+      acts.push({ t: 'end' });
+      for (const act of acts) { if (st.status !== 'active' || !E.apply(st, act)) continue; last = await api(a, 'POST', `/api/tactics/battles/${bid}/act`, { n: n++, action: act }); }
+    }
+    bt2 = (await api(a, 'GET', '/api/tactics/battles/' + bid)).body.battle;
+    const used = MA.usesIn(bt2.setup, bt2.actions), mine = used[guard] || {};
+    const rowsU = (await q('SELECT citizen_id, ability_key, uses FROM citizen_ability_uses WHERE citizen_id = ANY($1::int[])', [[guard, c4, c5]])).rows;
+    const stored = (cid, key) => (rowsU.find(x => x.citizen_id === cid && x.ability_key === key) || {}).uses || 0;
+    const hers = Object.keys(mine);
+    check(st.status !== 'active' && hers.length >= 1 && Object.keys(used).every(cid => Object.keys(used[cid]).every(key => stored(Number(cid), key) === used[cid][key] + (Number(cid) === guard ? 24 : 0))),
+      'every use of an ability in a kept battle is counted for the citizen who used it', JSON.stringify(used));
+    const told = (last.body.mastered || []).filter(m => m.citizen_id === guard), onRow = ((last.body.rewards || {}).party || []).find(x => x.citizen_id === guard);
+    check(told.map(m => m.key).sort().join() === hers.slice().sort().join() && told.every(m => m.name && m.icon && m.name === was[m.key].name) && (!onRow || (onRow.mastered || []).length === hers.length) && hers.every(k => bt2.result.mastered.some(m => m.key === k))
+      && !(last.body.mastered || []).some(m => m.citizen_id !== guard),
+      'the battle that takes her past twenty-five says what she has mastered, on her row and in the battle\'s record; nobody else has', told.map(m => m.name).join(', '));
+    pg = (await api(a, 'GET', `/api/tactics/abilities/${guard}`)).body;
+    const now = Object.fromEntries(everything(pg).map(x => [x.key, x])), num = x => x.dmg || x.heal || x.block || 0;
+    check(hers.every(k => now[k].star === true && now[k].uses === 25 && num(now[k]) === Math.round(num(was[k]) * 1.2)) && Object.keys(now).filter(k => !hers.includes(k)).every(k => !now[k].star && num(now[k]) === num(was[k])),
+      'her page shows them mastered and a fifth stronger; what she did not use is as it was', hers.map(k => `${now[k].name} ${num(was[k])} → ${num(now[k])}`).join(', '));
+    // The run goes on: the next fight has it.
+    let run = (await api(a, 'GET', '/api/dungeons/run')).body.run;
+    if (run && run.status === 'active' && run.moves.length) {
+      r = await api(a, 'POST', '/api/dungeons/run/move', { room: run.moves[0] });
+      const next = r.body.board_battle_id ? (await api(a, 'GET', '/api/tactics/battles/' + r.body.board_battle_id)).body.battle : null;
+      const g2 = next && next.setup.party.find(u => u.citizen_id === guard);
+      check(!next || g2.abilities.every(x => !!x.star === hers.includes(x.key) && (!hers.includes(x.key) || num(x) === num(now[x.key]))), 'and she takes it into the next fight');
+    }
+    await api(a, 'POST', '/api/dungeons/run/flee'); await api(a, 'POST', '/api/dungeons/run/leave');
+    const again = await MA.record(bt2.setup, bt2.actions);
+    check(again.length === 0, 'an ability is mastered once');
   } finally { await TU.setSwitch('dungeons.on', wasOn); await pool.end(); }
 }
 

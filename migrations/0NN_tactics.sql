@@ -56,6 +56,15 @@ ALTER TABLE citizen_classes ADD COLUMN IF NOT EXISTS ready JSONB;
 ALTER TABLE citizens ADD COLUMN IF NOT EXISTS second_class TEXT;
 ALTER TABLE citizens ADD COLUMN IF NOT EXISTS second_ready JSONB;
 
+-- Mastery (lib/tactics_mastery.js): how many times each citizen has used each
+-- ability in a kept battle. At 25 it is mastered (✦) for them, for good.
+CREATE TABLE IF NOT EXISTS citizen_ability_uses (
+  citizen_id  INTEGER NOT NULL REFERENCES citizens(id) ON DELETE CASCADE,
+  ability_key TEXT NOT NULL,
+  uses        INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (citizen_id, ability_key)
+);
+
 -- Quest battles on the board (docs/TACTICS.md §8 step 3; lib/tactics_quests.js): a battle that names the quest run
 -- it is fought for. A town may have one of these open for each quest that is waiting on a fight, beside its one
 -- dungeon or practice battle, so the "one open battle a town" rule now leaves them out.
