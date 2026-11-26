@@ -127,8 +127,9 @@ async function main() {
     check(r.body.dungeons.length === 1 && r.body.dungeons[0].in_reach === false, 'a town that has scouted the tile but stands off the map sees it, out of reach');
     r = await api(far, 'POST', `/api/dungeons/${g.id}/enter`, { citizen_ids: far.cits.slice(0, 4) });
     check(r.status === 400 && /too far/i.test(r.body.error), 'and cannot walk there', r.body.error);
-    r = await api(a, 'POST', `/api/dungeons/${g.id}/enter`, { citizen_ids: a.cits.slice(0, 3) });
-    check(r.status === 400 && /exactly 4/.test(r.body.error), 'a party is exactly four', r.body.error);
+    r = await api(a, 'POST', `/api/dungeons/${g.id}/enter`, { citizen_ids: a.cits.slice(0, 5) });
+    const none = await api(a, 'POST', `/api/dungeons/${g.id}/enter`, { citizen_ids: [] });
+    check(r.status === 400 && /one to 4/.test(r.body.error) && none.status === 400, 'a party is one to four', r.body.error);
     r = await api(a, 'POST', `/api/dungeons/${g.id}/enter`, { citizen_ids: a.cits.slice(0, 4) });
     check(r.status === 200 && r.body.run && r.body.run.status === 'active' && r.body.run.dungeon.name === g.name && r.body.run.combat === 'board' && r.body.run.party.length === 4 && r.body.run.moves.length > 0,
       'four citizens sent from the map stand at the dungeon\'s door', r.body.error);
@@ -146,22 +147,43 @@ async function main() {
       'each town goes into a dungeon once', r.body.error);
 
     console.log('The first to clear it');
-    r = await api(b, 'POST', `/api/dungeons/${g.id}/enter`, { citizen_ids: b.cits.slice(0, 4) });
-    check(r.status === 200, 'another town has its own go at the same dungeon', r.body.error);
+    r = await api(b, 'POST', `/api/dungeons/${g.id}/enter`, { citizen_ids: b.cits.slice(0, 2) });
+    check(r.status === 200 && r.body.run.party.length === 2, 'another town has its own go at the same dungeon, with a party of two', r.body.error);
+    const T = require('../lib/dungeon_trophies');
+    const gRow = (await q('SELECT * FROM dungeons WHERE id=$1', [g.id])).rows[0], want = T.prize(gRow);
+    r = await api(b, 'GET', '/api/dungeons/' + g.id);
+    check(want && T.TROPHIES[want.foe] && require('../lib/tactics_foes').FOES[want.foe].lands.includes(gRow.terrain) && r.body.dungeon.prize && r.body.dungeon.prize.title === want.title
+      && r.body.dungeon.prize.wealth === T.MOUNTS[g.tier].wealth && / on (oak|copper)$/.test(want.title),
+    'a dungeon nobody has cleared shows what the first town wins: its boss\'s trophy, on the mount of its skull', want && want.title);
+    const wealthOf = async p => Number((await q('SELECT wealth FROM settlements WHERE id=$1', [p.sid])).rows[0].wealth);
+    const hadWealth = await wealthOf(b), newsBefore = (await q("SELECT COUNT(*)::int AS n FROM settlement_events WHERE settlement_id=$1 AND type='dungeon'", [a.sid])).rows[0].n;
     let v = await clear(b);
     const res1 = (await q("SELECT result FROM dungeon_runs WHERE settlement_id=$1 AND dungeon_id=$2", [b.sid, g.id])).rows[0].result;
     const line = (await q("SELECT message FROM settlement_events WHERE settlement_id=$1 AND type='dungeon' ORDER BY id DESC LIMIT 1", [b.sid])).rows[0].message;
     check(v && v.status === 'cleared' && res1 && res1.first_clear === true && /the first of any town to do it/.test(line), 'the first town to clear it is told so', line);
+    check(res1.trophy && res1.trophy.title === want.title && res1.trophy.wealth === want.wealth && (await wealthOf(b)) === hadWealth + res1.kept.wealth + want.wealth && line.includes(`🏆 ${want.title} hangs in the trophy hall (+${want.wealth} wealth)`),
+      'it takes the trophy home, with a little wealth', `${res1.trophy && res1.trophy.title}, +${want.wealth}`);
+    r = await api(b, 'GET', '/api/dungeons');
+    const hall = r.body.hall;
+    check(hall && hall.total === 1 && hall.have === 1 && hall.kinds === 35 && hall.trophies[0].title === want.title && hall.trophies[0].count === 1 && hall.trophies[0].last.dungeon === g.name && hall.trophies[0].last.party.length === 2,
+      'the trophy hangs in the town\'s hall: one of thirty-five');
+    const heard = (await q("SELECT message FROM settlement_events WHERE settlement_id=$1 AND type='dungeon' ORDER BY id DESC LIMIT 1", [a.sid])).rows[0].message;
+    check((await q("SELECT COUNT(*)::int AS n FROM settlement_events WHERE settlement_id=$1 AND type='dungeon'", [a.sid])).rows[0].n === newsBefore + 1 && heard === `💀 ${b.username} was the first town to clear ${g.name}, and took ${want.name} home.`,
+      'the other towns that knew of the dungeon hear who got there first', heard);
     r = await api(a, 'GET', '/api/dungeons/' + g.id);
-    check(r.body.dungeon.cleared_by === 1 && r.body.dungeon.first_clear === b.username, 'and the dungeon\'s card names that town to everyone');
+    check(r.body.dungeon.cleared_by === 1 && r.body.dungeon.first_clear === b.username && r.body.dungeon.prize === null && (await api(a, 'GET', '/api/dungeons')).body.hall.total === 0,
+      'and the dungeon\'s card names that town to everyone; the prize is gone');
     const c = await player('MapC', free.find(t => dist(t, g) <= 3 && dist(t, home) >= 1 && !(t.q === b.q && t.r === b.r) && !(t.q === g.q && t.r === g.r)) || free[2]);
     mine.push(c);
     await M.tell();
     r = await api(c, 'POST', `/api/dungeons/${g.id}/enter`, { citizen_ids: c.cits.slice(0, 4) });
     v = r.status === 200 ? await clear(c) : null;
     const res2 = v ? (await q("SELECT result FROM dungeon_runs WHERE settlement_id=$1 AND dungeon_id=$2", [c.sid, g.id])).rows[0].result : null;
-    check(v && v.status === 'cleared' && res2 && !res2.first_clear && (await api(a, 'GET', '/api/dungeons/' + g.id)).body.dungeon.cleared_by === 2
-      && (await api(a, 'GET', '/api/dungeons/' + g.id)).body.dungeon.first_clear === b.username, 'a town founded later hears of it too, and clears it second', r.body.error);
+    check(v && v.status === 'cleared' && res2 && !res2.first_clear && !res2.trophy && (await api(a, 'GET', '/api/dungeons/' + g.id)).body.dungeon.cleared_by === 2
+      && (await api(a, 'GET', '/api/dungeons/' + g.id)).body.dungeon.first_clear === b.username && (await api(c, 'GET', '/api/dungeons')).body.hall.total === 0
+      && (await q('SELECT COUNT(*)::int AS n FROM dungeon_trophies WHERE dungeon_id=$1', [g.id])).rows[0].n === 1, 'a town founded later hears of it too, and clears it second: the loot, but no trophy', r.body.error);
+    check(T.KINDS === 35 && Object.keys(T.TROPHIES).every(k => require('../lib/tactics_foes').FOES[k].rank === 'boss') && Object.values(require('../lib/tactics_foes').FOES).filter(f => f.rank === 'boss').every(f => T.TROPHIES[f.key || Object.keys(require('../lib/tactics_foes').FOES).find(k => require('../lib/tactics_foes').FOES[k] === f)]),
+      'every boss of the board has a trophy, on five mounts');
 
     console.log('Gone after three days');
     r = await api(a, 'POST', `/api/dungeons/${other.id}/enter`, { citizen_ids: a.cits.slice(0, 4) });

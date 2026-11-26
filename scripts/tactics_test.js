@@ -66,6 +66,8 @@ console.log('The kits');
   check(cast.band && JSON.stringify(cast) === JSON.stringify(again) && F.RANK_ORDER.every(r => cast.creatures.some(c => c.rank === r))
     && cast.creatures.filter(c => c.rank === 'regular').every(c => F.FOES[c.id].band === cast.band) && LANDS.every(l => [1, 2, 3].every(n => F.castFor(l, n).band)),
     'a dungeon belongs to a band: its ordinary foes are the band\'s, with every rank filled, the same for the same seed', cast.band);
+  check(LANDS.every(l => Array.from({ length: 40 }, (_, n) => F.castFor(l, n + 1)).every(c => c.creatures.filter(x => x.rank === 'boss').every(x => F.FOES[x.id].band === c.band))),
+    'bands stay home: a dungeon\'s boss is always its own band\'s');
   const cap = T.foeUnit(F.FOES.stoat_captain, 0, 'orange', { hp: 0.5 });
   check(cap.maxHp === Math.round(F.FOES.stoat_captain.hp * (1 + T.TIERS.orange.hp + 0.5)) && cap.armour === 2 && cap.abilities.find(x => x.key === 'rally').fx.bold === 3
     && cap.abilities.find(x => x.key === 'rally').target === 'ally_or_self' && cap.abilities.find(x => x.key === 'rally').shape === 'around'

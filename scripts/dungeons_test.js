@@ -208,10 +208,18 @@ async function part2() {
     // ── Setting out ──────────────────────────────────────────────────────
     console.log('Setting out');
     const a = await player('Delve');
-    let e = await D.startTest(a.id, 'test_green', a.cits.slice(0, 3)).catch(x => x);
-    check(e.status === 400 && /exactly 4/.test(e.message), 'three citizens are refused: a dungeon takes exactly four');
-    e = await D.startTest(a.id, 'test_green', a.cits.slice(0, 5)).catch(x => x);
-    check(e.status === 400, 'five citizens are refused');
+    let e = await D.startTest(a.id, 'test_green', a.cits.slice(0, 5)).catch(x => x);
+    check(e.status === 400 && /one to 4/.test(e.message), 'five citizens are refused: a party is one to four', e.message);
+    {
+      // A smaller party may go; the dungeon is the same one.
+      const few = await player('Few');
+      const two = await D.startTest(few.id, 'test_green', few.cits.slice(0, 2));
+      check(two.run.status === 'active' && two.run.party.length === 2 && two.run.rooms.length > 0, 'two citizens may go in by themselves');
+      await D.leave(few.id);
+      const one = await D.startTest(few.id, 'test_green', few.cits.slice(2, 3));
+      check(one.run.status === 'active' && one.run.party.length === 1, 'and so may one');
+      await D.leave(few.id);
+    }
     await q("UPDATE citizens SET life_stage='child', born_at = NOW() WHERE id=$1", [a.cits[5]]);
     e = await D.startTest(a.id, 'test_green', [a.cits[0], a.cits[1], a.cits[2], a.cits[5]]).catch(x => x);
     check(e.status === 400 && /too young/.test(e.message), 'a child is refused');

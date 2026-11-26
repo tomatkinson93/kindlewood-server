@@ -3,7 +3,7 @@
 > **Combat is changing (2026-11-20).** Dungeon fights are becoming tactics battles on a board (`docs/TACTICS.md`, Phase 3). From 2026-11-21 a dungeon started from Dev Tools is fought that way by default (`dungeon_runs.combat = 'board'`); a card run is still possible. The run described here stays: the path, rooms, wounds that carry, rests, endings, loot and the generator. The parts about cards and decks are being replaced. **On the board the creatures are replaced too (2026-11-21):** nobody there is a beast on four legs; a dungeon belongs to one of five bands of foes (`lib/tactics_foes.js`, `docs/TACTICS.md` §4), and each creature named in this document has a foe that stands in its place. **Phase 3 is finished (2026-11-22):** a dungeon made for the board has fewer fights (a route has 2 to 3 at green, up to 5 to 7 at purple), a rest there gives back half, a foe leaves what it carried, and the fallen lie on the board until a heal or a rest stands them up; the numbers are in `docs/TACTICS.md` §5. **The card battles left the dungeons on 2026-11-23** (`docs/TACTICS.md` §8, step 2): every run is fought on the board; decks, the door draft, the card after a fight, honing and the Class cards window are deleted, and wherever this document describes them it describes history. The skull numbers under Dev Tools → Life → Dungeons are now the board's (each skull's foe health and foe power), and a rest gives back half.
 
 
-Status: **design agreed 2026-11-15 (three rounds of answers), with a fourth round on 2026-11-18. Build steps 1 to 4 are built (§12, §13: step 4, dungeons on the map, on 2026-11-25); the rest is not. On 2026-11-19 the door draft (§3.4) was replaced by a deck for each citizen: `docs/DUNGEON_CLASS_DECKS.md`.** Classes, cards, creatures, events, treasure and the numbers behind the difficulty table are in `docs/DUNGEON_CONTENT.md`. The roadmap placed dungeons after the remaining 1.0 phases; the owner brought them forward on 2026-11-18. They are started from Dev Tools only and stay behind the switch `dungeons.on` until they are ready for players. The same file is in both repos.
+Status: **design agreed 2026-11-15 (three rounds of answers), with a fourth round on 2026-11-18. Build steps 1 to 4 are built (§12, §13: step 4, dungeons on the map, on 2026-11-25; §14: the first-clear trophy, parties of one to four and bands that stay home, on 2026-11-26); the rest is not. On 2026-11-19 the door draft (§3.4) was replaced by a deck for each citizen: `docs/DUNGEON_CLASS_DECKS.md`.** Classes, cards, creatures, events, treasure and the numbers behind the difficulty table are in `docs/DUNGEON_CONTENT.md`. The roadmap placed dungeons after the remaining 1.0 phases; the owner brought them forward on 2026-11-18. They are started from Dev Tools only and stay behind the switch `dungeons.on` until they are ready for players. The same file is in both repos.
 
 ## 1. What a dungeon is
 
@@ -482,6 +482,52 @@ Dungeons are in the game itself now, not only in Dev Tools. `dungeons.on` is on 
 **Found on the way.**
 
 - A boss was worded "an Old Greyfeather grown great and old" on the path screen. A real boss goes by its own name now; only a lesser creature standing in for one is "grown great and old".
-- A dungeon's band is the seed's choice among the bands with two ordinary members in that land, and where the band has no boss there the land's boss leads it. So a forest dungeon of the Redtooth Brigands ends with Old Greyfeather. It reads oddly on the card once noticed. Either give each band a boss in every land it lives in (art), or word it ("…in the pay of Old Greyfeather"). Not changed.
+- A dungeon's band and its boss could disagree (a forest dungeon of the Redtooth Brigands ended with Old Greyfeather). Settled on 2026-11-26: §14.
 
-**Next for dungeons:** the walk there; a reason to race (a reward for the first clear beyond the line in the chronicle); quest dungeons (step 7); events and blessings (step 6, parts of which the card removal took out).
+**Next for dungeons:** the walk there; quest dungeons (step 7); events and blessings (step 6, parts of which the card removal took out).
+
+## 14. Built 2026-11-26: the first-clear trophy, smaller parties, bands that stay home
+
+Three decisions the owner made on 2026-11-26, all built.
+
+### 14.1 The first town to clear a dungeon wins a trophy
+
+A map dungeon is every nearby town's. The first to clear it takes a **trophy from its boss** home, and a little wealth. Later towns win the dungeon's ordinary loot as before: the trophy is for the race.
+
+- **One trophy for each boss, on a mount for the skull it was won at.** Seven bosses, five mounts: a full hall is 35.
+
+| Boss (land) | Trophy | | Skull | Mount | Wealth |
+|---|---|---|---|---|---|
+| Redtooth (plains) | Redtooth's Crown | | Green | oak | 40 |
+| Old Greyfeather (forest) | Greyfeather's Pinion | | Yellow | copper | 70 |
+| Grum (hills) | Grum's Tusk | | Orange | bronze | 110 |
+| The Storm Matriarch (mountain) | The Matriarch's Talon | | Red | silver | 160 |
+| Old Snapjaw (river) | Snapjaw's Shell-plate | | Purple | gold | 240 |
+| The Bog Mother (marsh) | The Bog Mother's Lantern | | | | |
+| The Hollow King (ruins) | The Hollow King's Circlet | | | | |
+
+- **It is not an item.** It hangs in the town's **trophy hall** and cannot be sold, traded or lost. A town can win the same one twice; the hall counts them.
+- **Where it shows.** A dungeon nobody has cleared says on its card what the first town wins ("The first wins Greyfeather's Pinion, on silver (+160 wealth)"). The run's last screen shows the trophy. The hall is at the foot of The Land → Dungeons: "3 of 35". The town's news says so, and **every other town that knew of the dungeon is told who got there first**.
+- **One a dungeon.** A unique row decides a tie.
+- **Not built:** showing another town's hall (on its map tile or profile), a rankings board for trophies, a title for a purple first clear (§8). All cheap once wanted.
+- **"Keepsake" is taken** (§5.2a: something found on a run that changes how its fights start), so this is a trophy.
+
+Code: `lib/dungeon_trophies.js` (`TROPHIES`, `MOUNTS`, `prize`, `award`, `hall`), table `dungeon_trophies`, `lib/dungeons.js` `afterEnd`, `prize` and `hall` in `lib/dungeon_map.js`; `js/dungeons.js` (`hallHtml`, the end screen, the card's line).
+
+### 14.2 A party is one to four
+
+A small town is never locked out. The dungeon does not shrink for a smaller party, so fewer is harder, and the card says so: with fewer than four chosen, **Send them in** asks once more first. Dev Tools starts a test dungeon with as many free adults as there are, up to four.
+
+### 14.3 Bands stay home
+
+A dungeon's band is now chosen only among bands that have **their own boss in that land** (`castFor` in `lib/tactics_foes.js`). With today's cast that is exactly one band a land:
+
+| Land | Band | Boss |
+|---|---|---|
+| Plains | The Redtooth Brigands | Redtooth |
+| Forest | The Night Pack | Old Greyfeather |
+| Hills, mountain | The Crag Reavers | Grum; the Storm Matriarch |
+| River, marsh | The Mire Folk | Old Snapjaw; the Bog Mother |
+| Ruins | The Withered | The Hollow King |
+
+**The cost, said plainly:** dungeons in a land are now always the same band. Brigands in the forest and hills, the Pack in the hills and mountains, and the Withered in the forest and marsh still turn up on quests, but never run a dungeon there. Variety comes back the day a band gets a second boss: give the Brigands a forest boss and forest dungeons are two bands again, with no code change.

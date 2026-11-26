@@ -68,6 +68,25 @@ CREATE TABLE IF NOT EXISTS dungeon_sightings (
 );
 CREATE INDEX IF NOT EXISTS idx_dungeons_map_live ON dungeons (expires_at) WHERE source = 'map';
 
+-- What the first town to clear a map dungeon wins (lib/dungeon_trophies.js):
+-- a trophy from its boss, on a mount for its skull. One a dungeon. Not an
+-- item: it hangs in the town's hall. Everything shown is kept on the row, so
+-- a trophy outlives its dungeon.
+CREATE TABLE IF NOT EXISTS dungeon_trophies (
+  id            SERIAL PRIMARY KEY,
+  dungeon_id    INTEGER NOT NULL UNIQUE,
+  settlement_id INTEGER NOT NULL REFERENCES settlements(id) ON DELETE CASCADE,
+  run_id        INTEGER,
+  foe_key       TEXT NOT NULL,
+  tier          TEXT NOT NULL,
+  dungeon_name  TEXT NOT NULL,
+  terrain       TEXT,
+  party         JSONB NOT NULL DEFAULT '[]',
+  wealth        INTEGER NOT NULL DEFAULT 0,
+  won_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_dungeon_trophies_town ON dungeon_trophies (settlement_id, won_at DESC);
+
 -- Class decks (docs/DUNGEON_CLASS_DECKS.md). Each citizen's deck for the run
 -- lives in dungeon_runs.deck: { cards: { citizenId: { card: copies } },
 -- spent: { citizenId: [heal cards gone until the party rests] } }. A choice
