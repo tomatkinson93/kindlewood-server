@@ -214,7 +214,28 @@ This replaces "knowing and readying five" above. Built in stages; what is built 
 - **A family signature.** A child coming of age is taught one ability by a parent, whatever class they take.
 - **An Allied village** teaches one ability no ladder has (the perk that replaces its card lessons).
 
-**Stages.** A: schools, the whole kit, the second school, the tabbed action bar, the Abilities tab (**built 2026-11-26**: `SCHOOLS`, `partyUnit`, `secondOf` in `lib/tactics_setup.js`; `lib/tactics_abilities.js`; `citizens.second_class`, `second_ready`; `POST /api/tactics/abilities/:id/second`; tabs in `js/tactics.js`; `js/abilities.js`). B: mastery (**built 2026-11-26**: `lib/tactics_mastery.js`, table `citizen_ability_uses`; every use in a kept battle the player played is counted, 25 master it, a mastered ability is 20% stronger wherever it comes from; the end screen says "Mastered: Strike ✦", the Abilities tab shows "12 of 25 uses to ✦"; a practice battle and a battle left to be decided count nothing). C: gear. D: study and the passive slot. E: research. F: family. G: the Allied village's ability. Each is playable when it lands.
+**Stages.** A: schools, the whole kit, the second school, the tabbed action bar, the Abilities tab (**built 2026-11-26**: `SCHOOLS`, `partyUnit`, `secondOf` in `lib/tactics_setup.js`; `lib/tactics_abilities.js`; `citizens.second_class`, `second_ready`; `POST /api/tactics/abilities/:id/second`; tabs in `js/tactics.js`; `js/abilities.js`). B: mastery (**built 2026-11-26**: `lib/tactics_mastery.js`, table `citizen_ability_uses`; every use in a kept battle the player played is counted, 25 master it, a mastered ability is 20% stronger wherever it comes from; the end screen says "Mastered: Strike ✦", the Abilities tab shows "12 of 25 uses to ✦"; a practice battle and a battle left to be decided count nothing). C: gear (**built 2026-11-26**, below). D: study and the passive slot. E: research. F: family. G: the Allied village's ability. Each is playable when it lands.
+
+**Stage C as built: what a citizen carries (`lib/gear_kinds.js`).** The numbers on gear always counted (a weapon's combat bonus, the few with dice, armour). Now the **kind** does one clear thing:
+
+| Kind | Items today | What it does |
+|---|---|---|
+| Sword | Iron and Steel Sword, Falchion, Obsidian and Mithril Blade | Arms abilities are ready a turn sooner (never below every other turn) |
+| Hammer | War Hammer | Arms blows, and the plain blow of Basics, land a quarter harder; its wielder walks one tile less |
+| Polearm | Halberd | Melee Arms blows reach two tiles |
+| Dagger | Iron Dagger | A blow from behind does double, where any other does half as much again |
+| Short bow | Shortbow, Composite Bow | An Archery shot can be loosed at a foe standing next to you |
+| Longbow | Longbow, Heartwood Longbow | Archery reaches one tile further |
+| Staff | **Oak, Rowan and Heartwood Staff (new; a carpenter makes them at the workshop, levels 3, 10 and 18)** | Wild and Hearth magic is a fifth stronger |
+| A shield (its own slot) | Wooden Buckler, Iron Shield, Tower Shield | Arms blocks are stronger by 3, 5 or 8 |
+
+- **They read the school of the ability, not the class of the citizen.** So they hold for a second school: a Guard who carries a staff heals better with borrowed Hearth magic, and gives up what a sword would do for their own blows. This is the owner's "a guard using heal with no staff… is vastly less effective than a fully trained and equipped healer": in a trial, a Guard's Kindle is 9, with a staff 12, and an equipped Hearthkeeper's 16 or more.
+- **An item made in Dev Tools gets its kind from its name** (anything with "bow", "staff", "blade"…), so nothing has to be registered.
+- **Order of the sums:** the citizen's stats, then gear, then three-quarters for a second school, then a fifth for mastery.
+- **Where it shows.** A citizen's Abilities tab has a Gear part: what they hold, what it does, and a guide to every kind. In a battle their card names the weapon and shield. The numbers and reaches on every ability already include it.
+- **One change to the rules of the board** (both copies of the engine): an ability may carry its own worth for a blow from behind (`a.back`); with none it is the usual half as much again. Old battles replay the same.
+- **Not restricted yet:** a shield can be carried with a two-handed weapon (a bow, a polearm, a staff). Worth a rule once it is abused.
+- **For the day gear is drawn on citizens (the owner, 2026-11-26).** Every unit in a battle's setup carries `gear: { weapon, shield, armour }`, each with the item's `key`, `name` and `icon`, and the weapon its `kind`. The board draws nothing from it today; it is what a sprite layer would read. The kinds are the natural unit of art: seven weapon silhouettes and a shield cover every item, with per-item tints or swaps later. Outside battle, `careers.combatDeltas` gives the same by citizen.
 
 **Known cost.** A level 20 fighter now brings ten abilities and five more; the skulls were tuned for five. More choice is not much more power (one action a turn), but orange and above should be re-simulated once stage C is in.
 

@@ -130,11 +130,12 @@ async function main() {
     // One use short of mastering everything she brings; then a fight, played by the rules' own mind through the routes.
     pg = (await api(a, 'GET', `/api/tactics/abilities/${guard}`)).body;
     const everything = p2 => p2.abilities.concat(...p2.second.options.map(o => o.abilities));
-    check(pg.mastery.uses === 25 && pg.mastery.edge === 1.2 && everything(pg).every(x => x.uses === 0 && x.star === false), 'the page says how many times each ability has been used in battle: none yet');
+    check(pg.mastery.uses === 25 && pg.mastery.edge === 1.2 && everything(pg).every(x => x.used === 0 && x.star === false) && pg.abilities.find(x => x.key === 'g_strike').uses === null
+      && pg.second.options.find(o => o.cls === 'hearthkeeper').abilities.find(x => x.key === 'h_kindle').uses === 2, 'the page says how many times each ability has been used in battle (none yet), and keeps an ability\'s own limit of times a battle');
     for (const x of everything(pg)) await q(`INSERT INTO citizen_ability_uses (citizen_id, ability_key, uses) VALUES ($1,$2,24) ON CONFLICT (citizen_id, ability_key) DO UPDATE SET uses = 24`, [guard, x.key]);
     pg = (await api(a, 'GET', `/api/tactics/abilities/${guard}`)).body;
     const was = Object.fromEntries(everything(pg).map(x => [x.key, x]));
-    check(everything(pg).every(x => x.uses === 24 && x.star === false), 'twenty-four uses is not yet mastery');
+    check(everything(pg).every(x => x.used === 24 && x.star === false), 'twenty-four uses is not yet mastery');
     await D.startTest(a.id, 'test_green', [guard, c4, c5]);
     r = await api(a, 'POST', '/api/dungeons/run/move', { room: 'a' });
     const bid = r.body.board_battle_id;
@@ -162,7 +163,7 @@ async function main() {
       'the battle that takes her past twenty-five says what she has mastered, on her row and in the battle\'s record; nobody else has', told.map(m => m.name).join(', '));
     pg = (await api(a, 'GET', `/api/tactics/abilities/${guard}`)).body;
     const now = Object.fromEntries(everything(pg).map(x => [x.key, x])), num = x => x.dmg || x.heal || x.block || 0;
-    check(hers.every(k => now[k].star === true && now[k].uses === 25 && num(now[k]) === Math.round(num(was[k]) * 1.2)) && Object.keys(now).filter(k => !hers.includes(k)).every(k => !now[k].star && num(now[k]) === num(was[k])),
+    check(hers.every(k => now[k].star === true && now[k].used === 25 && num(now[k]) === Math.round(num(was[k]) * 1.2)) && Object.keys(now).filter(k => !hers.includes(k)).every(k => !now[k].star && num(now[k]) === num(was[k])),
       'her page shows them mastered and a fifth stronger; what she did not use is as it was', hers.map(k => `${now[k].name} ${num(was[k])} → ${num(now[k])}`).join(', '));
     // The run goes on: the next fight has it.
     let run = (await api(a, 'GET', '/api/dungeons/run')).body.run;
@@ -175,6 +176,16 @@ async function main() {
     await api(a, 'POST', '/api/dungeons/run/flee'); await api(a, 'POST', '/api/dungeons/run/leave');
     const again = await MA.record(bt2.setup, bt2.actions);
     check(again.length === 0, 'an ability is mastered once');
+
+    console.log('Gear on the page');
+    pg = (await api(a, 'GET', `/api/tactics/abilities/${wiz}`)).body;
+    const sparkBare = pg.abilities.find(x => x.key === 'w_spark').dmg;
+    check(pg.gear === null && pg.kinds.length === 7 && pg.kinds.every(k => k.name && k.says) && pg.move === 3, 'the page says what she carries (nothing yet) and what each kind of weapon does');
+    await q(`INSERT INTO inventory_items (settlement_id, item_key, name, icon, category, rarity, quantity, equip_slot, stat_bonuses, equipped_to, metadata)
+             VALUES ($1,'oak_staff','Oak Staff','🪄','equipment','common',1,'weapon','{}',$2,'{}')`, [a.sid, wiz]);
+    pg = (await api(a, 'GET', `/api/tactics/abilities/${wiz}`)).body;
+    check(pg.gear && pg.gear.weapon.kind === 'staff' && pg.gear.weapon.kind_name === 'Staff' && /a fifth stronger/.test(pg.gear.weapon.says) && pg.abilities.find(x => x.key === 'w_spark').dmg === Math.round(sparkBare * 1.2)
+      && pg.abilities.find(x => x.key === 'v_swing').school === 'basics', 'with a staff in hand the page shows it, and her Wild magic a fifth stronger', `Spark ${sparkBare} → ${pg.abilities.find(x => x.key === 'w_spark').dmg}`);
   } finally { await TU.setSwitch('dungeons.on', wasOn); await pool.end(); }
 }
 
