@@ -93,8 +93,10 @@ router.get('/abilities/:citizenId', requireAuth, mayPlay, async (req, res) => {
   try { res.json({ ok: true, ...(await require('../lib/tactics_abilities').page(req.user.userId, req.params.citizenId)) }); } catch (e) { failWith(res, e); }
 });
 // { keys: [five ability keys] }: the ones this citizen brings to a battle from now on.
-router.post('/abilities/:citizenId/ready', requireAuth, mayPlay, async (req, res) => {
-  try { res.json({ ok: true, ...(await require('../lib/tactics_abilities').setReady(req.user.userId, req.params.citizenId, (req.body || {}).keys)) }); } catch (e) { failWith(res, e); }
+// The second school: { cls, keys } — a class the citizen has levels in and up to five of its abilities; cls 'none' brings nothing.
+router.post('/abilities/:citizenId/second', requireAuth, mayPlay, async (req, res) => {
+  const b = req.body || {};
+  try { res.json({ ok: true, ...(await require('../lib/tactics_abilities').setSecond(req.user.userId, req.params.citizenId, b.cls, b.keys)) }); } catch (e) { failWith(res, e); }
 });
 
 module.exports = router;

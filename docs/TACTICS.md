@@ -180,6 +180,44 @@ The owner's direction: "instead of unlocking cards we can just allow villagers t
 - **In a battle** the row is still five wide: the readied ones, then (while fewer than five are known) the ones still to learn, greyed. Tapping a citizen also names the next one to come and how many they left at home.
 - **Not built:** study at the class buildings, research, equipment, family, mastery, a reaction and a passive (below).
 
+### Schools, the whole kit, and a second school (decided by the owner 2026-11-26)
+
+This replaces "knowing and readying five" above. Built in stages; what is built is marked.
+
+**Schools.** Every ability belongs to a school:
+
+| School | What it is | Whose |
+|---|---|---|
+| **Basics** | A plain melee blow (Swing). Everyone has it, always. | Everyone |
+| **Arms** | Blows, shield work, holding a line. No magic. | Guards |
+| **Archery** | Shots, marks, pins, rains of arrows. | Archers |
+| **Wild magic** | Fire, frost and lightning: the untamed side of the wood. | Wizards |
+| **Hearth magic** | Healing, wards and heart: the homely side. | Hearthkeepers |
+| **Fieldcraft** | A villager's trade trick (a tool, a ration, a sign read). | Villagers with a trade |
+
+("White" and "black" magic are another game's words; these are ours.)
+
+**In a battle a citizen brings everything their current class has taught them**, not five of it. The battle's action bar is grouped by school, one tab each.
+
+**And up to five from one other class they have levels in: their second school.** The only way to know another class's abilities is to have been that class (the owner chose "old careers only": no cross-study). Class levels are kept when a citizen changes career, so a Guard who becomes an Archer still knows what the Watchtower drilled into them. A villager who has fought has Guard levels (battle pays them as Guard training), so a veteran farmer can bring five Arms abilities.
+
+**A second-school ability works at three-quarters strength** (damage, healing and block ×0.75), on top of what the citizen's own stats and gear make of it. Healing reads intelligence and a staff; a Guard with neither heals about half what an equipped Hearthkeeper does. That gap is the point.
+
+**How abilities are learned.**
+
+- **Levels teach the core.** The ten on each class ladder, free, as built.
+- **Study teaches the rest of the school** at the class's building (Watchtower, Wizard's Tower, Hearth Shrine): extra abilities and **passives**, each needing a class level and a building level, each taking hours and a seat. Only a citizen of that class studies there.
+- **A passive slot.** One always-on trait in battle (Counter, Brace, Sure-footed…), learned by study.
+- **Mastery.** An ability a citizen has used about 25 times in battle is ✦ for them for good: 20% stronger.
+- **Gear.** Kinds of weapon each do one clear thing: a longbow reaches a tile further, a shield adds to Shield Up and Cover, a halberd strikes two tiles away, a war hammer hits harder and slows its wielder a step, a dagger strikes harder from behind, a staff (new) adds to spells.
+- **Research.** Town-wide improvements from the Library (Fletching, Field Medicine, Stone Wards).
+- **A family signature.** A child coming of age is taught one ability by a parent, whatever class they take.
+- **An Allied village** teaches one ability no ladder has (the perk that replaces its card lessons).
+
+**Stages.** A: schools, the whole kit, the second school, the tabbed action bar, the Abilities tab. B: mastery. C: gear. D: study and the passive slot. E: research. F: family. G: the Allied village's ability. Each is playable when it lands.
+
+**Known cost.** A level 20 fighter now brings ten abilities and five more; the skulls were tuned for five. More choice is not much more power (one action a turn), but orange and above should be re-simulated once stage C is in.
+
 ### The shape of it
 
 - **A citizen knows abilities and readies five for a battle.** Knowing is permanent and belongs to the person; readying is a choice made at home, kept until changed. This is the "prepared" idea, moved from the town's cards to the citizen.

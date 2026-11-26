@@ -83,33 +83,53 @@ console.log('The kits');
     c.unit = stub;
     check(['guard', 'archer', 'wizard', 'hearthkeeper'].every(k => T.KITS[k].abilities.map(a => a.at).sort((a, b) => a - b).join() === '1,1,2,4,6,8,10,13,16,20') && T.KITS.villager.abilities.every(a => !a.at || a.at === 1),
       'each class begins with two abilities, learns one more at levels 2, 4 and 6, and five more at 8, 10, 13, 16 and 20; a villager\'s are known from the start');
-    check(keys(at('guard', 1)) === 'g_strike,g_shield' && keys(at('guard', 2)) === 'g_strike,g_shield,g_cover' && keys(at('guard', 5)) === 'g_strike,g_shield,g_cover,g_shove' && at('guard', 6).abilities.length === 5 && at('guard', 20).abilities.length === 5,
-      'a Guard at level 1 has Strike and Shield Up; Cover at 2, Shove at 4, Heavy Blow at 6');
+    check(keys(at('guard', 1)) === 'g_strike,g_shield' && keys(at('guard', 2)) === 'g_strike,g_shield,g_cover' && keys(at('guard', 5)) === 'g_strike,g_shield,g_cover,g_shove' && at('guard', 6).abilities.length === 5 && at('guard', 20).abilities.length === 10,
+      'a Guard at level 1 has Strike and Shield Up; Cover at 2, Shove at 4, Heavy Blow at 6; and brings all ten at level 20');
     const w1 = at('wizard', 1);
-    check(w1.class_level === 1 && w1.locked.map(x => `${x.key}@${x.at}`).join() === 'w_bolt@2,w_chill@4,w_burst@6' && w1.locked.every(x => x.name && x.icon) && at('wizard', 6).locked.length === 0,
-      'a unit says its class level and what it has yet to learn, in the order it will learn it');
-    check(wiz.abilities.length === 5 && wiz.class_level === 6 && T.partyUnit(c, 'archer', 'novice', null, 1).abilities.length === 3 && T.partyUnit(c, 'archer', 'villager', null, 9).abilities.length === 2,
+    check(w1.class_level === 1 && w1.next.key === 'w_bolt' && w1.next.at === 2 && w1.next.name && w1.next.icon && w1.locked.length === 0 && w1.spare === 0 && at('wizard', 20).next === null,
+      'a unit says its class level and the next ability that level will teach');
+    check(wiz.class_level === 6 && wiz.abilities.filter(a => a.school === 'wild').length === 5 && T.partyUnit(c, 'archer', 'novice', null, 1).abilities.filter(a => a.school === 'archery').length === 3 && T.partyUnit(c, 'archer', 'villager', null, 9).abilities.filter(a => a.school === 'archery').length === 2,
       'a playtest level brings its own class level: novice 3, trained 6, veteran 10');
-    check(JSON.stringify(T.learnedBetween('hearthkeeper', 1, 4).map(x => x.key)) === '["h_ward","h_bold"]' && T.learnedBetween('guard', 6, 7).length === 0 && T.learnedBetween('villager', 1, 20).length === 0 && T.learnedBetween('nobody', 1, 9).length === 0,
-      'the levels gained say what was learned: a Hearthkeeper from 1 to 4 learns Hearth Ward and Embolden');
-    // Knowing and readying: ten to learn, five to bring.
+    check(JSON.stringify(T.learnedBetween('hearthkeeper', 1, 4).map(x => x.key)) === '["h_ward","h_bold"]' && T.learnedBetween('guard', 6, 7).length === 0 && T.learnedBetween('villager', 1, 20).length === 0 && T.learnedBetween('nobody', 1, 9).length === 0
+      && T.learnedBetween('archer', 5, 8).map(x => `${x.key}:${x.spare}`).join() === 'a_pierce:false,a_aimed:false',
+      'the levels gained say what was learned: a Hearthkeeper from 1 to 4 learns Hearth Ward and Embolden; nothing learned waits at home any more');
+    // Schools, the whole kit, and a second school (docs/TACTICS.md §6, 2026-11-26).
     {
-      const keys = u => u.abilities.map(a => a.key).join();
-      const vet = T.partyUnit(c, 'guard', null, null, 10), first = 'g_strike,g_shield,g_cover,g_shove,g_heavy';
-      check(T.READY === 5 && keys(vet) === first && vet.spare === 2 && vet.locked.length === 0 && vet.next.key === 'g_oath' && vet.next.at === 13,
-        'a citizen who knows more than five brings the first five they learned unless they choose otherwise; the rest wait at home, and the next to learn is named');
-      const mine = T.partyUnit(c, 'guard', null, null, 10, ['g_shield_bash', 'g_stand_fast', 'g_strike', 'g_heavy', 'g_cover']);
-      check(keys(mine) === 'g_strike,g_cover,g_heavy,g_stand_fast,g_shield_bash' && mine.spare === 2, 'what they have readied is what they bring, in the ladder\'s order');
-      const stale = T.partyUnit(c, 'guard', null, null, 10, ['g_hammer', 'nonsense', 'g_stand_fast']);
-      check(keys(stale) === 'g_strike,g_shield,g_cover,g_shove,g_stand_fast' && !keys(stale).includes('g_hammer'), 'a choice that names something not known, or too few, is filled out from the earliest learned: never fewer than five, never one not known');
-      const young = T.partyUnit(c, 'wizard', null, null, 4, ['w_fireball']);
-      check(keys(young) === 'w_spark,w_ward,w_bolt,w_chill' && young.locked.map(x => x.key).join() === 'w_burst' && young.next.key === 'w_burst' && young.spare === 0, 'with five or fewer known there is nothing to choose; the row shows the next one to learn');
-      check(keys(T.partyUnit(c, 'guard', 'veteran', null, 1, ['g_hammer'])) === first, 'a playtest level always brings the first five: the kit the skulls were tuned with');
-      const got = T.learnedBetween('archer', 5, 8);
-      check(got.map(x => `${x.key}:${x.spare}`).join() === 'a_pierce:false,a_aimed:true', 'a newly learned ability says whether it waits at home: the fifth is brought, the sixth is spare');
+      const keys = u => u.abilities.map(a => a.key + (a.off ? '*' : '')).join(), schools = u => [...new Set(u.abilities.map(a => a.school))].join();
+      check(Object.keys(T.SCHOOLS).join() === 'basics,arms,archery,wild,hearth,field' && T.SCHOOLS.wild.name === 'Wild magic' && T.SCHOOLS.hearth.name === 'Hearth magic' && T.SCHOOL_OF.guard === 'arms' && T.SECOND === 5 && T.OFF === 0.75,
+        'the schools: Basics, Arms, Archery, Wild magic, Hearth magic, Fieldcraft; five from a second school, at three-quarters strength');
+      const vet = T.partyUnit(c, 'guard', null, null, 10);
+      check(keys(vet) === 'g_strike,g_shield,g_cover,g_shove,g_heavy,g_stand_fast,g_shield_bash' && schools(vet) === 'arms' && vet.school === 'arms' && vet.second === null && vet.next.key === 'g_oath' && vet.next.at === 13,
+        'a citizen brings everything their class has taught them, not five of it; a Guard\'s are all Arms');
+      const arch = T.partyUnit(c, 'archer', null, null, 4), wizd = T.partyUnit(c, 'wizard', null, null, 1), hk = T.partyUnit(c, 'hearthkeeper', null, null, 1);
+      check(keys(arch).startsWith('v_swing,a_shoot') && arch.abilities[0].school === 'basics' && keys(wizd).startsWith('v_swing,') && keys(hk).startsWith('v_swing,') && !keys(vet).includes('v_swing'),
+        'everyone has the plain blow of Basics; a Guard\'s Strike is theirs');
+      const farm = T.partyUnit(c, 'villager', null, 't_ration', 1);
+      check(keys(farm) === 'v_swing,v_duck,t_ration' && schools(farm) === 'basics,field', 'a villager has Basics and their trade\'s trick, which is Fieldcraft');
+      const two = T.partyUnit(c, 'guard', null, null, 6, { cls: 'hearthkeeper', level: 6, keys: null });
+      check(keys(two) === 'g_strike,g_shield,g_cover,g_shove,g_heavy,h_cinder*,h_kindle*,h_ward*,h_bold*,h_steady*' && two.second.cls === 'hearthkeeper' && two.second.school === 'hearth' && two.second.level === 6
+        && two.abilities.filter(a => a.off).every(a => a.school === 'hearth'), 'with a second school and no choice made, the first five that class taught come along, marked');
+      const pick = T.partyUnit(c, 'guard', null, null, 6, { cls: 'hearthkeeper', level: 10, keys: ['h_banish', 'h_kindle', 'h_rekindle', 'nonsense'] });
+      check(keys(pick).endsWith('g_heavy,h_kindle*,h_banish*') && !keys(pick).includes('h_rekindle'), 'what the citizen chose is what comes, never one that class has not taught them yet');
+      const many = T.partyUnit(c, 'archer', null, null, 1, { cls: 'wizard', level: 20, keys: T.KITS.wizard.abilities.map(a => a.key) });
+      check(many.abilities.filter(a => a.off).length === 5, 'never more than five from the second school');
+      const hStats = { ...stub, intelligence: 14 }, own = T.abilityOf(T.KITS.hearthkeeper.abilities.find(a => a.key === 'h_kindle'), hStats), off = two.abilities.find(a => a.key === 'h_kindle'), same = T.abilityOf(T.KITS.hearthkeeper.abilities.find(a => a.key === 'h_kindle'), stub);
+      check(off.heal === Math.max(1, Math.round(same.heal * 0.75)) && off.heal < same.heal && own.heal > same.heal && !own.off && off.off === true && off.fx && off.cooldown === own.cooldown && off.uses === own.uses,
+        'a second-school ability works at three-quarters of what the citizen\'s own stats make of it: its numbers, not its reach or its uses', `own ${own.heal}, same stats ${same.heal}, brought ${off.heal}`);
+      const dmgOff = T.abilityOf(T.KITS.guard.abilities[0], stub, { off: true }), dmgOwn = T.abilityOf(T.KITS.guard.abilities[0], stub);
+      check(dmgOff.dmg === Math.round(dmgOwn.dmg * 0.75) && T.abilityOf(T.KITS.guard.abilities[1], stub, { off: true }).block === Math.round(T.abilityOf(T.KITS.guard.abilities[1], stub).block * 0.75), 'damage and block as well as healing');
+      check(T.partyUnit(c, 'guard', null, null, 6, { cls: 'guard', level: 9 }).second === null && T.partyUnit(c, 'guard', null, null, 6, { cls: 'villager', level: 9 }).second === null && T.partyUnit(c, 'guard', null, null, 6, { cls: 'nobody', level: 9 }).second === null,
+        'the second school is another fighting class: not one\'s own, and not a villager\'s');
+      const rows = [{ class_key: 'soldier', level: 5, xp: 300 }, { class_key: 'archer', level: 7, xp: 900 }, { class_key: 'wizard', level: 1, xp: 0 }];
+      check(JSON.stringify(T.secondOf(rows, 'wizard', null)) === '{"cls":"archer","level":7,"keys":null}' && T.secondOf(rows, 'archer', {}).cls === 'guard' && T.secondOf([{ class_key: 'soldier', level: 5, xp: 300 }], 'guard', null) === null
+        && T.secondOf(rows, 'hearthkeeper', { second_class: 'wizard' }).cls === 'archer', 'with nothing chosen, the other class they are furthest along in; a class never practised does not count');
+      check(T.secondOf(rows, 'wizard', { second_class: 'guard', second_ready: ['g_shove'] }).cls === 'guard' && T.secondOf(rows, 'wizard', { second_class: 'guard', second_ready: ['g_shove'] }).keys.join() === 'g_shove'
+        && T.secondOf(rows, 'wizard', { second_class: 'none' }) === null && T.secondOf(rows, 'guard', { second_class: 'guard' }).cls === 'archer',
+        'a chosen class is kept while they still have levels in it; "none" brings nothing; one\'s own class falls back to the furthest along');
+      check(keys(T.partyUnit(c, 'villager', null, 't_tool', 1, { cls: 'guard', level: 4, keys: null })) === 'v_swing,v_duck,t_tool,g_strike*,g_shield*,g_cover*,g_shove*', 'a villager who has trained as a Guard brings Arms as their second school');
       const top = T.partyUnit(c, 'hearthkeeper', null, null, 20);
-      check(top.next === null && top.spare === 5 && ['guard', 'archer', 'wizard', 'hearthkeeper'].every(k => T.KITS[k].abilities.every(a => { const ab = T.abilityOf(a, stub); return ab.name && (ab.dmg || ab.block || ab.heal || Object.keys(ab.fx).length); })),
-        'at level 20 a class knows all ten, and every one of them does something on the board');
+      check(top.next === null && top.abilities.length === 11 && ['guard', 'archer', 'wizard', 'hearthkeeper'].every(k => T.KITS[k].abilities.every(a => { const ab = T.abilityOf(a, stub); return ab.name && ab.school === T.SCHOOL_OF[k] && (ab.dmg || ab.block || ab.heal || Object.keys(ab.fx).length); })),
+        'at level 20 a class knows all ten, each in its school, and every one of them does something on the board');
       // The ten learned from level 8 up, in real battles: each party brings only those, the rules' own mind plays both sides.
       {
         const CE = require('../lib/citizen_unit'), E2 = require('../lib/tactics_engine');
@@ -117,7 +137,7 @@ console.log('The kits');
         const used = {}; let refused = 0, ended = 0;
         const N = 12;
         for (let seed = 1; seed <= N; seed++) {
-          const party = Object.keys(NEW).map((cls, i) => T.partyUnit({ id: i + 1, name: cls, role: 'idle', unit: CE.unitFromCitizen({ id: i + 1, name: cls, role: 'idle', stats: { strength: 22, agility: 20, endurance: 22, intelligence: 22, charisma: 14 }, skills: { combat: 9 }, armour: 2 }) }, cls, null, null, 20, NEW[cls]));
+          const party = Object.keys(NEW).map((cls, i) => T.partyUnit({ id: i + 1, name: cls, role: 'idle', unit: CE.unitFromCitizen({ id: i + 1, name: cls, role: 'idle', stats: { strength: 22, agility: 20, endurance: 22, intelligence: 22, charisma: 14 }, skills: { combat: 9 }, armour: 2 }) }, cls, null, null, 20)).map(u => ({ ...u, abilities: u.abilities.filter(a => NEW[u.cls].includes(a.key)) }));   // only the higher rungs, so each must earn its use
           const band = Object.keys(F.BANDS)[seed % 5], foes = F.SHOWCASE[band][seed % 3 === 0 ? 'boss' : 'hard'].map((k, i) => T.foeUnit(F.FOES[k], i, 'red', null));
           const st = E2.replay({ seed, land: 'forest', party, enemies: foes }, []).state;      // replay: foes quicker than the party take their turns first
           for (let g = 0; g < 600 && st.status === 'active'; g++) {
@@ -134,7 +154,7 @@ console.log('The kits');
         check(ended === N && refused === 0 && never.every(k => k === 'h_battle_cry'), 'a party that brings only the ten from the higher rungs fights its battles to the end: nothing is refused, and the mind finds a use for each (Battle Cry it leaves to players)',
           `${ended} of ${N} ended; never used: ${never.join() || 'none'}`);
         // Battle Cry, used by hand: everyone within two is emboldened.
-        const mk = (cls, i, r) => T.partyUnit({ id: i + 1, name: cls, role: 'idle', unit: CE.unitFromCitizen({ id: i + 1, name: cls, role: 'idle', stats: { strength: 20, agility: 30 - i, endurance: 20, intelligence: 20, charisma: 14 }, skills: { combat: 9 } }) }, cls, null, null, 20, r);
+        const mk = (cls, i, r) => T.partyUnit({ id: i + 1, name: cls, role: 'idle', unit: CE.unitFromCitizen({ id: i + 1, name: cls, role: 'idle', stats: { strength: 20, agility: 30 - i, endurance: 20, intelligence: 20, charisma: 14 }, skills: { combat: 9 } }) }, cls, null, null, 20);
         const st = E2.createBattle({ seed: 5, land: 'forest', party: [mk('hearthkeeper', 0, ['h_cinder', 'h_kindle', 'h_battle_cry', 'h_hearthlight', 'h_rekindle']), mk('guard', 1), mk('archer', 2), mk('wizard', 3)], enemies: [T.foeUnit(F.FOES.rat_cutpurse, 0, 'green', null)] });
         for (let g = 0; g < 10 && E2.current(st).cls !== 'hearthkeeper'; g++) E2.apply(st, { t: 'end' });
         const hk = E2.current(st);
@@ -228,7 +248,7 @@ async function part2() {
   const a = await call(adminId, 'POST', '/api/tactics/admin/setup', { classes: ['guard', 'hearthkeeper', 'archer', 'wizard'], level: 'trained', tier: 'orange', terrain: 'hills', seed: 42 });
   check(a.status === 200 && a.body.party.length === 4 && a.body.party.map(u => u.cls).join() === 'guard,hearthkeeper,archer,wizard' && a.body.enemies.length >= 2 && a.body.seed === 42 && a.body.land === 'hills',
     'a setup: four citizens in the classes chosen, a group of creatures, the seed and the land', a.body.party.map(u => u.name).join(', '));
-  check(a.body.party.every(u => u.abilities.length === 5 && u.maxHp > 0 && u.move >= 1 && u.abilities.every(x => x.name && x.icon && (x.dmg || x.block || x.heal || Object.keys(x.fx).length))) && a.body.enemies.every(u => u.abilities.length >= 1 && u.maxHp > 0),
+  check(a.body.party.every(u => u.abilities.filter(x => x.school !== 'basics').length === 5 && u.abilities.length === (u.cls === 'guard' ? 5 : 6) && u.maxHp > 0 && u.move >= 1 && u.abilities.every(x => x.name && x.icon && (x.dmg || x.block || x.heal || Object.keys(x.fx).length))) && a.body.enemies.every(u => u.abilities.length >= 1 && u.maxHp > 0),
     'every unit has health, a move and abilities that do something');
   const b = await call(adminId, 'POST', '/api/tactics/admin/setup', { classes: ['guard', 'hearthkeeper', 'archer', 'wizard'], level: 'trained', tier: 'orange', terrain: 'hills', seed: 42 });
   check(JSON.stringify(a.body.enemies) === JSON.stringify(b.body.enemies) && JSON.stringify(a.body.party) === JSON.stringify(b.body.party), 'the same choices and seed give the same two sides');

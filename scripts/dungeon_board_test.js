@@ -101,8 +101,8 @@ async function main() {
       check(guard.levels > 0 && guard.learned.map(x => x.key).join() === 'g_cover' && archer.learned.map(x => x.key).join() === 'a_part' && others.every(x => x.learned.length === 0),
         'the levels gained teach: the Guard learns Cover and the Archer Parting Shot at level 2; Guard training teaches a villager nothing', `${guard.before.level}→${guard.after.level}`);
       const kit1 = bt.setup.party.find(u => u.cls === 'guard');
-      check(kit1.abilities.map(x => x.key).join() === 'g_strike,g_shield' && kit1.class_level === 1 && kit1.locked.map(x => x.key).join() === 'g_cover,g_shove,g_heavy',
-        'they went in knowing two abilities each, at class level 1, the rest still to learn');
+      check(kit1.abilities.map(x => x.key).join() === 'g_strike,g_shield' && kit1.class_level === 1 && kit1.next.key === 'g_cover' && kit1.next.at === 2 && kit1.school === 'arms',
+        'they went in knowing two abilities each, at class level 1, the next to learn named');
       const again = (await api(a, 'GET', '/api/tactics/battles/' + b1)).body.battle;
       check(rows.every(x => x.levels === x.after.level - x.before.level) && rows.some(x => x.levels > 0) && again.result.rewards && again.result.rewards.kept === true && again.result.rewards.party.length === 4,
         'the levels gained are said, and the rewards are kept with the battle\'s record to be read again');

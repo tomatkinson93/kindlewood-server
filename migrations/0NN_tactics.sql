@@ -47,6 +47,15 @@ UPDATE settlement_quests SET status = 'collected', combat_status = 'resolved', c
 -- bring to a battle, as a list of ability keys. NULL: the first five learned.
 ALTER TABLE citizen_classes ADD COLUMN IF NOT EXISTS ready JSONB;
 
+-- The second school (lib/tactics_setup.js; docs/TACTICS.md §6, 2026-11-26). A
+-- citizen brings everything their current class has taught them, and up to
+-- five abilities from one other class they have levels in. second_class: that
+-- class ('none': bring nothing; NULL: the one they are furthest along in);
+-- second_ready: which of its abilities (NULL: the first five it taught).
+-- citizen_classes.ready (five chosen from one's own class) is no longer read.
+ALTER TABLE citizens ADD COLUMN IF NOT EXISTS second_class TEXT;
+ALTER TABLE citizens ADD COLUMN IF NOT EXISTS second_ready JSONB;
+
 -- Quest battles on the board (docs/TACTICS.md §8 step 3; lib/tactics_quests.js): a battle that names the quest run
 -- it is fought for. A town may have one of these open for each quest that is waiting on a fight, beside its one
 -- dungeon or practice battle, so the "one open battle a town" rule now leaves them out.
