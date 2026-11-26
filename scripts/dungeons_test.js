@@ -590,7 +590,7 @@ async function part2() {
     await TU.setSwitch('dungeons.on', true);
     await api(g, 'POST', '/api/dungeons/run/leave');
     const nums = (await TU.lifeAll()).filter(n => n.group === 'Dungeons');
-    check(nums.length === 13 && nums.filter(n => /^DUNGEON_FOE_(HP|POW)_/.test(n.key)).length === 10 && !nums.some(n => /^DUNGEON_(HP|STR)_|^DUNGEON_REST$/.test(n.key)),
+    check(nums.length === 14 && nums.some(n => n.key === 'DUNGEON_WALK_SECS') && nums.filter(n => /^DUNGEON_FOE_(HP|POW)_/.test(n.key)).length === 10 && !nums.some(n => /^DUNGEON_(HP|STR)_|^DUNGEON_REST$/.test(n.key)),
       "thirteen dungeon numbers are tunable from Dev Tools: each skull's foe health and power, the rest, the flight and the idle hours");
     await TU.setLife('DUNGEON_FOE_HP_GREEN', 0.8);
     const g2 = await player('Tuned');

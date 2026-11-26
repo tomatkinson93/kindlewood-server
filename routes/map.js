@@ -45,6 +45,9 @@ router.get('/world', requireAuth, async (req, res) => {
     // Dungeons on the map (lib/dungeon_map.js), on tiles the viewer has scouted.
     let dungeonMap = {};
     try { dungeonMap = await require('../lib/dungeon_map').tileMap(req.user.userId); } catch (e) { /* pre-migration */ }
+    // How many dungeon trophies each town has on its wall (lib/dungeon_trophies.js), for its panel.
+    let trophyCount = {};
+    try { trophyCount = await require('../lib/dungeon_trophies').countsAll(); } catch (e) { /* pre-migration */ }
     const settlementMap = {};
     settlementsRes.rows.forEach(s => {
       settlementMap[`${s.tile_q},${s.tile_r}`] = { ...s, settlement_type: 'player' };
@@ -190,6 +193,7 @@ router.get('/world', requireAuth, async (req, res) => {
           settlement_id: occupant.settlement_type === 'player' ? occupant.settlement_id : null,
           can_trade: occupant.settlement_type === 'player' && tradePartners.has(occupant.settlement_id),
           festival: !!occupant.festival,   // fireworks over the town (js/kwmap-festival.js)
+          trophies: occupant.settlement_type === 'player' ? (trophyCount[occupant.settlement_id] || 0) : 0,
           clan: occupant.user_id && clanByUser[occupant.user_id]
             ? { ...clanByUser[occupant.user_id], mine: clanByUser[occupant.user_id].id === myClanId }
             : null,

@@ -3,7 +3,7 @@
 > **Combat is changing (2026-11-20).** Dungeon fights are becoming tactics battles on a board (`docs/TACTICS.md`, Phase 3). From 2026-11-21 a dungeon started from Dev Tools is fought that way by default (`dungeon_runs.combat = 'board'`); a card run is still possible. The run described here stays: the path, rooms, wounds that carry, rests, endings, loot and the generator. The parts about cards and decks are being replaced. **On the board the creatures are replaced too (2026-11-21):** nobody there is a beast on four legs; a dungeon belongs to one of five bands of foes (`lib/tactics_foes.js`, `docs/TACTICS.md` §4), and each creature named in this document has a foe that stands in its place. **Phase 3 is finished (2026-11-22):** a dungeon made for the board has fewer fights (a route has 2 to 3 at green, up to 5 to 7 at purple), a rest there gives back half, a foe leaves what it carried, and the fallen lie on the board until a heal or a rest stands them up; the numbers are in `docs/TACTICS.md` §5. **The card battles left the dungeons on 2026-11-23** (`docs/TACTICS.md` §8, step 2): every run is fought on the board; decks, the door draft, the card after a fight, honing and the Class cards window are deleted, and wherever this document describes them it describes history. The skull numbers under Dev Tools → Life → Dungeons are now the board's (each skull's foe health and foe power), and a rest gives back half.
 
 
-Status: **design agreed 2026-11-15 (three rounds of answers), with a fourth round on 2026-11-18. Build steps 1 to 4 are built (§12, §13: step 4, dungeons on the map, on 2026-11-25; §14: the first-clear trophy, parties of one to four and bands that stay home, on 2026-11-26); the rest is not. On 2026-11-19 the door draft (§3.4) was replaced by a deck for each citizen: `docs/DUNGEON_CLASS_DECKS.md`.** Classes, cards, creatures, events, treasure and the numbers behind the difficulty table are in `docs/DUNGEON_CONTENT.md`. The roadmap placed dungeons after the remaining 1.0 phases; the owner brought them forward on 2026-11-18. They are started from Dev Tools only and stay behind the switch `dungeons.on` until they are ready for players. The same file is in both repos.
+Status: **design agreed 2026-11-15 (three rounds of answers), with a fourth round on 2026-11-18. Build steps 1 to 4 are built (§12, §13: step 4, dungeons on the map, on 2026-11-25; §14: the first-clear trophy, parties of one to four and bands that stay home; §15: the walk there and home, both on 2026-11-26); the rest is not. On 2026-11-19 the door draft (§3.4) was replaced by a deck for each citizen: `docs/DUNGEON_CLASS_DECKS.md`.** Classes, cards, creatures, events, treasure and the numbers behind the difficulty table are in `docs/DUNGEON_CONTENT.md`. The roadmap placed dungeons after the remaining 1.0 phases; the owner brought them forward on 2026-11-18. They are started from Dev Tools only and stay behind the switch `dungeons.on` until they are ready for players. The same file is in both repos.
 
 ## 1. What a dungeon is
 
@@ -473,7 +473,7 @@ Dungeons are in the game itself now, not only in Dev Tools. `dungeons.on` is on 
 **Four things differ from §6, on purpose.**
 
 1. **A town is told; it does not have to scout.** §6 left "how is a dungeon found" open, and the first build used the fog of war, as camps do. Tried, a town could have its two dungeons sitting unseen four tiles away. So word of a dungeon reaches every town near enough to walk there: its tile is lit on that town's map and its news says so, once (`dungeon_sightings`). A town founded later hears of the ones already there. Scouting still finds dungeons further off; they show as too far to walk.
-2. **The walk there is not played.** The party stands at the door the moment it is sent, and is busy until the run ends. A march across the map (time, a line on the map, being met on the road) is worth doing with the journeys system, and is its own piece of work.
+2. ~~**The walk there is not played.**~~ Built on 2026-11-26: §15.
 3. **No two dungeons a town can see share a name**, and there are twelve names a land now, not six.
 4. **Time-of-day gates (§6.4) are not built.** Nothing has asked for them yet.
 
@@ -484,7 +484,7 @@ Dungeons are in the game itself now, not only in Dev Tools. `dungeons.on` is on 
 - A boss was worded "an Old Greyfeather grown great and old" on the path screen. A real boss goes by its own name now; only a lesser creature standing in for one is "grown great and old".
 - A dungeon's band and its boss could disagree (a forest dungeon of the Redtooth Brigands ended with Old Greyfeather). Settled on 2026-11-26: §14.
 
-**Next for dungeons:** the walk there; quest dungeons (step 7); events and blessings (step 6, parts of which the card removal took out).
+**Next for dungeons:** something met on the road (§15); quest dungeons (step 7); events and blessings (step 6, parts of which the card removal took out).
 
 ## 14. Built 2026-11-26: the first-clear trophy, smaller parties, bands that stay home
 
@@ -509,7 +509,8 @@ A map dungeon is every nearby town's. The first to clear it takes a **trophy fro
 - **It is not an item.** It hangs in the town's **trophy hall** and cannot be sold, traded or lost. A town can win the same one twice; the hall counts them.
 - **Where it shows.** A dungeon nobody has cleared says on its card what the first town wins ("The first wins Greyfeather's Pinion, on silver (+160 wealth)"). The run's last screen shows the trophy. The hall is at the foot of The Land → Dungeons: "3 of 35". The town's news says so, and **every other town that knew of the dungeon is told who got there first**.
 - **One a dungeon.** A unique row decides a tie.
-- **Not built:** showing another town's hall (on its map tile or profile), a rankings board for trophies, a title for a purple first clear (§8). All cheap once wanted.
+- **Shown to others (built the same day):** every town's panel on the map says "🏆 N dungeon trophies", and Rankings has a **Dungeon Trophies** board (trophies, then kinds).
+- **Not built:** looking inside another town's hall, a title for a purple first clear (§8).
 - **"Keepsake" is taken** (§5.2a: something found on a run that changes how its fights start), so this is a trophy.
 
 Code: `lib/dungeon_trophies.js` (`TROPHIES`, `MOUNTS`, `prize`, `award`, `hall`), table `dungeon_trophies`, `lib/dungeons.js` `afterEnd`, `prize` and `hall` in `lib/dungeon_map.js`; `js/dungeons.js` (`hallHtml`, the end screen, the card's line).
@@ -531,3 +532,27 @@ A dungeon's band is now chosen only among bands that have **their own boss in th
 | Ruins | The Withered | The Hollow King |
 
 **The cost, said plainly:** dungeons in a land are now always the same band. Brigands in the forest and hills, the Pack in the hills and mountains, and the Withered in the forest and marsh still turn up on quests, but never run a dungeon there. Variety comes back the day a band gets a second boss: give the Brigands a forest boss and forest dungeons are two bands again, with no code change.
+
+## 15. Built 2026-11-26: the walk there and home
+
+Decided by the owner on 2026-11-26: half a minute a tile, the party walks home too, and what it carries reaches the town when it arrives.
+
+**What a player sees.** **Send them in** no longer puts the party at the door. It sets out on foot: the dungeon's window shows "On the road: they reach the door in 1:32" with **Call them back**, the map draws the party walking from the town to the skull (the travel layer, with the other journeys), and the skull's ring is gold. At the door the path screen takes over. When the run ends, however it ends, the last screen says "Walking home: back in 2:10. What they carry reaches your stores when they arrive", and the map draws them coming back. The four are busy from setting out until they are home.
+
+| Rule | Value |
+|---|---|
+| Pace | 30 seconds a tile, each way (`DUNGEON_WALK_SECS`, Dev Tools → Life → Dungeons; 0 turns the walk off). A dungeon is 2 to 8 tiles off, so 1 to 4 minutes. |
+| On the road there | Status `travelling`. Nothing can be done in the dungeon. The party can be **called back**: it walks home for as long as it had walked, and the dungeon is **not** used up. |
+| At the door | The run is as before. It cannot be called back any more: turning back at the door is an ending, and uses the town's go. |
+| On the road home | The run has its ending (cleared, left, fled, defeat, timed out). The loot, the wealth, the trophy's wealth, the town's news line and the chronicle are held until arrival. Injuries and combat skill are settled at the ending, so the last screen can show them. |
+| The race | The **trophy is won at the moment of the clear**, not on getting home, and the other towns are told then. It goes on the wall, and its wealth into the treasury, when the party is home. |
+| While walking home | The town may send another party (other citizens) to another dungeon. |
+| A test or Dev Tools dungeon | No walk: it is not on the map. |
+
+**Why the nearer town should win a tie.** With a walk, distance is a real head start in the race for the trophy, which is the point of putting dungeons at different distances from different towns.
+
+**Where it lives.** `lib/dungeons.js`: `walkSecs`, `start` (status `travelling`, `arrives_at`), `arrivals` (each pass of the quest worker, and whenever the town's screen asks), `finishTx` (holds what is kept in `owed`, sets `home_at`), `settle` (pays it out, once), `recall`. Columns `arrives_at`, `home_at`, `walk_secs`, `owed` on `dungeon_runs`. `lib/travel.js` `dungeonJourneys` puts the party on the map. Routes: `POST /api/dungeons/run/recall`, `POST /api/dungeons/admin/arrive` (Dev Tools: **Finish the walk now**). Browser: `js/dungeons.js` (`travelHtml`, the countdown, `mapAgain`), `js/kwmap-travel.js` (the party's card opens the dungeon), live events `dungeon_arrived` and `dungeon_home`.
+
+**Found on the way.** Citizens in a dungeon were still offered in the map's pickers (a camp's, an outpost's, a dungeon's); the server refused them, but they should not have been listed. They are left out now.
+
+**Not built, and the obvious next step:** something met on the road. A party walking home loaded with loot is exactly what a brigand ambush, or a neighbour's patrol, is for.

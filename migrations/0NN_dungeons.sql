@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS dungeon_runs (
   settlement_id  INTEGER NOT NULL REFERENCES settlements(id) ON DELETE CASCADE,
   user_id        INTEGER NOT NULL,
   party_ids      JSONB NOT NULL DEFAULT '[]',
-  -- active | cleared | left | fled | defeat | timed_out  ('travelling' comes with map dungeons)
+  -- travelling | active | cleared | left | fled | defeat | timed_out | recalled
   status         TEXT NOT NULL DEFAULT 'active',
   floor          INTEGER NOT NULL DEFAULT 0,
   room           TEXT,                         -- the room the party stands in; NULL at the door of a floor
@@ -67,6 +67,18 @@ CREATE TABLE IF NOT EXISTS dungeon_sightings (
   PRIMARY KEY (dungeon_id, settlement_id)
 );
 CREATE INDEX IF NOT EXISTS idx_dungeons_map_live ON dungeons (expires_at) WHERE source = 'map';
+
+-- The walk (lib/dungeons.js; DUNGEONS.md §15). A party sent to a map dungeon
+-- walks there ('travelling' until arrives_at) and walks home when the run
+-- ends (home_at). What it carries home, and what the town is to be told, are
+-- held in `owed` until it arrives; NULL once settled, or when there was no
+-- walk. A party called back on the road is 'recalled' until it is home, and
+-- then its row goes, so the town still has its go at that dungeon.
+ALTER TABLE dungeon_runs ADD COLUMN IF NOT EXISTS arrives_at TIMESTAMPTZ;
+ALTER TABLE dungeon_runs ADD COLUMN IF NOT EXISTS home_at    TIMESTAMPTZ;
+ALTER TABLE dungeon_runs ADD COLUMN IF NOT EXISTS walk_secs  INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE dungeon_runs ADD COLUMN IF NOT EXISTS owed       JSONB;
+CREATE INDEX IF NOT EXISTS idx_dungeon_runs_owed ON dungeon_runs (home_at) WHERE owed IS NOT NULL;
 
 -- What the first town to clear a map dungeon wins (lib/dungeon_trophies.js):
 -- a trophy from its boss, on a mount for its skull. One a dungeon. Not an

@@ -23,6 +23,7 @@
 //    POST /admin/sweep           { idle_run? } end idle runs now (optionally age this town's run first)
 //    POST /admin/heal            the party back to full health, everyone up
 //    POST /admin/win             win the open fight outright (to walk a path quickly)
+//    POST /admin/arrive          the walk is over now (to the door, or home)
 //    POST /admin/map             { expire? }  put dungeons on the map now (first sending every one away, with expire)
 //
 //  Fights are battles on the board, played through /api/tactics (battles/:id/act).
@@ -80,6 +81,10 @@ router.post('/run/leave', requireAuth, gate, async (req, res) => {
 router.post('/run/flee', requireAuth, gate, async (req, res) => {
   try { res.json({ ok: true, ...(await D.flee(req.user.userId)) }); } catch (e) { fail(res, e); }
 });
+// Call the party back while it is still on the road to a map dungeon.
+router.post('/run/recall', requireAuth, async (req, res) => {
+  try { res.json({ ok: true, ...(await D.recall(req.user.userId)) }); } catch (e) { fail(res, e); }
+});
 
 // ── Dev Tools ───────────────────────────────────────────────────────────────
 router.get('/admin/status', requireAuth, requireAdmin, async (req, res) => {
@@ -121,6 +126,16 @@ router.post('/admin/heal', requireAuth, requireAdmin, async (req, res) => {
     for (const k of Object.keys(state)) state[k] = { ...state[k], hp: state[k].max, down: false };
     await query('UPDATE dungeon_runs SET party_state=$2 WHERE id=$1', [r.id, JSON.stringify(state)]);
     res.json({ ok: true, ...(await D.current(req.user.userId)) });
+  } catch (e) { fail(res, e); }
+});
+// The walk is over now: a party on the road is at the door, a party walking home is home.
+router.post('/admin/arrive', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const s = (await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId])).rows[0];
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+    await query(`UPDATE dungeon_runs SET arrives_at = NOW() WHERE settlement_id=$1 AND status='travelling'`, [s.id]);
+    await query(`UPDATE dungeon_runs SET home_at = NOW() WHERE settlement_id=$1 AND owed IS NOT NULL`, [s.id]);
+    res.json({ ok: true, arrived: await D.arrivals(s.id), ...(await D.current(req.user.userId)) });
   } catch (e) { fail(res, e); }
 });
 router.post('/admin/win', requireAuth, requireAdmin, async (req, res) => {

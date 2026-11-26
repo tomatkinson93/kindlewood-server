@@ -36,6 +36,11 @@ async function main() {
     const r = await fetch(BASE + pth, { method, headers: { Authorization: 'Bearer ' + p.token, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
     return { status: r.status, body: await r.json().catch(() => ({})) };
   };
+  // The walk is over: a party on the road is at the door; a party walking home is home.
+  const arrive = async p => { await q(`UPDATE dungeon_runs SET arrives_at = NOW() - interval '1 second' WHERE settlement_id=$1 AND status='travelling'`, [p.sid]); return D.arrivals(p.sid); };
+  const walkHome = async p => { await q(`UPDATE dungeon_runs SET home_at = NOW() - interval '1 second' WHERE settlement_id=$1 AND owed IS NOT NULL`, [p.sid]); return D.arrivals(p.sid); };
+  const wealthOf = async p => Number((await q('SELECT wealth FROM settlements WHERE id=$1', [p.sid])).rows[0].wealth);
+  const away = async (p, ids) => (await D.busyCitizenIds(ids)).length;
   // Walk a run to its end, every fight won outright (Dev Tools' "win the open fight").
   async function clear(p) {
     let v = (await D.current(p.id)).run;
@@ -130,21 +135,59 @@ async function main() {
     r = await api(a, 'POST', `/api/dungeons/${g.id}/enter`, { citizen_ids: a.cits.slice(0, 5) });
     const none = await api(a, 'POST', `/api/dungeons/${g.id}/enter`, { citizen_ids: [] });
     check(r.status === 400 && /one to 4/.test(r.body.error) && none.status === 400, 'a party is one to four', r.body.error);
+    const WALK = D.CONFIG.WALK_SECS, there = dist(a, g) * WALK;
+    r = await api(a, 'GET', '/api/dungeons/' + g.id);
+    check(WALK === 30 && r.body.dungeon.walk_secs === there && there > 0, 'the card says how long the walk is: half a minute a tile', `${dist(a, g)} tiles, ${there}s`);
     r = await api(a, 'POST', `/api/dungeons/${g.id}/enter`, { citizen_ids: a.cits.slice(0, 4) });
-    check(r.status === 200 && r.body.run && r.body.run.status === 'active' && r.body.run.dungeon.name === g.name && r.body.run.combat === 'board' && r.body.run.party.length === 4 && r.body.run.moves.length > 0,
-      'four citizens sent from the map stand at the dungeon\'s door', r.body.error);
+    let left = r.body.run ? (new Date(r.body.run.arrives_at) - Date.now()) / 1000 : 0;
+    check(r.status === 200 && r.body.run.status === 'travelling' && r.body.run.can_recall && r.body.run.moves.length === 0 && !r.body.run.can_leave && r.body.run.walk_secs === there && Math.abs(left - there) < 5
+      && r.body.run.dungeon.name === g.name && r.body.run.party.length === 4, 'four citizens sent from the map set out on foot: on the road until they reach the door', r.body.error || `${Math.round(left)}s to go`);
     r = await api(a, 'GET', '/api/dungeons');
-    check(r.body.in_dungeon === g.id && r.body.dungeons.find(d => d.id === g.id).mine === 'active', 'the list knows the party is inside');
+    check(r.body.in_dungeon === g.id && r.body.dungeons.find(d => d.id === g.id).mine === 'travelling' && (await away(a, a.cits)) === 4, 'the list knows the party is on its way, and the four are busy');
     r = await api(a, 'GET', '/api/map/world');
     const tl = (r.body.tiles || []).filter(t => t.dungeon);
     check(tl.find(t => t.dungeon.id === g.id).dungeon.busy === false && tl.filter(t => t.dungeon.id !== g.id).every(t => t.dungeon.busy === true), 'and every other dungeon on the map says the town is busy');
-    r = await api(a, 'POST', `/api/dungeons/${other.id}/enter`, { citizen_ids: a.cits.slice(2, 6) });
+    r = await api(a, 'POST', `/api/dungeons/${other.id}/enter`, { citizen_ids: a.cits.slice(4, 6) });
     check(r.status === 400 && /already has a party/.test(r.body.error), 'one party out at a time', r.body.error);
-    r = await api(a, 'POST', '/api/dungeons/run/leave');
-    check(r.status === 200 && r.body.run.status === 'left', 'the party can turn back at the door');
+    r = await api(a, 'POST', '/api/dungeons/run/move', { room: 'a' });
+    check(r.status === 404, 'nothing can be done in the dungeon until they are there');
+    const T2 = require('../lib/travel');
+    let roads = (await T2.journeysFor({ id: a.sid, tile_q: a.q, tile_r: a.r }, 'mice')).filter(j => j.kind === 'dungeon');
+    check(roads.length === 1 && roads[0].from.q === a.q && roads[0].from.r === a.r && roads[0].to.q === g.q && roads[0].to.r === g.r && roads[0].returns_at === null && roads[0].can_recall
+      && /^Walking to /.test(roads[0].title) && / and 3 more$/.test(roads[0].citizen.name), 'the map draws the party walking from the town to the dungeon', roads[0] && `${roads[0].citizen.name}: ${roads[0].title}`);
+
+    console.log('Called back on the road');
+    await q(`UPDATE dungeon_runs SET started_at = NOW() - interval '20 seconds' WHERE settlement_id=$1 AND status='travelling'`, [a.sid]);
+    r = await api(a, 'POST', '/api/dungeons/run/recall');
+    left = r.body.run ? (new Date(r.body.run.home_at) - Date.now()) / 1000 : 0;
+    check(r.status === 200 && r.body.run.status === 'recalled' && r.body.run.walking_home && Math.abs(left - 20) < 4, 'a party called back walks home the way it came: as long as it had walked', r.body.error || `${Math.round(left)}s`);
+    r = await api(a, 'GET', '/api/dungeons');
+    roads = (await T2.journeysFor({ id: a.sid, tile_q: a.q, tile_r: a.r }, 'mice')).filter(j => j.kind === 'dungeon');
+    check(r.body.in_dungeon === null && r.body.dungeons.find(d => d.id === g.id).mine === 'recalled' && (await away(a, a.cits)) === 4 && roads.length === 1 && roads[0].to.q === a.q && roads[0].recalled
+      && (await api(a, 'POST', '/api/dungeons/run/recall')).status === 400, 'they are busy until they are home, and drawn walking back');
+    check((await walkHome(a)) === 1 && (await away(a, a.cits)) === 0 && (await api(a, 'GET', '/api/dungeons')).body.dungeons.find(d => d.id === g.id).mine === null
+      && /were called back on the road to/.test((await q("SELECT message FROM settlement_events WHERE settlement_id=$1 AND type='dungeon' ORDER BY id DESC LIMIT 1", [a.sid])).rows[0].message),
+    'once home they are free, the town is told, and the dungeon is not used up');
+
+    console.log('At the door, and home again');
     r = await api(a, 'POST', `/api/dungeons/${g.id}/enter`, { citizen_ids: a.cits.slice(0, 4) });
+    check(r.status === 200 && r.body.run.status === 'travelling', 'the town sends a party again', r.body.error);
+    await q(`UPDATE dungeon_runs SET arrives_at = NOW() - interval '1 second' WHERE settlement_id=$1 AND status='travelling'`, [a.sid]);
+    r = await api(a, 'GET', '/api/dungeons/run');
+    check(r.body.run && r.body.run.status === 'active' && r.body.run.moves.length > 0 && r.body.run.can_leave && !r.body.run.can_recall && r.body.run.arrives_at === null
+      && (await api(a, 'GET', '/api/dungeons')).body.dungeons.find(d => d.id === g.id).mine === 'active', 'when the time is up they are at the door, and the way in is open');
+    r = await api(a, 'POST', '/api/dungeons/run/recall');
+    check(r.status === 400, 'a party at the door cannot be called back: it turns back instead');
+    r = await api(a, 'POST', '/api/dungeons/run/leave');
+    left = r.body.run ? (new Date(r.body.run.home_at) - Date.now()) / 1000 : 0;
+    check(r.status === 200 && r.body.run.status === 'left' && r.body.run.walking_home && Math.abs(left - there) < 5 && (await away(a, a.cits)) === 4, 'turning back at the door, the party walks home and is busy until it is there', `${Math.round(left)}s`);
+    r = await api(a, 'POST', `/api/dungeons/${g.id}/enter`, { citizen_ids: a.cits.slice(4, 6) });
     check(r.status === 400 && /already been/.test(r.body.error) && (await api(a, 'GET', '/api/dungeons')).body.dungeons.find(d => d.id === g.id).mine === 'left',
       'each town goes into a dungeon once', r.body.error);
+    r = await api(a, 'POST', `/api/dungeons/${other.id}/enter`, { citizen_ids: a.cits.slice(0, 2) });
+    check(r.status === 400 && /busy|away|dungeon/i.test(r.body.error || ''), 'and those walking home cannot be sent again yet', r.body.error);
+    await walkHome(a);
+    check((await away(a, a.cits)) === 0 && !(await api(a, 'GET', '/api/dungeons/run')).body.last.walking_home, 'home, they are free');
 
     console.log('The first to clear it');
     r = await api(b, 'POST', `/api/dungeons/${g.id}/enter`, { citizen_ids: b.cits.slice(0, 2) });
@@ -155,18 +198,37 @@ async function main() {
     check(want && T.TROPHIES[want.foe] && require('../lib/tactics_foes').FOES[want.foe].lands.includes(gRow.terrain) && r.body.dungeon.prize && r.body.dungeon.prize.title === want.title
       && r.body.dungeon.prize.wealth === T.MOUNTS[g.tier].wealth && / on (oak|copper)$/.test(want.title),
     'a dungeon nobody has cleared shows what the first town wins: its boss\'s trophy, on the mount of its skull', want && want.title);
-    const wealthOf = async p => Number((await q('SELECT wealth FROM settlements WHERE id=$1', [p.sid])).rows[0].wealth);
+    await arrive(b);
     const hadWealth = await wealthOf(b), newsBefore = (await q("SELECT COUNT(*)::int AS n FROM settlement_events WHERE settlement_id=$1 AND type='dungeon'", [a.sid])).rows[0].n;
     let v = await clear(b);
     const res1 = (await q("SELECT result FROM dungeon_runs WHERE settlement_id=$1 AND dungeon_id=$2", [b.sid, g.id])).rows[0].result;
-    const line = (await q("SELECT message FROM settlement_events WHERE settlement_id=$1 AND type='dungeon' ORDER BY id DESC LIMIT 1", [b.sid])).rows[0].message;
-    check(v && v.status === 'cleared' && res1 && res1.first_clear === true && /the first of any town to do it/.test(line), 'the first town to clear it is told so', line);
-    check(res1.trophy && res1.trophy.title === want.title && res1.trophy.wealth === want.wealth && (await wealthOf(b)) === hadWealth + res1.kept.wealth + want.wealth && line.includes(`🏆 ${want.title} hangs in the trophy hall (+${want.wealth} wealth)`),
-      'it takes the trophy home, with a little wealth', `${res1.trophy && res1.trophy.title}, +${want.wealth}`);
+    const lastNews = async p => (await q("SELECT message FROM settlement_events WHERE settlement_id=$1 AND type='dungeon' ORDER BY id DESC LIMIT 1", [p.sid])).rows[0].message;
+    const onRoad = await lastNews(b);
+    r = await api(b, 'GET', '/api/dungeons/run');
+    check(v && v.status === 'cleared' && res1 && res1.first_clear === true && res1.trophy && res1.trophy.title === want.title && r.body.last.walking_home && r.body.last.result.kept.wealth === res1.kept.wealth,
+      'the first town to clear it wins the trophy there and then, and sets off home with it', res1.trophy && res1.trophy.title);
+    check((await wealthOf(b)) === hadWealth && !/cleared/.test(onRoad) && (await api(b, 'GET', '/api/dungeons')).body.hall.total === 0 && (await away(b, b.cits)) === 2
+      && (await q('SELECT COUNT(*)::int AS n FROM inventory WHERE settlement_id=$1', [b.sid]).catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n >= 0,
+    'while they walk, the town has neither the wealth, the news nor the trophy on its wall');
+    const homeRoad = (await require('../lib/travel').journeysFor({ id: b.sid, tile_q: b.q, tile_r: b.r }, 'mice')).filter(j => j.kind === 'dungeon');
+    check(homeRoad.length === 1 && homeRoad[0].from.q === g.q && homeRoad[0].to.q === b.q && homeRoad[0].to.r === b.r && /^Coming home from /.test(homeRoad[0].title) && !homeRoad[0].can_recall, 'the map draws them coming home');
+    await walkHome(b);
+    const line = await lastNews(b);
+    check(/the first of any town to do it/.test(line) && (await wealthOf(b)) === hadWealth + res1.kept.wealth + want.wealth && line.includes(`🏆 ${want.title} hangs in the trophy hall (+${want.wealth} wealth)`)
+      && (await away(b, b.cits)) === 0 && (await walkHome(b)) === 0 && (await wealthOf(b)) === hadWealth + res1.kept.wealth + want.wealth,
+      'home: the loot and the trophy\'s wealth reach the town, once, and its news says so', line);
     r = await api(b, 'GET', '/api/dungeons');
     const hall = r.body.hall;
     check(hall && hall.total === 1 && hall.have === 1 && hall.kinds === 35 && hall.trophies[0].title === want.title && hall.trophies[0].count === 1 && hall.trophies[0].last.dungeon === g.name && hall.trophies[0].last.party.length === 2,
       'the trophy hangs in the town\'s hall: one of thirty-five');
+    await q('INSERT INTO fog_of_war (user_id, tile_q, tile_r) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [a.id, b.q, b.r]);
+    const bTile = ((await api(a, 'GET', '/api/map/world')).body.tiles || []).find(t => t.q === b.q && t.r === b.r);
+    const brd = await fetch(`${BASE}/api/stats/board/trophies`).then(x => x.json());
+    const bRow = (brd.rows || []).concat(brd.you ? [brd.you] : []).find(x => x.name === b.username) || ((await q('SELECT 1')).rows && null);
+    const standing = (await T.standings()).find(x => x.username === b.username);
+    check(bTile && bTile.settlement && bTile.settlement.trophies === 1 && brd.columns && brd.columns.join() === 'Trophies,Kinds' && standing && standing.n === 1 && standing.kinds === 1
+      && (!bRow || (bRow.values[0] === 1 && bRow.values[1] === '1 of 35')),
+    'other towns see the trophy count on the town, and the Dungeon Trophies board ranks it', JSON.stringify(brd.columns));
     const heard = (await q("SELECT message FROM settlement_events WHERE settlement_id=$1 AND type='dungeon' ORDER BY id DESC LIMIT 1", [a.sid])).rows[0].message;
     check((await q("SELECT COUNT(*)::int AS n FROM settlement_events WHERE settlement_id=$1 AND type='dungeon'", [a.sid])).rows[0].n === newsBefore + 1 && heard === `💀 ${b.username} was the first town to clear ${g.name}, and took ${want.name} home.`,
       'the other towns that knew of the dungeon hear who got there first', heard);
@@ -177,7 +239,9 @@ async function main() {
     mine.push(c);
     await M.tell();
     r = await api(c, 'POST', `/api/dungeons/${g.id}/enter`, { citizen_ids: c.cits.slice(0, 4) });
+    await arrive(c);
     v = r.status === 200 ? await clear(c) : null;
+    await walkHome(c);
     const res2 = v ? (await q("SELECT result FROM dungeon_runs WHERE settlement_id=$1 AND dungeon_id=$2", [c.sid, g.id])).rows[0].result : null;
     check(v && v.status === 'cleared' && res2 && !res2.first_clear && !res2.trophy && (await api(a, 'GET', '/api/dungeons/' + g.id)).body.dungeon.cleared_by === 2
       && (await api(a, 'GET', '/api/dungeons/' + g.id)).body.dungeon.first_clear === b.username && (await api(c, 'GET', '/api/dungeons')).body.hall.total === 0
@@ -187,6 +251,7 @@ async function main() {
 
     console.log('Gone after three days');
     r = await api(a, 'POST', `/api/dungeons/${other.id}/enter`, { citizen_ids: a.cits.slice(0, 4) });
+    await arrive(a);
     check(r.status === 200, 'a party goes into another dungeon', r.body.error);
     await q(`UPDATE dungeons SET expires_at = NOW() - interval '10 minutes' WHERE id=$1`, [other.id]);
     await D.sweep();
