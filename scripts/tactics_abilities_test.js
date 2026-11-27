@@ -46,18 +46,18 @@ async function main() {
     let r = await api(a, 'GET', `/api/tactics/abilities/${guard}`);
     let pg = r.body;
     const keys = list => list.map(x => x.key).join();
-    check(r.status === 200 && pg.cls === 'guard' && pg.label === 'Guard' && pg.level === 1 && pg.school.key === 'arms' && pg.school.name === 'Arms' && keys(pg.abilities) === 'g_strike,g_shield'
+    check(r.status === 200 && pg.cls === 'guard' && pg.label === 'Guard' && pg.level === 1 && pg.school.key === 'arms' && pg.school.name === 'Arms' && keys(pg.abilities) === 'g_shield' && pg.attack.key === 'g_strike' && pg.attack.attack === true
       && pg.abilities.every(x => x.known && x.school === 'arms') && keys(pg.ahead) === 'g_cover,g_shove,g_heavy,g_stand_fast,g_shield_bash,g_oath,g_hold_line,g_hammer' && pg.ahead[0].at === 2,
-    'a new Guard: the school is Arms, two abilities known, and the eight still to learn with their levels', keys(pg.ahead || []));
+    'a new Guard: the school is Arms, Strike for an Attack, one ability known, and the eight still to learn with their levels', keys(pg.ahead || []));
     check(pg.abilities.concat(pg.ahead).every(x => x.name && x.desc && x.kind && (x.dmg || x.block || x.heal || Object.keys(x.fx).length)) && pg.second.max === 5 && pg.second.strength === 0.75 && pg.second.options.length === 0 && pg.second.cls === null,
       'each says what it does in her hands; with no other class behind her there is no second school');
     await setLevel(a, guard, 'soldier', 10);
     pg = (await api(a, 'GET', `/api/tactics/abilities/${guard}`)).body;
-    check(pg.level === 10 && keys(pg.abilities) === 'g_strike,g_shield,g_cover,g_shove,g_heavy,g_stand_fast,g_shield_bash' && pg.ahead.length === 3 && pg.second.busy === false, 'at level 10 she brings all seven she knows: nothing is left at home');
+    check(pg.level === 10 && keys(pg.abilities) === 'g_shield,g_cover,g_shove,g_heavy,g_stand_fast,g_shield_bash' && pg.attack.key === 'g_strike' && pg.ahead.length === 3 && pg.second.busy === false, 'at level 10 she brings her Attack and all six abilities she knows: nothing is left at home');
     r = await api(a, 'GET', `/api/tactics/abilities/${wiz}`);
-    check(keys(r.body.abilities) === 'v_swing,w_spark,w_ward' && r.body.abilities[0].school === 'basics' && r.body.school.name === 'Wild magic', 'a Wizard has the plain blow of Basics and her Wild magic');
+    check(keys(r.body.abilities) === 'w_spark,w_ward' && r.body.attack.key === 'v_knock' && r.body.attack.name === 'Knock' && r.body.attack.dmg < r.body.abilities[0].dmg && r.body.school.name === 'Wild magic', 'a Wizard has her Wild magic, and for an Attack only a feeble knock', `Knock ${r.body.attack.dmg}, Spark ${r.body.abilities[0].dmg}`);
     r = await api(a, 'GET', `/api/tactics/abilities/${farmer}`);
-    check(r.status === 200 && r.body.cls === 'villager' && r.body.career === null && r.body.abilities.length === 3 && r.body.abilities.map(x => x.school).join() === 'basics,basics,field' && r.body.ahead.length === 0,
+    check(r.status === 200 && r.body.cls === 'villager' && r.body.career === null && r.body.abilities.length === 2 && r.body.abilities.map(x => x.school).join() === 'basics,field' && r.body.attack.key === 'v_swing' && r.body.ahead.length === 0,
       'a villager has Basics and their trade\'s trick');
     check((await api(a, 'GET', `/api/tactics/abilities/${child}`)).status === 400, 'a child has no abilities page');
     check((await api(b, 'GET', `/api/tactics/abilities/${guard}`)).status === 404 && (await api(a, 'GET', '/api/tactics/abilities/abc')).status === 404, 'another town\'s citizen, or no citizen, is not found');
@@ -69,7 +69,7 @@ async function main() {
     pg = (await api(a, 'GET', `/api/tactics/abilities/${guard}`)).body;
     const opt = c => pg.second.options.find(o => o.cls === c);
     check(pg.second.options.map(o => `${o.cls}:${o.level}`).join() === 'hearthkeeper:10,archer:4' && opt('hearthkeeper').school.name === 'Hearth magic' && keys(opt('hearthkeeper').abilities) === 'h_cinder,h_kindle,h_ward,h_bold,h_steady,h_ember_ward,h_banish'
-      && keys(opt('archer').abilities) === 'a_shoot,a_side,a_part,a_mark', 'the page offers each other class she has levels in, the furthest along first, with what it taught her');
+      && keys(opt('archer').abilities) === 'a_side,a_part,a_mark' && !keys(opt('hearthkeeper').abilities).includes('v_knock'), 'the page offers each other class she has levels in, the furthest along first, with what it taught her');
     check(pg.second.cls === 'hearthkeeper' && pg.second.chosen === null && keys(opt('hearthkeeper').abilities.filter(x => x.ready)) === 'h_cinder,h_kindle,h_ward,h_bold,h_steady' && opt('archer').abilities.every(x => !x.ready),
       'with nothing chosen she brings the first five of the class she is furthest along in');
     const hk = (await api(a, 'GET', `/api/tactics/abilities/${wiz}`)).body;
@@ -80,15 +80,16 @@ async function main() {
     const saved = (await q('SELECT second_class, second_ready FROM citizens WHERE id=$1', [guard])).rows[0];
     check(r.status === 200 && r.body.second.cls === 'hearthkeeper' && r.body.second.chosen === 'hearthkeeper' && keys(r.body.second.options[0].abilities.filter(x => x.ready)) === 'h_kindle,h_ward,h_banish'
       && saved.second_class === 'hearthkeeper' && saved.second_ready.join() === want.join(), 'she chooses which to bring: up to five, kept on the citizen', r.body.error);
-    r = await api(a, 'POST', `/api/tactics/abilities/${guard}/second`, { cls: 'archer', keys: ['a_shoot', 'a_mark'] });
-    check(r.status === 200 && r.body.second.cls === 'archer' && keys(r.body.second.options.find(o => o.cls === 'archer').abilities.filter(x => x.ready)) === 'a_shoot,a_mark' && r.body.second.options[0].abilities.every(x => !x.ready),
+    r = await api(a, 'POST', `/api/tactics/abilities/${guard}/second`, { cls: 'archer', keys: ['a_side', 'a_mark'] });
+    check(r.status === 200 && r.body.second.cls === 'archer' && keys(r.body.second.options.find(o => o.cls === 'archer').abilities.filter(x => x.ready)) === 'a_side,a_mark' && r.body.second.options[0].abilities.every(x => !x.ready),
       'or changes to another of her old classes: one second school at a time');
     check((await api(a, 'POST', `/api/tactics/abilities/${guard}/second`, { cls: 'hearthkeeper', keys: ['h_rekindle'] })).status === 400, 'one that class has not taught her yet cannot be brought');
     check((await api(a, 'POST', `/api/tactics/abilities/${guard}/second`, { cls: 'hearthkeeper', keys: ['h_cinder', 'h_kindle', 'h_ward', 'h_bold', 'h_steady', 'h_banish'] })).status === 400
       && (await api(a, 'POST', `/api/tactics/abilities/${guard}/second`, { cls: 'hearthkeeper', keys: [] })).status === 400, 'nor six, nor none without saying so');
-    check((await api(a, 'POST', `/api/tactics/abilities/${guard}/second`, { cls: 'wizard', keys: ['w_spark'] })).status === 400 && (await api(a, 'POST', `/api/tactics/abilities/${guard}/second`, { cls: 'guard', keys: ['g_strike'] })).status === 400
-      && (await api(b, 'POST', `/api/tactics/abilities/${guard}/second`, { cls: 'archer', keys: ['a_shoot'] })).status === 404, 'nor from a class she has never been, nor her own, nor by another town');
-    check(keys((await api(a, 'GET', `/api/tactics/abilities/${guard}`)).body.second.options.find(o => o.cls === 'archer').abilities.filter(x => x.ready)) === 'a_shoot,a_mark', 'a refused choice changes nothing');
+    check((await api(a, 'POST', `/api/tactics/abilities/${guard}/second`, { cls: 'wizard', keys: ['w_spark'] })).status === 400 && (await api(a, 'POST', `/api/tactics/abilities/${guard}/second`, { cls: 'guard', keys: ['g_shield'] })).status === 400
+      && (await api(a, 'POST', `/api/tactics/abilities/${guard}/second`, { cls: 'archer', keys: ['a_shoot'] })).status === 400
+      && (await api(b, 'POST', `/api/tactics/abilities/${guard}/second`, { cls: 'archer', keys: ['a_side'] })).status === 404, 'nor from a class she has never been, nor her own, nor another class\'s Attack, nor by another town');
+    check(keys((await api(a, 'GET', `/api/tactics/abilities/${guard}`)).body.second.options.find(o => o.cls === 'archer').abilities.filter(x => x.ready)) === 'a_side,a_mark', 'a refused choice changes nothing');
     r = await api(a, 'POST', `/api/tactics/abilities/${guard}/second`, { cls: 'none' });
     check(r.status === 200 && r.body.second.cls === null && r.body.second.chosen === 'none' && r.body.second.options.length === 2 && r.body.second.options.every(o => o.abilities.every(x => !x.ready)), 'she can bring nothing from another class');
     await api(a, 'POST', `/api/tactics/abilities/${guard}/second`, { cls: 'hearthkeeper', keys: want });
@@ -103,10 +104,10 @@ async function main() {
       && g.next.key === 'g_oath', 'in a dungeon the Guard fights with all seven of her own and the three she chose from her second school');
     const pgK = (await api(a, 'GET', `/api/tactics/abilities/${guard}`)).body.second.options[0].abilities.find(x => x.key === 'h_kindle');
     check(g.abilities.find(x => x.key === 'h_kindle').heal === pgK.heal && g.abilities.find(x => x.key === 'h_kindle').off === true, 'the page and the board agree on what a brought ability does');
-    check(w.abilities.map(x => x.key).join() === 'v_swing,w_spark,w_ward,w_bolt,w_chill' && w.second === null && w.next.key === 'w_burst' && v.abilities.map(x => x.school).join() === 'basics,basics,field',
-      'the Wizard at level 4 brings Swing and all four she knows; a villager their three');
+    check(w.abilities.map(x => x.key).join() === 'v_knock,w_spark,w_ward,w_bolt,w_chill' && w.abilities[0].attack === true && g.abilities[0].attack === true && g.abilities.filter(x => x.attack).length === 1 && w.second === null && w.next.key === 'w_burst' && v.abilities.map(x => x.school).join() === 'basics,basics,field',
+      'the Wizard at level 4 brings her Attack (a knock) and all four she knows; a villager their three');
     pg = (await api(a, 'GET', `/api/tactics/abilities/${guard}`)).body;
-    check(pg.second.busy === true && (await api(a, 'POST', `/api/tactics/abilities/${guard}/second`, { cls: 'archer', keys: ['a_shoot'] })).status === 400, 'abilities are chosen at home: not from inside a dungeon');
+    check(pg.second.busy === true && (await api(a, 'POST', `/api/tactics/abilities/${guard}/second`, { cls: 'archer', keys: ['a_side'] })).status === 400, 'abilities are chosen at home: not from inside a dungeon');
     // A fight won at level 7 that carries her to 8 teaches Stand Fast, and it comes to the next battle.
     await api(a, 'POST', '/api/dungeons/run/flee');
     const XP = require('../lib/tactics_xp');
@@ -118,7 +119,7 @@ async function main() {
     // A villager who has fought has Guard levels (battle pays them as Guard training): Arms is their second school.
     await setLevel(a, farmer, 'soldier', 4);
     pg = (await api(a, 'GET', `/api/tactics/abilities/${farmer}`)).body;
-    check(pg.cls === 'villager' && pg.second.cls === 'guard' && keys(pg.second.options[0].abilities.filter(x => x.ready)) === 'g_strike,g_shield,g_cover,g_shove', 'a villager who has trained as a Guard brings Arms as their second school');
+    check(pg.cls === 'villager' && pg.second.cls === 'guard' && keys(pg.second.options[0].abilities.filter(x => x.ready)) === 'g_shield,g_cover,g_shove', 'a villager who has trained as a Guard brings Arms as their second school');
 
     console.log('Mastery: an ability used enough in battle');
     const MA = require('../lib/tactics_mastery'), E = require('../lib/tactics_engine'), T = require('../lib/tactics_setup');
@@ -129,8 +130,8 @@ async function main() {
       'the edge is on its numbers only, and on top of the second school\'s three-quarters', `${plain.dmg} → ${star.dmg}; brought ${both.dmg}`);
     // One use short of mastering everything she brings; then a fight, played by the rules' own mind through the routes.
     pg = (await api(a, 'GET', `/api/tactics/abilities/${guard}`)).body;
-    const everything = p2 => p2.abilities.concat(...p2.second.options.map(o => o.abilities));
-    check(pg.mastery.uses === 25 && pg.mastery.edge === 1.2 && everything(pg).every(x => x.used === 0 && x.star === false) && pg.abilities.find(x => x.key === 'g_strike').uses === null
+    const everything = p2 => [p2.attack].concat(p2.abilities, ...p2.second.options.map(o => o.abilities));
+    check(pg.mastery.uses === 25 && pg.mastery.edge === 1.2 && everything(pg).every(x => x.used === 0 && x.star === false) && pg.attack.uses === null && pg.attack.used === 0
       && pg.second.options.find(o => o.cls === 'hearthkeeper').abilities.find(x => x.key === 'h_kindle').uses === 2, 'the page says how many times each ability has been used in battle (none yet), and keeps an ability\'s own limit of times a battle');
     for (const x of everything(pg)) await q(`INSERT INTO citizen_ability_uses (citizen_id, ability_key, uses) VALUES ($1,$2,24) ON CONFLICT (citizen_id, ability_key) DO UPDATE SET uses = 24`, [guard, x.key]);
     pg = (await api(a, 'GET', `/api/tactics/abilities/${guard}`)).body;
@@ -180,12 +181,12 @@ async function main() {
     console.log('Gear on the page');
     pg = (await api(a, 'GET', `/api/tactics/abilities/${wiz}`)).body;
     const sparkBare = pg.abilities.find(x => x.key === 'w_spark').dmg;
-    check(pg.gear === null && pg.kinds.length === 7 && pg.kinds.every(k => k.name && k.says) && pg.move === 3, 'the page says what she carries (nothing yet) and what each kind of weapon does');
+    check(pg.gear === null && pg.kinds.length === 8 && pg.kinds.find(k => k.key === 'staff').hands === 2 && pg.kinds.find(k => k.key === 'lantern').hands === 1 && pg.kinds.every(k => k.name && k.says) && pg.move === 3, 'the page says what she carries (nothing yet) and what each kind of weapon does');
     await q(`INSERT INTO inventory_items (settlement_id, item_key, name, icon, category, rarity, quantity, equip_slot, stat_bonuses, equipped_to, metadata)
              VALUES ($1,'oak_staff','Oak Staff','🪄','equipment','common',1,'weapon','{}',$2,'{}')`, [a.sid, wiz]);
     pg = (await api(a, 'GET', `/api/tactics/abilities/${wiz}`)).body;
     check(pg.gear && pg.gear.weapon.kind === 'staff' && pg.gear.weapon.kind_name === 'Staff' && /a fifth stronger/.test(pg.gear.weapon.says) && pg.abilities.find(x => x.key === 'w_spark').dmg === Math.round(sparkBare * 1.2)
-      && pg.abilities.find(x => x.key === 'v_swing').school === 'basics', 'with a staff in hand the page shows it, and her Wild magic a fifth stronger', `Spark ${sparkBare} → ${pg.abilities.find(x => x.key === 'w_spark').dmg}`);
+      && pg.attack.key === 'v_knock' && pg.gear.weapon.hands === 2, 'with a staff in hand the page shows it, and her Wild magic a fifth stronger', `Spark ${sparkBare} → ${pg.abilities.find(x => x.key === 'w_spark').dmg}`);
   } finally { await TU.setSwitch('dungeons.on', wasOn); await pool.end(); }
 }
 

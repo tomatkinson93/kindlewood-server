@@ -116,7 +116,7 @@ async function part2() {
     await q(`UPDATE citizens SET stats='{"strength":22,"agility":14,"endurance":18,"intelligence":10,"charisma":10}', skills='{"combat":6}' WHERE id = ANY($1::int[])`, [[g1, g2]]);
     const x3 = await api(so3, 'POST', `/api/raids/${sr3.id}/sally`, { citizen_ids: [g1, g2] });
     const list3 = (await api(so3, 'GET', '/api/combat/pending')).body.battles.find(b => b.id === x3.body.quest_run_id);
-    let bt = (await api(so3, 'POST', '/api/tactics/quest/' + x3.body.quest_run_id)).body.battle;
+    const sally = await api(so3, 'POST', '/api/tactics/quest/' + x3.body.quest_run_id); let bt = sally.body.battle; if (!bt) console.log('    (sally answer:', sally.status, JSON.stringify(sally.body).slice(0, 200) + ')');
     check(bt && bt.source === 'quest' && bt.setup.party.map(u => u.cls).join() === 'guard,archer' && bt.setup.enemies.length === 1 && bt.setup.enemies[0].band === 'withered' && list3 && list3.board_foes.length === 1,
       'a sally is a battle on the board: the citizens sent, in their classes, against the Withered of the raid', bt && bt.setup.enemies.map(e => e.name).join());
     const st = E.replay(bt.setup, bt.actions).state;

@@ -102,8 +102,17 @@ console.log('The kits');
       check(keys(vet) === 'g_strike,g_shield,g_cover,g_shove,g_heavy,g_stand_fast,g_shield_bash' && schools(vet) === 'arms' && vet.school === 'arms' && vet.second === null && vet.next.key === 'g_oath' && vet.next.at === 13,
         'a citizen brings everything their class has taught them, not five of it; a Guard\'s are all Arms');
       const arch = T.partyUnit(c, 'archer', null, null, 4), wizd = T.partyUnit(c, 'wizard', null, null, 1), hk = T.partyUnit(c, 'hearthkeeper', null, null, 1);
-      check(keys(arch).startsWith('v_swing,a_shoot') && arch.abilities[0].school === 'basics' && keys(wizd).startsWith('v_swing,') && keys(hk).startsWith('v_swing,') && !keys(vet).includes('v_swing'),
-        'everyone has the plain blow of Basics; a Guard\'s Strike is theirs');
+      // The Attack (2026-11-27): everyone's first, marked, their class's own; a caster's is a feeble knock.
+      const atk = u => u.abilities.filter(a => a.attack), farmA = T.partyUnit(c, 'villager', null, 't_tool', 1);
+      check([vet, arch, wizd, hk, farmA].every(u => atk(u).length === 1 && u.abilities[0].attack === true) && vet.abilities[0].key === 'g_strike' && arch.abilities[0].key === 'a_shoot' && wizd.abilities[0].key === 'v_knock'
+        && hk.abilities[0].key === 'v_knock' && farmA.abilities[0].key === 'v_swing' && !keys(arch).includes('v_swing') && T.ATTACK.guard === 'g_strike' && T.ATTACK.wizard === 'v_knock',
+        'everyone has one Attack, their class\'s own: a Guard strikes, an Archer shoots, a villager swings, a Wizard or Hearthkeeper knocks');
+      const even = { ...stub, strength: 12, agility: 12, intelligence: 12, combatSkill: 4 }, at2 = cls => T.partyUnit({ ...c, unit: even }, cls, null, null, 1).abilities[0];
+      check(at2('guard').dmg >= 15 && at2('archer').dmg >= 15 && at2('archer').max >= 5 && at2('wizard').dmg <= at2('guard').dmg / 2 && at2('hearthkeeper').dmg === at2('wizard').dmg && at2('wizard').max === 1
+        && T.partyUnit({ ...c, unit: even }, 'wizard', null, null, 1).abilities.find(a => a.key === 'w_spark').dmg > at2('wizard').dmg && at2('villager').dmg > at2('wizard').dmg,
+        'a Guard\'s and an Archer\'s Attack hit well; a caster\'s is less than half a Guard\'s, and weaker than their own Spark', `guard ${at2('guard').dmg}, archer ${at2('archer').dmg}, villager ${at2('villager').dmg}, wizard ${at2('wizard').dmg}`);
+      check(T.knownAt('guard', 20).length === 9 && !T.knownAt('guard', 20).some(k => k.key === 'g_strike') && !T.knownAt('archer', 20).some(k => k.key === 'a_shoot') && T.knownAt('wizard', 20).length === 10
+        && !T.learnedBetween('guard', 0, 20).some(k => k.key === 'g_strike'), 'an Attack is not an ability: it is not among what a class teaches, so it cannot be brought as a second school\'s');
       const farm = T.partyUnit(c, 'villager', null, 't_ration', 1);
       check(keys(farm) === 'v_swing,v_duck,t_ration' && schools(farm) === 'basics,field', 'a villager has Basics and their trade\'s trick, which is Fieldcraft');
       const two = T.partyUnit(c, 'guard', null, null, 6, { cls: 'hearthkeeper', level: 6, keys: null });
@@ -126,7 +135,7 @@ console.log('The kits');
       check(T.secondOf(rows, 'wizard', { second_class: 'guard', second_ready: ['g_shove'] }).cls === 'guard' && T.secondOf(rows, 'wizard', { second_class: 'guard', second_ready: ['g_shove'] }).keys.join() === 'g_shove'
         && T.secondOf(rows, 'wizard', { second_class: 'none' }) === null && T.secondOf(rows, 'guard', { second_class: 'guard' }).cls === 'archer',
         'a chosen class is kept while they still have levels in it; "none" brings nothing; one\'s own class falls back to the furthest along');
-      check(keys(T.partyUnit(c, 'villager', null, 't_tool', 1, { cls: 'guard', level: 4, keys: null })) === 'v_swing,v_duck,t_tool,g_strike*,g_shield*,g_cover*,g_shove*', 'a villager who has trained as a Guard brings Arms as their second school');
+      check(keys(T.partyUnit(c, 'villager', null, 't_tool', 1, { cls: 'guard', level: 4, keys: null })) === 'v_swing,v_duck,t_tool,g_shield*,g_cover*,g_shove*', 'a villager who has trained as a Guard brings Arms as their second school (their Attack stays a swing)');
       const top = T.partyUnit(c, 'hearthkeeper', null, null, 20);
       check(top.next === null && top.abilities.length === 11 && ['guard', 'archer', 'wizard', 'hearthkeeper'].every(k => T.KITS[k].abilities.every(a => { const ab = T.abilityOf(a, stub); return ab.name && ab.school === T.SCHOOL_OF[k] && (ab.dmg || ab.block || ab.heal || Object.keys(ab.fx).length); })),
         'at level 20 a class knows all ten, each in its school, and every one of them does something on the board');
@@ -248,7 +257,7 @@ async function part2() {
   const a = await call(adminId, 'POST', '/api/tactics/admin/setup', { classes: ['guard', 'hearthkeeper', 'archer', 'wizard'], level: 'trained', tier: 'orange', terrain: 'hills', seed: 42 });
   check(a.status === 200 && a.body.party.length === 4 && a.body.party.map(u => u.cls).join() === 'guard,hearthkeeper,archer,wizard' && a.body.enemies.length >= 2 && a.body.seed === 42 && a.body.land === 'hills',
     'a setup: four citizens in the classes chosen, a group of creatures, the seed and the land', a.body.party.map(u => u.name).join(', '));
-  check(a.body.party.every(u => u.abilities.filter(x => x.school !== 'basics').length === 5 && u.abilities.length === (u.cls === 'guard' ? 5 : 6) && u.maxHp > 0 && u.move >= 1 && u.abilities.every(x => x.name && x.icon && (x.dmg || x.block || x.heal || Object.keys(x.fx).length))) && a.body.enemies.every(u => u.abilities.length >= 1 && u.maxHp > 0),
+  check(a.body.party.every(u => u.abilities.filter(x => x.attack).length === 1 && u.abilities.length === (u.cls === 'guard' || u.cls === 'archer' ? 5 : 6) && u.maxHp > 0 && u.move >= 1 && u.abilities.every(x => x.name && x.icon && (x.dmg || x.block || x.heal || Object.keys(x.fx).length))) && a.body.enemies.every(u => u.abilities.length >= 1 && u.maxHp > 0),
     'every unit has health, a move and abilities that do something');
   const b = await call(adminId, 'POST', '/api/tactics/admin/setup', { classes: ['guard', 'hearthkeeper', 'archer', 'wizard'], level: 'trained', tier: 'orange', terrain: 'hills', seed: 42 });
   check(JSON.stringify(a.body.enemies) === JSON.stringify(b.body.enemies) && JSON.stringify(a.body.party) === JSON.stringify(b.body.party), 'the same choices and seed give the same two sides');

@@ -78,7 +78,7 @@ function part1b() {
     && ab(sword, 'g_strike').dmg === ab(bare, 'g_strike').dmg && sword.move === bare.move, 'a sword: Arms abilities are ready a turn sooner (never those that wait only one), and nothing else changes');
   const hammer = wear('guard', W('war_hammer', 'War Hammer'));
   check(ab(hammer, 'g_strike').dmg === Math.round(ab(bare, 'g_strike').dmg * 1.25) && ab(hammer, 'g_heavy').dmg === Math.round(ab(bare, 'g_heavy').dmg * 1.25) && ab(hammer, 'g_shield').block === ab(bare, 'g_shield').block
-    && hammer.move === bare.move - 1 && ab(wear('archer', W('war_hammer')), 'v_swing').dmg === Math.round(ab(wear('archer', null), 'v_swing').dmg * 1.25) && ab(wear('archer', W('war_hammer')), 'a_shoot').dmg === ab(wear('archer', null), 'a_shoot').dmg,
+    && hammer.move === bare.move - 1 && ab(wear('wizard', W('war_hammer')), 'v_knock').dmg === Math.round(ab(wear('wizard', null), 'v_knock').dmg * 1.25) && ab(wear('archer', W('war_hammer')), 'a_shoot').dmg === ab(wear('archer', null), 'a_shoot').dmg,
   'a hammer: Arms blows (and the plain blow of Basics) land a quarter harder, and its wielder walks one tile less', `${ab(bare, 'g_strike').dmg} → ${ab(hammer, 'g_strike').dmg}, move ${bare.move} → ${hammer.move}`);
   const pole = wear('guard', W('halberd', 'Halberd'));
   check(ab(pole, 'g_strike').max === 2 && ab(pole, 'g_strike').min === 1 && ab(pole, 'g_shove').max === 2 && ab(pole, 'g_heavy').max === 2 && ab(pole, 'g_cover').max === ab(bare, 'g_cover').max && ab(pole, 'g_shield').max === 0 && ab(pole, 'g_strike').dmg === ab(bare, 'g_strike').dmg,
@@ -97,16 +97,25 @@ function part1b() {
   check(ab(knife, 'g_strike').back === 2 && !ab(bare, 'g_strike').back && !ab(knife, 'g_shield').back && back === Math.round(front * 1.5) && stab === Math.round(front * 2) && from(knife, 's').dmg === front
     && E.forecast, 'a dagger: a blow from behind does double, where any other does half as much again; from the front it is as any blow', `front ${front}, behind ${back}, a dagger behind ${stab}`);
   const arch = wear('archer', null), long = wear('archer', W('longbow', 'Longbow')), short = wear('archer', W('shortbow', 'Shortbow'));
-  check(ab(long, 'a_shoot').max === ab(arch, 'a_shoot').max + 1 && ab(long, 'a_part').max === ab(arch, 'a_part').max + 1 && ab(long, 'a_shoot').min === ab(arch, 'a_shoot').min && ab(long, 'a_side').max === 0 && ab(long, 'v_swing').max === 1
+  check(ab(long, 'a_shoot').max === ab(arch, 'a_shoot').max + 1 && ab(long, 'a_part').max === ab(arch, 'a_part').max + 1 && ab(long, 'a_shoot').min === ab(arch, 'a_shoot').min && ab(long, 'a_side').max === 0
     && ab(wear('guard', W('longbow'), 13), 'g_oath').max === ab(wear('guard', null, 13), 'g_oath').max, 'a longbow: Archery reaches one tile further; nothing of another school does');
   check(ab(arch, 'a_shoot').min === 2 && ab(short, 'a_shoot').min === 1 && ab(short, 'a_shoot').max === ab(arch, 'a_shoot').max && ab(short, 'a_part').min === ab(arch, 'a_part').min, 'a short bow: a shot can be loosed at a foe standing next to you');
-  const hk = wear('hearthkeeper', null), hs = wear('hearthkeeper', W('oak_staff', 'Oak Staff')), wz = wear('wizard', null), ws = wear('wizard', W('rowan_staff', 'Rowan Staff'));
-  check(ab(hs, 'h_kindle').heal === Math.round(ab(hk, 'h_kindle').heal * 1.2) && ab(hs, 'h_ward').block === Math.round(ab(hk, 'h_ward').block * 1.2) && ab(hs, 'h_cinder').dmg === Math.round(ab(hk, 'h_cinder').dmg * 1.2)
-    && ab(ws, 'w_spark').dmg === Math.round(ab(wz, 'w_spark').dmg * 1.2) && ab(hs, 'v_swing').dmg === ab(hk, 'v_swing').dmg && ab(wear('guard', W('oak_staff')), 'g_strike').dmg === ab(bare, 'g_strike').dmg,
-  'a staff: Wild and Hearth magic is a fifth stronger; a blow is not', `Kindle ${ab(hk, 'h_kindle').heal} → ${ab(hs, 'h_kindle').heal}`);
-  const second = { cls: 'hearthkeeper', level: 6, keys: null }, gPlain = wear('guard', null, 6, second), gStaff = wear('guard', W('oak_staff', 'Oak Staff'), 6, second);
-  check(ab(gStaff, 'h_kindle').off && ab(gStaff, 'h_kindle').heal === Math.max(1, Math.round(Math.round(ab(hk, 'h_kindle').heal * 1.2) * 0.75)) && ab(gStaff, 'h_kindle').heal > ab(gPlain, 'h_kindle').heal,
-    'gear reads the school, not the class: a Guard with a staff heals better with the Hearth magic of an old career', `${ab(gPlain, 'h_kindle').heal} → ${ab(gStaff, 'h_kindle').heal} (a Hearthkeeper with one: ${ab(hs, 'h_kindle').heal})`);
+  const hk = wear('hearthkeeper', null), hs = wear('hearthkeeper', W('oak_staff', 'Oak Staff')), hl = wear('hearthkeeper', W('ember_lantern', 'Ember Lantern')), wz = wear('wizard', null), ws = wear('wizard', W('rowan_staff', 'Rowan Staff'));
+  check(ab(ws, 'w_spark').dmg === Math.round(ab(wz, 'w_spark').dmg * 1.2) && ab(ws, 'w_ward').block === Math.round(ab(wz, 'w_ward').block * 1.2) && ab(ws, 'v_knock').dmg === ab(wz, 'v_knock').dmg
+    && ab(hs, 'h_kindle').heal === ab(hk, 'h_kindle').heal && ab(wear('guard', W('oak_staff')), 'g_strike').dmg === ab(bare, 'g_strike').dmg,
+  'a staff: Wild magic is a fifth stronger; Hearth magic and a blow are not', `Spark ${ab(wz, 'w_spark').dmg} → ${ab(ws, 'w_spark').dmg}`);
+  check(ab(hl, 'h_kindle').heal === Math.round(ab(hk, 'h_kindle').heal * 1.2) && ab(hl, 'h_ward').block === Math.round(ab(hk, 'h_ward').block * 1.2) && ab(hl, 'h_cinder').dmg === Math.round(ab(hk, 'h_cinder').dmg * 1.2)
+    && ab(hl, 'v_knock').dmg === ab(hk, 'v_knock').dmg && ab(wear('wizard', W('ember_lantern')), 'w_spark').dmg === ab(wz, 'w_spark').dmg && G.kindOf({ key: 'brass_lantern' }) === 'lantern' && G.kindOf({ name: 'Old Lamp' }) === 'lantern',
+  'an ember lantern: Hearth magic is a fifth stronger; it is the Hearthkeeper\'s, as a staff is the Wizard\'s', `Kindle ${ab(hk, 'h_kindle').heal} → ${ab(hl, 'h_kindle').heal}`);
+  const second = { cls: 'hearthkeeper', level: 6, keys: null }, gPlain = wear('guard', null, 6, second), gLamp = wear('guard', W('ember_lantern', 'Ember Lantern'), 6, second);
+  check(ab(gLamp, 'h_kindle').off && ab(gLamp, 'h_kindle').heal === Math.max(1, Math.round(Math.round(ab(hk, 'h_kindle').heal * 1.2) * 0.75)) && ab(gLamp, 'h_kindle').heal > ab(gPlain, 'h_kindle').heal,
+    'gear reads the school, not the class: a Guard with a lantern heals better with the Hearth magic of an old career', `${ab(gPlain, 'h_kindle').heal} → ${ab(gLamp, 'h_kindle').heal} (a Hearthkeeper with one: ${ab(hl, 'h_kindle').heal})`);
+  // Two hands: no shield with a hammer, a polearm, a bow or a staff.
+  const sh = { key: 'tower_shield', name: 'Tower Shield' }, held = (cls, key) => wear(cls, { weapon: { key, name: key }, shield: sh });
+  check(['war_hammer', 'halberd', 'shortbow', 'longbow', 'oak_staff'].every(k => held('guard', k).gear.shield === undefined && held('guard', k).gear.idle.key === 'tower_shield' && held('guard', k).gear.weapon.hands === 2 && ab(held('guard', k), 'g_shield').block === ab(bare, 'g_shield').block)
+    && ['iron_sword', 'iron_dagger', 'ember_lantern'].every(k => held('guard', k).gear.shield && held('guard', k).gear.weapon.hands === 1 && ab(held('guard', k), 'g_shield').block === ab(bare, 'g_shield').block + 8)
+    && G.twoHanded('hammer') && G.twoHanded('staff') && !G.twoHanded('sword') && !G.twoHanded('lantern') && !G.twoHanded(null),
+  'a hammer, a polearm, a bow and a staff take two hands: a shield carried with one does nothing; a sword, a dagger and a lantern take one');
   const tower = wear('guard', { shield: { key: 'tower_shield', name: 'Tower Shield' } }), odd = wear('guard', { shield: { key: 'pot_lid', name: 'Pot Lid' } });
   check(ab(tower, 'g_shield').block === ab(bare, 'g_shield').block + 8 && ab(tower, 'g_cover').block === ab(bare, 'g_cover').block + 8 && ab(odd, 'g_shield').block === ab(bare, 'g_shield').block + 3 && ab(tower, 'g_strike').dmg === ab(bare, 'g_strike').dmg
     && ab(wear('hearthkeeper', { shield: { key: 'tower_shield' } }), 'h_ward').block === ab(hk, 'h_ward').block && G.shieldWorth({ key: 'wooden_buckler' }) === 3 && G.shieldWorth({ key: 'iron_shield' }) === 5,
@@ -115,7 +124,7 @@ function part1b() {
   check(both.gear.weapon.kind === 'sword' && both.gear.weapon.key === 'iron_sword' && both.gear.weapon.icon === '⚔️' && /ready a turn sooner/.test(both.gear.weapon.says) && both.gear.shield.block === 5 && both.gear.armour.key === 'chainmail' && bare.gear === null
     && wear('guard', W('fishers_rod', 'Fisher\'s Rod')).gear.weapon.kind === null && ab(wear('guard', W('fishers_rod', 'Fisher\'s Rod')), 'g_heavy').cooldown === ab(bare, 'g_heavy').cooldown,
   'a unit carries what it holds and wears, by slot, with its key (for the day the board draws it); a thing with no kind changes nothing');
-  check(Object.keys(G.KINDS).join() === 'sword,hammer,halberd,dagger,shortbow,longbow,staff' && Object.values(G.KINDS).every(k => k.name && k.says), 'seven kinds, each with one thing to say');
+  check(Object.keys(G.KINDS).join() === 'sword,hammer,halberd,dagger,shortbow,longbow,staff,lantern' && Object.values(G.KINDS).every(k => k.name && k.says && (k.hands === 1 || k.hands === 2)), 'eight kinds, each with one thing to say and a number of hands');
 }
 
 async function part2() {
@@ -149,15 +158,37 @@ async function part2() {
   const bareH = (await T.partyFor([h.id], { mods: null }))[0];
   const giveKey = (key, name, slot, icon) => q(`INSERT INTO inventory_items (settlement_id, item_key, name, icon, category, rarity, quantity, equip_slot, stat_bonuses, equipped_to, metadata)
       VALUES ($1,$2,$3,$4,'equipment','common',1,$5,'{}',$6,'{}')`, [s.id, key, name, icon, slot, h.id]);
-  await giveKey('oak_staff', 'Oak Staff', 'weapon', '🪄'); await giveKey('tower_shield', 'Tower Shield', 'shield', '🧱');
+  await giveKey('ember_lantern', 'Ember Lantern', 'weapon', '🏮'); await giveKey('tower_shield', 'Tower Shield', 'shield', '🧱');
   const dh = (await careers.combatDeltas(s.id, [h.id]))[h.id] || {};
-  check(dh.gear && dh.gear.weapon.key === 'oak_staff' && dh.gear.weapon.name === 'Oak Staff' && dh.gear.weapon.icon === '🪄' && dh.gear.shield.key === 'tower_shield' && dh.gear.armour === null,
+  check(dh.gear && dh.gear.weapon.key === 'ember_lantern' && dh.gear.weapon.name === 'Ember Lantern' && dh.gear.weapon.icon === '🏮' && dh.gear.shield.key === 'tower_shield' && dh.gear.armour === null,
     'combatDeltas says what is held and worn, by slot');
   const wornH = (await T.partyFor([h.id], { mods: R.withParty(null, { [h.id]: dh }) }))[0], heal = u => u.abilities.find(a => a.key === 'h_kindle').heal;
-  check(wornH.gear.weapon.kind === 'staff' && wornH.gear.shield.block === 8 && bareH.gear === null && heal(wornH) === Math.round(heal(bareH) * 1.2), 'in a battle she carries the staff, and her Kindle is a fifth stronger for it', `${heal(bareH)} → ${heal(wornH)}`);
+  check(wornH.gear.weapon.kind === 'lantern' && wornH.gear.shield.block === 8 && bareH.gear === null && heal(wornH) === Math.round(heal(bareH) * 1.2), 'in a battle she carries the lantern and a shield with it, and her Kindle is a fifth stronger', `${heal(bareH)} → ${heal(wornH)}`);
   const tpl = (await q(`SELECT item_key FROM item_templates WHERE item_key = ANY($1::text[])`, [['oak_staff', 'rowan_staff', 'heartwood_staff']])).rows.length;
   const rec = (await q(`SELECT recipe_key, class_key, station FROM recipes WHERE recipe_key = ANY($1::text[])`, [['oak_staff', 'rowan_staff', 'heartwood_staff']])).rows;
   check(tpl === 3 && rec.length === 3 && rec.every(x => x.class_key === 'carpenter' && x.station === 'workshop'), 'three staffs exist, and a carpenter makes them at the workshop');
+  const lamps = ['ember_lantern', 'brass_lantern', 'everburning_lantern'];
+  const tplL = (await q(`SELECT item_key FROM item_templates WHERE item_key = ANY($1::text[]) AND equip_slot = 'weapon'`, [lamps])).rows.length, recL = (await q(`SELECT class_key, station FROM recipes WHERE recipe_key = ANY($1::text[])`, [lamps])).rows;
+  check(tplL === 3 && recL.length === 3 && recL.every(x => x.class_key === 'blacksmith' && x.station === 'smithy'), 'three lanterns exist, and a blacksmith makes them at the smithy');
+  // Equipping through the game: a shield and a weapon that takes both hands do not go together.
+  if (process.env.CRAFTING_TEST_BASE) {
+    const BASE = process.env.CRAFTING_TEST_BASE, token = require('jsonwebtoken').sign({ userId: u.id, username: 'gear_' + RUN, species: 'Mice' }, process.env.JWT_SECRET || 'dev-secret-change-in-production');
+    const equip = async (itemId, cid) => { const r = await fetch(`${BASE}/api/inventory/${itemId}`, { method: 'PATCH', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ equipped_to: cid }) }); return { status: r.status, body: await r.json().catch(() => ({})) }; };
+    const loose = async (key, name, slot) => (await q(`INSERT INTO inventory_items (settlement_id, item_key, name, category, rarity, quantity, equip_slot, stat_bonuses, metadata) VALUES ($1,$2,$3,'equipment','common',1,$4,'{}','{}') RETURNING id`, [s.id, key, name, slot])).rows[0].id;
+    const w = (await q(`INSERT INTO citizens (settlement_id, name, role, stats, skills, life, life_stage, hidden_traits, visible_traits, career_settled_at)
+        VALUES ($1,'Ash','soldier','{"strength":9,"agility":8,"endurance":9,"intelligence":8,"charisma":8}','{"combat":3}','{"happiness":60,"hunger":20}','adult','[]','[]',NOW()) RETURNING id`, [s.id])).rows[0].id;
+    const sword = await loose('iron_sword', 'Iron Sword', 'weapon'), shield = await loose('iron_shield', 'Iron Shield', 'shield'), pole = await loose('halberd', 'Halberd', 'weapon'), lamp = await loose('ember_lantern', 'Ember Lantern', 'weapon');
+    const worn = async () => (await q(`SELECT name FROM inventory_items WHERE equipped_to=$1 ORDER BY equip_slot`, [w])).rows.map(x => x.name).join();
+    let r1 = await equip(sword, w), r2 = await equip(shield, w);
+    check(r1.status === 200 && r2.status === 200 && !r2.body.freed && !r2.body.note && (await worn()) === 'Iron Shield,Iron Sword', 'a sword and a shield go together', await worn());
+    r1 = await equip(pole, w);
+    check(r1.status === 200 && r1.body.replaced === 'Iron Sword' && r1.body.freed === 'Iron Shield' && /put the Iron Shield back in the stores: it takes both hands/.test(r1.body.note || '') && (await worn()) === 'Halberd',
+      'taking up a polearm sends the shield back to the stores, and says so', r1.body.note);
+    r1 = await equip(shield, w);
+    check(r1.status === 200 && r1.body.freed === 'Halberd' && (await worn()) === 'Iron Shield', 'taking up a shield sends a two-handed weapon back', r1.body.note);
+    r1 = await equip(lamp, w);
+    check(r1.status === 200 && !r1.body.freed && (await worn()) === 'Iron Shield,Ember Lantern', 'a lantern takes one hand: the shield stays');
+  }
   await pool.end();
 }
 

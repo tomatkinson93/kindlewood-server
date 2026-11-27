@@ -87,3 +87,19 @@ INSERT INTO recipes (recipe_key, name, class_key, spec, station, min_level, min_
   ('rowan_staff',     'Rowan Staff',     'carpenter', NULL, 'workshop', 10, 2, '{"resources":{"timber":24},"items":[{"item_key":"rare_sap","qty":1}]}',                                               'rowan_staff',      6000,  80, NULL, 'legendary', 27),
   ('heartwood_staff', 'Heartwood Staff', 'carpenter', NULL, 'workshop', 18, 3, '{"resources":{"timber":20},"items":[{"item_key":"ancient_heartwood","qty":1},{"item_key":"rare_sap","qty":2}]}',     'heartwood_staff', 14400, 180, NULL, 'legendary', 28)
 ON CONFLICT (recipe_key) DO NOTHING;
+
+-- Ember lanterns (lib/gear_kinds.js; the owner, 2026-11-27): a Hearthkeeper's
+-- own implement, a coal from the town's hearth carried in a lantern. Hearth
+-- magic is a fifth stronger in the hands of whoever carries one, and it takes
+-- one hand, so a shield goes with it. A staff is now the Wizard's alone
+-- (Wild magic). A blacksmith makes lanterns at the smithy.
+INSERT INTO item_templates (item_key, name, description, icon, category, rarity, rarity_order, quality, equip_slot, stat_bonuses, sell_value, armor_class, item_effects) VALUES
+  ('ember_lantern',       'Ember Lantern',       'A coal from the town''s hearth, carried behind horn panes.',     '🏮', 'equipment', 'common',    1, 'basic', 'weapon', '{"combat":1}',  30, NULL, NULL),
+  ('brass_lantern',       'Brass Hearth-lantern','Brass keeps the coal warm through a long night''s walk.',        '🏮', 'equipment', 'uncommon',  2, 'basic', 'weapon', '{"combat":3}',  75, NULL, NULL),
+  ('everburning_lantern', 'Everburning Lantern', 'Its ember was lit before the town was, and has never gone out.', '🔥', 'equipment', 'legendary', 5, 'basic', 'weapon', '{"combat":5}', 300, NULL, NULL)
+ON CONFLICT (item_key) DO NOTHING;
+INSERT INTO recipes (recipe_key, name, class_key, spec, station, min_level, min_station_level, inputs, output_key, base_seconds, base_xp, unlock_node, quality_cap, sort_order) VALUES
+  ('ember_lantern',       'Ember Lantern',        'blacksmith', NULL, 'smithy',  3, 1, '{"resources":{"metal":10,"timber":4}}',                                                                             'ember_lantern',        1800,  22, NULL, 'legendary', 26),
+  ('brass_lantern',       'Brass Hearth-lantern', 'blacksmith', NULL, 'smithy', 10, 2, '{"resources":{"metal":22,"timber":4},"items":[{"item_key":"iron_ore","qty":2}]}',                                   'brass_lantern',        6000,  80, NULL, 'legendary', 27),
+  ('everburning_lantern', 'Everburning Lantern',  'blacksmith', NULL, 'smithy', 18, 3, '{"resources":{"metal":30},"items":[{"item_key":"ancient_heartwood","qty":1},{"item_key":"rare_sap","qty":2}]}',   'everburning_lantern', 14400, 180, NULL, 'legendary', 28)
+ON CONFLICT (recipe_key) DO NOTHING;

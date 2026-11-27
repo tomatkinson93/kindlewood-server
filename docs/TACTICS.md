@@ -216,6 +216,21 @@ This replaces "knowing and readying five" above. Built in stages; what is built 
 
 **Stages.** A: schools, the whole kit, the second school, the tabbed action bar, the Abilities tab (**built 2026-11-26**: `SCHOOLS`, `partyUnit`, `secondOf` in `lib/tactics_setup.js`; `lib/tactics_abilities.js`; `citizens.second_class`, `second_ready`; `POST /api/tactics/abilities/:id/second`; tabs in `js/tactics.js`; `js/abilities.js`). B: mastery (**built 2026-11-26**: `lib/tactics_mastery.js`, table `citizen_ability_uses`; every use in a kept battle the player played is counted, 25 master it, a mastered ability is 20% stronger wherever it comes from; the end screen says "Mastered: Strike ✦", the Abilities tab shows "12 of 25 uses to ✦"; a practice battle and a battle left to be decided count nothing). C: gear (**built 2026-11-26**, below). D: study and the passive slot. E: research. F: family. G: the Allied village's ability. Each is playable when it lands.
 
+**The Attack (the owner, 2026-11-27).** Everyone has one Attack, on a button of its own above their abilities (key A), and it is not an ability: it is on no ladder, in no tab, and cannot be brought as a second school's.
+
+| Class | Attack | At the same stats (12s, combat 4) |
+|---|---|---|
+| Guard | Strike: a hard melee blow | 17 |
+| Archer | Shoot: an arrow, two to five tiles | 16 |
+| Villager | Swing: whatever is to hand | 15 |
+| Wizard, Hearthkeeper | Knock: a feeble blow with what they hold | 7 |
+
+- **It is the class's, not the weapon's.** A Guard and an Archer are fighters and their Attack hits well; a Wizard or Hearthkeeper swinging a staff or a lantern does less than half that, and less than their own first spell. The weapon then shapes it by kind (a polearm reaches two tiles, a hammer hits harder, a longbow reaches further).
+- **So a ladder is an Attack and nine abilities** for a Guard or an Archer (their Strike and Shoot were two of the ten), and ten abilities for a Wizard or Hearthkeeper, whose first spell stays an ability.
+- **An Archer has no melee blow** (the plain Swing everyone had since stage A is gone). Standing next to a foe they must step away, use Parting Shot, or carry a short bow, which is what the short bow is for.
+- **A villager's Swing is close to a Guard's Strike at equal stats.** In play villagers have less strength and combat skill, so it is weaker; if it reads as too good, lower the formula in `lib/class_abilities.js`.
+- Code: `ATTACK`, `attackKit`, `knownAt` in `lib/tactics_setup.js`; the unit's first ability has `attack: true`; `v_knock` in `lib/class_abilities.js`; the button and `attackOf` in `js/tactics.js`.
+
 **Stage C as built: what a citizen carries (`lib/gear_kinds.js`).** The numbers on gear always counted (a weapon's combat bonus, the few with dice, armour). Now the **kind** does one clear thing:
 
 | Kind | Items today | What it does |
@@ -226,15 +241,16 @@ This replaces "knowing and readying five" above. Built in stages; what is built 
 | Dagger | Iron Dagger | A blow from behind does double, where any other does half as much again |
 | Short bow | Shortbow, Composite Bow | An Archery shot can be loosed at a foe standing next to you |
 | Longbow | Longbow, Heartwood Longbow | Archery reaches one tile further |
-| Staff | **Oak, Rowan and Heartwood Staff (new; a carpenter makes them at the workshop, levels 3, 10 and 18)** | Wild and Hearth magic is a fifth stronger |
+| Staff | **Oak, Rowan and Heartwood Staff (new; a carpenter makes them at the workshop, levels 3, 10 and 18)** | Wild magic is a fifth stronger (the Wizard's) |
+| Lantern | **Ember Lantern, Brass Hearth-lantern, Everburning Lantern (new, 2026-11-27; a blacksmith makes them at the smithy, levels 3, 10 and 18)** | Hearth magic is a fifth stronger (the Hearthkeeper's: a coal from the town's hearth, carried) |
 | A shield (its own slot) | Wooden Buckler, Iron Shield, Tower Shield | Arms blocks are stronger by 3, 5 or 8 |
 
-- **They read the school of the ability, not the class of the citizen.** So they hold for a second school: a Guard who carries a staff heals better with borrowed Hearth magic, and gives up what a sword would do for their own blows. This is the owner's "a guard using heal with no staff… is vastly less effective than a fully trained and equipped healer": in a trial, a Guard's Kindle is 9, with a staff 12, and an equipped Hearthkeeper's 16 or more.
+- **They read the school of the ability, not the class of the citizen.** So they hold for a second school: a Guard who carries a lantern heals better with borrowed Hearth magic, and gives up what a sword would do for their own blows. This is the owner's "a guard using heal with no staff… is vastly less effective than a fully trained and equipped healer": in a trial, a Guard's borrowed Kindle is 9, with a lantern 12, and an equipped Hearthkeeper's 17 or more.
 - **An item made in Dev Tools gets its kind from its name** (anything with "bow", "staff", "blade"…), so nothing has to be registered.
 - **Order of the sums:** the citizen's stats, then gear, then three-quarters for a second school, then a fifth for mastery.
 - **Where it shows.** A citizen's Abilities tab has a Gear part: what they hold, what it does, and a guide to every kind. In a battle their card names the weapon and shield. The numbers and reaches on every ability already include it.
 - **One change to the rules of the board** (both copies of the engine): an ability may carry its own worth for a blow from behind (`a.back`); with none it is the usual half as much again. Old battles replay the same.
-- **Not restricted yet:** a shield can be carried with a two-handed weapon (a bow, a polearm, a staff). Worth a rule once it is abused.
+- **Two hands (the owner, 2026-11-27).** A hammer, a polearm, a bow and a staff take both hands, so no shield goes with them; a sword, a dagger and a lantern take one. Equipping a two-handed weapon sends the shield back to the stores, equipping a shield sends a two-handed weapon back, and the game says so (`routes/inventory.js`). A shield somehow still carried with one does nothing in a fight and the Abilities tab says it is on their back.
 - **For the day gear is drawn on citizens (the owner, 2026-11-26).** Every unit in a battle's setup carries `gear: { weapon, shield, armour }`, each with the item's `key`, `name` and `icon`, and the weapon its `kind`. The board draws nothing from it today; it is what a sprite layer would read. The kinds are the natural unit of art: seven weapon silhouettes and a shield cover every item, with per-item tints or swaps later. Outside battle, `careers.combatDeltas` gives the same by citizen.
 
 **Known cost.** A level 20 fighter now brings ten abilities and five more; the skulls were tuned for five. More choice is not much more power (one action a turn), but orange and above should be re-simulated once stage C is in.

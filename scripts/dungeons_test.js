@@ -127,7 +127,7 @@ function part1() {
   const CA = require('../lib/class_abilities'), TS = require('../lib/tactics_setup');
   const stats = { strength: 10, agility: 10, endurance: 10, intelligence: 10, charisma: 10, combatSkill: 3 };
   const reads = k => { const n = TS.read(CA.ability(k).formula, stats); return !!(n.dmg || n.block || n.heal || Object.keys(n.fx).length); };
-  check(Object.keys(CA.ABILITIES).length === 59 && Object.keys(CA.ABILITIES).every(reads), 'every ability in the catalogue has a formula the board can read into something it does', Object.keys(CA.ABILITIES).filter(k => !reads(k)).join());
+  check(Object.keys(CA.ABILITIES).length === 60 && CA.ABILITIES.v_knock && Object.keys(CA.ABILITIES).every(reads), 'every ability in the catalogue has a formula the board can read into something it does', Object.keys(CA.ABILITIES).filter(k => !reads(k)).join());
   const cf = role => CA.classFor({ role });
   check(cf('soldier').cls === 'guard' && cf('archer').cls === 'archer' && cf('wizard').cls === 'wizard' && cf('hearthkeeper').cls === 'hearthkeeper' && cf('soldier').trade === null, 'a Guard, Archer, Wizard or Hearthkeeper fights as their class');
   check(cf('farmer').cls === 'villager' && cf('farmer').trade === 't_tool' && cf('scout').trade === 't_spot' && cf('blacksmith').trade === 't_shore' && cf('porter').trade === 't_ration' && cf('tavernkeep').trade === 't_drink' && cf('scholar').trade === 't_signs',
@@ -564,8 +564,8 @@ async function part2() {
     r = await api(wz, 'POST', '/api/dungeons/run/move', { room: 'a' });
     bt = await battleOf(wz, r.body.board_battle_id);
     const wU = bt.setup.party.find(u => u.citizen_id === wizId), hU = bt.setup.party.find(u => u.citizen_id === hkId);
-    check(wU.cls === 'wizard' && wU.abilities.length >= 2 && wU.abilities.filter(x => x.school !== 'basics').every(x => x.key.startsWith('w_') && x.school === 'wild') && wU.abilities[0].key === 'v_swing' && wU.abilities.some(x => x.kind === 'attack' && x.max > 1), 'in a dungeon the Wizard fights as a Wizard: the plain blow everyone has, and spells of their own, cast from a distance', wU.abilities.map(x => x.name).join(', '));
-    check(hU.cls === 'hearthkeeper' && hU.abilities.filter(x => x.school !== 'basics').every(x => x.key.startsWith('h_') && x.school === 'hearth') && hU.abilities.some(x => x.kind === 'heal'), 'and the Hearthkeeper as a Hearthkeeper, with a heal', hU.abilities.map(x => x.name).join(', '));
+    check(wU.cls === 'wizard' && wU.abilities.length >= 2 && wU.abilities.filter(x => !x.attack).every(x => x.key.startsWith('w_') && x.school === 'wild') && wU.abilities[0].key === 'v_knock' && wU.abilities[0].attack === true && wU.abilities.some(x => x.kind === 'attack' && x.max > 1), 'in a dungeon the Wizard fights as a Wizard: a knock for an Attack, and spells of their own, cast from a distance', wU.abilities.map(x => x.name).join(', '));
+    check(hU.cls === 'hearthkeeper' && hU.abilities.filter(x => !x.attack).every(x => x.key.startsWith('h_') && x.school === 'hearth') && hU.abilities.some(x => x.kind === 'heal'), 'and the Hearthkeeper as a Hearthkeeper, with a heal', hU.abilities.map(x => x.name).join(', '));
     await api(wz, 'POST', '/api/dungeons/run/flee');
 
     // ── The switch ──────────────────────────────────────────────────────
