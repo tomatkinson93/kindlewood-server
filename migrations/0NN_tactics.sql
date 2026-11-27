@@ -103,3 +103,26 @@ INSERT INTO recipes (recipe_key, name, class_key, spec, station, min_level, min_
   ('brass_lantern',       'Brass Hearth-lantern', 'blacksmith', NULL, 'smithy', 10, 2, '{"resources":{"metal":22,"timber":4},"items":[{"item_key":"iron_ore","qty":2}]}',                                   'brass_lantern',        6000,  80, NULL, 'legendary', 27),
   ('everburning_lantern', 'Everburning Lantern',  'blacksmith', NULL, 'smithy', 18, 3, '{"resources":{"metal":30},"items":[{"item_key":"ancient_heartwood","qty":1},{"item_key":"rare_sap","qty":2}]}',   'everburning_lantern', 14400, 180, NULL, 'legendary', 28)
 ON CONFLICT (recipe_key) DO NOTHING;
+
+-- Study at a class building, and the passive slot (lib/tactics_study.js;
+-- docs/TACTICS.md §6 stage D). citizen_lessons: what a citizen has learned by
+-- study (extra abilities and passives), for good. citizen_study: the one
+-- lesson a citizen is studying now; a row is a seat at that building.
+-- citizens.passive: the passive in their one slot ('none': chosen to have none).
+CREATE TABLE IF NOT EXISTS citizen_lessons (
+  citizen_id INTEGER NOT NULL REFERENCES citizens(id) ON DELETE CASCADE,
+  lesson_key TEXT NOT NULL,
+  learned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (citizen_id, lesson_key)
+);
+CREATE TABLE IF NOT EXISTS citizen_study (
+  citizen_id    INTEGER PRIMARY KEY REFERENCES citizens(id) ON DELETE CASCADE,
+  settlement_id INTEGER NOT NULL REFERENCES settlements(id) ON DELETE CASCADE,
+  lesson_key    TEXT NOT NULL,
+  building      TEXT NOT NULL,
+  wealth        INTEGER NOT NULL DEFAULT 0,
+  started_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  done_at       TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_citizen_study_done ON citizen_study (done_at);
+ALTER TABLE citizens ADD COLUMN IF NOT EXISTS passive TEXT;

@@ -14,6 +14,9 @@
 //    GET  /open                where the board is open to this player
 //    POST /quest/:questRunId   a quest's battle (lib/tactics_quests.js): every player's
 //    GET  /abilities/:id, POST /abilities/:id/second   what a citizen knows and brings (lib/tactics_abilities.js)
+//    GET  /study/:id, POST /study/:id { lesson }, POST /study/:id/cancel, POST /study/:id/passive { key }
+//                              study at a class building, and the passive slot (lib/tactics_study.js)
+//    POST /admin/study/finish  Dev Tools: finish the town's studies now
 // ══════════════════════════════════════════════════════════════════════════
 'use strict';
 const express = require('express');
@@ -94,6 +97,29 @@ router.get('/abilities/:citizenId', requireAuth, mayPlay, async (req, res) => {
   try { res.json({ ok: true, ...(await require('../lib/tactics_abilities').page(req.user.userId, req.params.citizenId)) }); } catch (e) { failWith(res, e); }
 });
 // { keys: [five ability keys] }: the ones this citizen brings to a battle from now on.
+// Study at a class building, and the passive slot (lib/tactics_study.js).
+router.get('/study/:citizenId', requireAuth, mayPlay, async (req, res) => {
+  try { res.json({ ok: true, ...(await require('../lib/tactics_study').page(req.user.userId, req.params.citizenId)) }); } catch (e) { failWith(res, e); }
+});
+router.post('/study/:citizenId', requireAuth, mayPlay, async (req, res) => {
+  try { res.json({ ok: true, ...(await require('../lib/tactics_study').start(req.user.userId, req.params.citizenId, (req.body || {}).lesson)) }); } catch (e) { failWith(res, e); }
+});
+router.post('/study/:citizenId/cancel', requireAuth, mayPlay, async (req, res) => {
+  try { res.json({ ok: true, ...(await require('../lib/tactics_study').cancel(req.user.userId, req.params.citizenId)) }); } catch (e) { failWith(res, e); }
+});
+router.post('/study/:citizenId/passive', requireAuth, mayPlay, async (req, res) => {
+  try { res.json({ ok: true, ...(await require('../lib/tactics_study').setPassive(req.user.userId, req.params.citizenId, (req.body || {}).key)) }); } catch (e) { failWith(res, e); }
+});
+// Dev Tools: every study in the admin's town is finished now.
+router.post('/admin/study/finish', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { query } = require('../db');
+    const s = (await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId])).rows[0];
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+    await query('UPDATE citizen_study SET done_at = NOW() WHERE settlement_id=$1', [s.id]);
+    res.json({ ok: true, finished: await require('../lib/tactics_study').finishDue(s.id) });
+  } catch (e) { failWith(res, e); }
+});
 // The second school: { cls, keys } — a class the citizen has levels in and up to five of its abilities; cls 'none' brings nothing.
 router.post('/abilities/:citizenId/second', requireAuth, mayPlay, async (req, res) => {
   const b = req.body || {};
