@@ -358,7 +358,7 @@ This is the larger part of the work.
 3. The generator and difficulty tiers.
 4. Map dungeons: spawner, 72-hour cycle, markers, once per town. **Built 2026-11-25 (§13).**
 5. The draft, and cards found inside.
-6. Events, rest rooms, blessings and curses; reviving; chronicle lines.
+6. Events, rest rooms, blessings and curses; reviving; chronicle lines. **Events, blessings, curses and keepsakes built 2026-11-29 (§16).**
 7. Quest dungeons: story format, rumours.
 8. Content and tuning.
 9. Supplies and their crafting recipes (the extended part).
@@ -557,3 +557,60 @@ Decided by the owner on 2026-11-26: half a minute a tile, the party walks home t
 **Found on the way.** Citizens in a dungeon were still offered in the map's pickers (a camp's, an outpost's, a dungeon's); the server refused them, but they should not have been listed. They are left out now.
 
 **Not built, and the obvious next step:** something met on the road. A party walking home loaded with loot is exactly what a brigand ambush, or a neighbour's patrol, is for.
+
+## 16. Built 2026-11-29: event rooms, blessings and curses, keepsakes
+
+Step 6 of the build order, on the board. Decided by the owner by quiz the same day: **a roll with shown odds** (not "certain if you brought the right citizen"), and **keepsakes in the same round**. The catalogue and every rule about it is `lib/dungeon_events.js`; the run's side is in `lib/dungeons.js` (`answerEvent`, `applyOutcome`, `boardResolved`); the proof is `scripts/dungeon_events_test.js` (47 checks) and section 14 of the frontend's `verify/dungeons_proofs.js`.
+
+### 16.1 An event room
+
+About half of what the generator's rules call treasure rooms are now events (❓), one at least in every dungeon that has treasure, and no event twice in a dungeon. The route rules still count an event as treasure, so an event is never the safe road. An event room keeps the treasure it would have held (some options pay it out) and two groups of foes that some options wake: a small band (the skull's first group) and a guard (an elite room's group).
+
+An event is a situation and two or three options. An option is one of three things:
+
+| Kind | What it is | On screen |
+|---|---|---|
+| Certain | It does what it says. | What it brings, in a line. |
+| A try | One of the party tries it: whoever of those on their feet is likeliest to manage it. | The chance, who would try and their career, what it brings if it comes off and if it does not; "better with a Miner" when nobody suited is there. |
+| A gamble | Plain odds, the same for any party. | The odds, and both ends. |
+
+**The chance of a try** is the option's own (30 to 60%), plus 3% for each point of the option's stat above 8, plus 35% if the citizen's career is one the option suits; never under 5% or over 95%. So the right citizen roughly doubles it, and a party is never locked out of an option: anyone may try. **A miss always costs something** (health, a curse, a fight, or the stake), and **nothing in an event takes the last of anyone's health** (a hurt leaves 1). **The roll** is made from the dungeon's seed, the town and the room, so it is the same whenever it is asked for: there is nothing to try again, and two towns in the same dungeon roll differently. Coin an option costs is paid from what the run is carrying; an option the party cannot pay for is greyed and says why. No event can only be answered with coin.
+
+An option may wake a fight: a battle on the board against the room's band or its guard (`dungeon_runs.event` holds it while it is fought), and what the option promised beyond the fight is paid when it is won.
+
+**The first sixteen** (the text is in the catalogue): the Clear Spring, an Old Campfire, the Whetstone, the Mossy Shrine, the Lookout's Cache, Rockfall, the Sucking Mire, Blight Spores, the Cold Draught, the Sealed Door, the Brigands' Toll, the Gambling Crow, the Chained Chest, the Altar of Thorns, the Wounded Stranger, Whispers in the Dark. Between them the tries have a use for all twenty-one careers, so a party of farmers and a smith is not worse at events than a party of fighters, only different. They are `DUNGEON_CONTENT.md` §7's list, rewritten for rolls and without the supplies and cards that list assumed (rations, torches, rope, a card for the run).
+
+### 16.2 Blessings and curses
+
+An event can leave a mark that lasts until the run ends (`dungeon_runs.carried`). Twelve to begin with: six blessings (Keen Edges strength +2, the Wood's Favour endurance +2, Light Step agility +2, Thorn's Strength strength +3, Warmed Through endurance +1, the Whisperer's Bargain strength +2 and agility −1) and six curses (Sodden agility −2, Chilled strength −1, Chilled to the Bone strength −2, Slighted agility −1, the Alarm is Raised: every foe a tenth more health, Blight Spores: everyone starts the **next fight** poisoned). They go into each fight frozen with it, as §5.2 said: the party's stats through the same `party_*` modifiers a happening uses, the foes' health through the room's boost, a start-of-fight status through the engine's `st0`. The same mark twice is still one.
+
+### 16.3 Keepsakes
+
+Six, kept until the run ends, each changing how every fight starts or the road between fights:
+
+| Keepsake | What it does |
+|---|---|
+| 🗡️ Whetted Edge | Every foe starts each fight Vulnerable (2). |
+| 🪶 Owl Feather | Every foe starts each fight Weak (2). |
+| 🚩 Old Banner | Everyone's first attack in each fight does 4 more. |
+| 🪨 Hearthstone | After every fight won, everyone standing gets back 8% of their health. |
+| 🫖 Travelling Kettle | Every rest gives back 10% more. |
+| 🌰 Lucky Acorn | Every try and every gamble in an event is 15% likelier to come off. |
+
+**Where they are found:** an elite always carries one; one treasure room in three holds one as well as its treasure (which rooms is the dungeon's own, by its seed); several events give one. It is always one the run does not hold yet; a run that somehow holds all six gets 25 wealth in its place. (§5.2a's list was written for cards: "draws one extra card" and "costs no energy" have no meaning on the board, so the Lucky Acorn and the Old Banner were given board effects, and the Hearthstone heals between fights, since block on the board is gone by a unit's first turn.)
+
+### 16.4 On screen
+
+The path shows event rooms as ❓. Walking into one shows the situation and a button for each option with what it would bring. Once answered, a box says what came of it (who tried, the chance, whether it came off, and each thing that changed), and stays until the party walks on; a reload still shows it. What the run carries is a row of chips under the path (green for a blessing, amber for a curse, gold for a keepsake; each says what it does). The battle's placing screen lists what was carried into the fight, and the victory screen names a keepsake the fight brought.
+
+### 16.5 What it does to the numbers
+
+Not simulated: the run simulator walks past events as it walked past treasure, so its clear rates are unchanged and say nothing about events. By design an event is worth about what its treasure room was: the plain option of a good event heals 15 to 20% or gives a small blessing; the tries pay better and risk 12 to 25% of one citizen's health or a mild curse. Keepsakes make later fights easier (the Whetted Edge and Owl Feather most), which leans against the long road being the hard one. **Watch in play:** whether curses feel fair when nobody suited is in the party, and whether a run with three keepsakes makes a boss too easy.
+
+### 16.6 Not built
+
+- The rest room's other option (two of the party talk: a bond and a chronicle line).
+- Kin and bonds in a fight.
+- Chronicle lines for notable event outcomes.
+- Events that read a trait (only careers and stats so far), and events particular to a land.
+- A dungeon-wide effect of an event ("the next fight has one more minion", "skip to the boss").

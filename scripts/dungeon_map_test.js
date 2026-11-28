@@ -46,6 +46,7 @@ async function main() {
     let v = (await D.current(p.id)).run;
     for (let g = 0; g < 80 && v && v.status === 'active'; g++) {
       if (v.pending && v.pending.kind === 'battle') { const r = await D.adminWin(p.id); v = r.run; continue; }
+      if (v.pending && v.pending.kind === 'event') { v = (await D.choose(p.id, (v.pending.options.find(o => o.kind === 'certain' && !o.disabled && !/fight/.test(o.text)) || v.pending.options.find(o => !o.disabled)).key)).run; continue; }      // an event room: its plain option
       if (v.pending) { v = (await D.choose(p.id, (v.pending.options || []).some(o => o.key === 'deeper') ? 'deeper' : 'rest')).run; continue; }
       if (!v.moves.length) break;
       v = (await D.move(p.id, v.moves[0])).run;

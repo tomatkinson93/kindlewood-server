@@ -209,7 +209,7 @@ async function main() {
     let gv = r.run, rooms = 0, fights = 0;
     for (let guard = 0; gv && gv.status === 'active' && guard < 60; guard++) {
       if (gv.pending && gv.pending.kind === 'battle') { const x = await fight(g, gv.pending.battle_id); fights++; gv = x.last.body.dungeon.run; }
-      else if (gv.pending) gv = (await api(g, 'POST', '/api/dungeons/run/choose', { option: gv.pending.options.some(o => o.key === 'rest') ? 'rest' : 'deeper' })).body.run;
+      else if (gv.pending) gv = (await api(g, 'POST', '/api/dungeons/run/choose', { option: (pd => (pd.kind === 'event' ? (pd.options.find(o => o.kind === 'certain' && !o.disabled && !/fight/.test(o.text)) || pd.options.find(o => !o.disabled)).key : pd.options.some(o => o.key === 'rest') ? 'rest' : 'deeper'))(gv.pending) }      /* an event room: its plain option */)).body.run;
       else { gv = (await api(g, 'POST', '/api/dungeons/run/move', { room: gv.moves[0] })).body.run; rooms++; }
     }
     check(gv && (gv.status === 'cleared' || gv.status === 'defeat') && fights >= 2, 'a generated dungeon is walked to its end on the board', `${gv && gv.status}, ${fights} fights in ${rooms} rooms`);

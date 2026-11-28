@@ -118,3 +118,9 @@ ALTER TABLE settlement_quests ADD COLUMN IF NOT EXISTS dungeon_run_id INTEGER;
 INSERT INTO quest_definitions (id, title, description, icon, category, quest_type, skill_key, base_success, duration_s, reward_gold, quest_source, archived)
 VALUES ('dungeon_room', 'In the Dungeon', 'A fight in a dungeon room.', '💀', 'combat', 'party', 'combat', 1.0, 600, 0, 'dungeon', FALSE)
 ON CONFLICT (id) DO NOTHING;
+
+-- ── Event rooms, blessings, curses and keepsakes (2026-11-29; lib/dungeon_events.js, DUNGEONS.md §16) ──
+-- carried: what a run holds besides loot until it ends: [{ key, kind: 'mark' | 'keepsake', fights? }].
+-- event:   an event's fight while it is being fought: { fight: { enemies, kind, boost }, after: outcome | null }.
+ALTER TABLE dungeon_runs ADD COLUMN IF NOT EXISTS carried JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE dungeon_runs ADD COLUMN IF NOT EXISTS event   JSONB;

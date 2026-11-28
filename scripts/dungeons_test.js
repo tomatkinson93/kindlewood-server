@@ -32,7 +32,8 @@ function part1() {
   bad(r => { r.find(x => x.id === 'b1').next = []; }, /links to 0 rooms/, 'a room that leads nowhere is refused');
   bad(r => { r.find(x => x.id === 'a').next = ['b2']; }, /b1: no route leads here/, 'a room no route reaches is refused');
   check(DEFS.checkFloor(base(), { last: false }).some(p => /must end in a landing/.test(p)), 'a floor that is not the deepest must end in a landing');
-  bad(r => { r.find(x => x.id === 'c2').type = 'event'; }, /not built yet/, 'event rooms are not accepted yet');
+  bad(r => { r.find(x => x.id === 'c2').type = 'event'; }, /needs an event the game knows/, 'an event room must name an event the game knows');
+  bad(r => { r.find(x => x.id === 'c2').type = 'shop'; }, /not built yet/, 'a kind of room the game has not got is not accepted');
 
   const t = DEFS.TIERS;
   check(DEFS.TIER_ORDER.join() === 'green,yellow,orange,red,purple', 'five skulls, green to purple');
@@ -508,7 +509,7 @@ async function part2() {
       let view = (await api(p, 'GET', '/api/dungeons/run')).body.run, rooms = 0;
       for (let guard = 0; view && view.status === 'active' && guard < 80; guard++) {
         if (view.pending && view.pending.kind === 'battle') view = (await D.adminWin(p.id)).run;
-        else if (view.pending) view = (await api(p, 'POST', '/api/dungeons/run/choose', { option: view.pending.options.some(o => o.key === 'rest') ? 'rest' : 'deeper' })).body.run;
+        else if (view.pending) view = (await api(p, 'POST', '/api/dungeons/run/choose', { option: (pd => (pd.kind === 'event' ? (pd.options.find(o => o.kind === 'certain' && !o.disabled && !/fight/.test(o.text)) || pd.options.find(o => !o.disabled)).key : pd.options.some(o => o.key === 'rest') ? 'rest' : 'deeper'))(view.pending) }      /* an event room: its plain option */)).body.run;
         else { view = (await api(p, 'POST', '/api/dungeons/run/move', { room: view.moves[0] })).body.run; rooms++; }
       }
       return { view, rooms };
