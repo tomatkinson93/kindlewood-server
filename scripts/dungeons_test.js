@@ -127,7 +127,7 @@ function part1() {
   const CA = require('../lib/class_abilities'), TS = require('../lib/tactics_setup');
   const stats = { strength: 10, agility: 10, endurance: 10, intelligence: 10, charisma: 10, combatSkill: 3 };
   const reads = k => { const n = TS.read(CA.ability(k).formula, stats); return !!(n.dmg || n.block || n.heal || Object.keys(n.fx).length); };
-  check(Object.keys(CA.ABILITIES).length === 63 && CA.ABILITIES.v_knock && CA.ABILITIES.a_venom && CA.ABILITIES.h_brand && CA.ABILITIES.h_mend && Object.keys(CA.ABILITIES).every(reads), 'every ability in the catalogue has a formula the board can read into something it does', Object.keys(CA.ABILITIES).filter(k => !reads(k)).join());
+  check(Object.keys(CA.ABILITIES).length === 64 && CA.ABILITIES.l_riptide && CA.ABILITIES.v_knock && CA.ABILITIES.a_venom && CA.ABILITIES.h_brand && CA.ABILITIES.h_mend && Object.keys(CA.ABILITIES).every(reads), 'every ability in the catalogue has a formula the board can read into something it does', Object.keys(CA.ABILITIES).filter(k => !reads(k)).join());
   const cf = role => CA.classFor({ role });
   check(cf('soldier').cls === 'guard' && cf('archer').cls === 'archer' && cf('wizard').cls === 'wizard' && cf('hearthkeeper').cls === 'hearthkeeper' && cf('soldier').trade === null, 'a Guard, Archer, Wizard or Hearthkeeper fights as their class');
   check(cf('farmer').cls === 'villager' && cf('farmer').trade === 't_tool' && cf('scout').trade === 't_spot' && cf('blacksmith').trade === 't_shore' && cf('porter').trade === 't_ration' && cf('tavernkeep').trade === 't_drink' && cf('scholar').trade === 't_signs',

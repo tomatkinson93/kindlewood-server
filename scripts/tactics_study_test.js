@@ -279,6 +279,42 @@ async function main() {
     await q('UPDATE citizens SET signature=NULL, signature_from=NULL WHERE id=$1', [grand]);
     check((await SG.assignMissing(fam.sid)) >= 1 && (await q('SELECT signature FROM citizens WHERE id=$1', [grand])).rows[0].signature === 'g_shove' && (await api(fam, 'POST', '/api/tactics/admin/signatures')).status === 403,
       'Dev Tools can hand signatures down to grown citizens who have none (admins only)');
+
+    console.log('Village lore: what an Allied village teaches');
+    const LO = require('../lib/tactics_lore');
+    check(Object.keys(LO.LORE).join() === 'mice,badger,squirrel,otter,weasel' && Object.values(LO.LORE).every(l => CC.ability(l.key) && l.says && LO.kitOf(l.key).school === 'lore')
+      && !Object.values(LO.LORE).some(l => ['guard', 'archer', 'wizard', 'hearthkeeper'].some(c => T.KITS[c].abilities.some(a => a.key === l.key)) || S.LESSONS[l.key]) && LO.FEE === 200 && LO.EVERY_DAYS === 7 && LO.ofSpecies('Otter').key === 'l_riptide',
+    'each kind of village folk has one ability of its own, on no class ladder and in no building\'s lessons');
+    const lt = await player('Ally');
+    const [lz] = lt.cits;
+    const mkVillage = async species => (await q(`INSERT INTO npc_settlements (name, species, tier, tile_q, tile_r, disposition) VALUES ($1,$2,'village',$3,0,'friendly') RETURNING id, name`, [`Lore ${species} ${RUN}`, species, 39000 + (Date.now() % 100000) + (seq++) * 7])).rows[0];
+    const otters = await mkVillage('Otter'), mice = await mkVillage('Mice');
+    await q(`INSERT INTO diplomacy_relations (settlement_id, npc_id, status, trust) VALUES ($1,$2,'friendly',60), ($1,$3,'allied',80)`, [lt.sid, otters.id, mice.id]);
+    r = await api(lt, 'GET', `/api/diplomacy/${otters.id}`);
+    check(r.status === 200 && r.body.teaching && r.body.teaching.allied === false && r.body.teaching.available === false && r.body.teaching.ability.key === 'l_riptide' && r.body.teaching.ability.name === 'Riptide' && r.body.teaching.fee === 200,
+      'a village\'s window says what it would teach; below Allied it will not', r.body.error);
+    r = await api(lt, 'POST', `/api/diplomacy/${otters.id}/teach`, { citizen_id: lz });
+    check(r.status === 400 && /Only an Allied village/.test(r.body.error), 'a village that is not Allied refuses', r.body.error);
+    const w0 = await wealth(lt);
+    r = await api(lt, 'POST', `/api/diplomacy/${mice.id}/teach`, { citizen_id: lz });
+    const cz = (await q('SELECT lore, lore_from FROM citizens WHERE id=$1', [lz])).rows[0];
+    check(r.status === 200 && r.body.ability.key === 'c_rally' && r.body.replaced === null && r.body.wealth === w0 - 200 && (await wealth(lt)) === w0 - 200 && cz.lore === 'c_rally' && cz.lore_from === mice.name
+      && r.body.teaching.available === false && r.body.teaching.next_at && /was taught Rally at/.test(r.body.message), 'an Allied village teaches one citizen its lore for 200 wealth, and then not again for a week', r.body.error || r.body.message);
+    r = await api(lt, 'POST', `/api/diplomacy/${mice.id}/teach`, { citizen_id: lt.cits[1] });
+    check(r.status === 400 && /taught one of yours this week/.test(r.body.error) && (await wealth(lt)) === w0 - 200, 'a second lesson in the same week is refused', r.body.error);
+    const uL = (await T.partyFor([lz], {}))[0], aL = uL.abilities.find(x => x.lore);
+    check(aL && aL.key === 'c_rally' && aL.school === 'lore' && !aL.off && aL.quick === true && aL.taught_by === mice.name && (await api(lt, 'GET', `/api/tactics/abilities/${lz}`)).body.abilities.some(x => x.key === 'c_rally' && x.lore && x.school_name === 'Village lore'),
+      'the citizen brings it to every battle at full strength, as Village lore, and the Abilities page shows where it came from');
+    await q(`UPDATE diplomacy_relations SET trust=80 WHERE settlement_id=$1 AND npc_id=$2`, [lt.sid, otters.id]);
+    r = await api(lt, 'POST', `/api/diplomacy/${otters.id}/teach`, { citizen_id: lz });
+    check(r.status === 200 && r.body.replaced === 'Rally' && (await q('SELECT lore FROM citizens WHERE id=$1', [lz])).rows[0].lore === 'l_riptide' && (await T.partyFor([lz], {}))[0].abilities.filter(x => x.lore).length === 1,
+      'a citizen carries one piece of village lore: being taught another replaces it', r.body.error);
+    await q(`UPDATE diplomacy_relations SET taught_at = NOW() - interval '8 days' WHERE settlement_id=$1`, [lt.sid]);
+    r = await api(lt, 'POST', `/api/diplomacy/${otters.id}/teach`, { citizen_id: lz });
+    check(r.status === 400 && /already knows Riptide/.test(r.body.error), 'what a citizen already knows is not taught again', r.body.error);
+    await q('UPDATE settlements SET wealth = 50 WHERE id=$1', [lt.sid]);
+    r = await api(lt, 'POST', `/api/diplomacy/${mice.id}/teach`, { citizen_id: lt.cits[1] });
+    check(r.status === 400 && /costs 200 wealth/.test(r.body.error) && (await api(b, 'POST', `/api/diplomacy/${mice.id}/teach`, { citizen_id: lz })).status === 400, 'a town that cannot pay, or is no ally, is refused', r.body.error);
   } finally { await pool.end(); }
 }
 

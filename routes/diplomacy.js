@@ -247,6 +247,8 @@ router.get('/:npcId', requireAuth, async (req, res) => {
       decay_warning: require('../lib/trust_decay').warning(relRow),
       // Allied: a daily tribute, and their militia guards your outposts nearby.
       tribute: tributeView(npc, relRow),
+      // Allied: the village will teach one of your citizens its lore, an ability no class has (lib/tactics_lore.js).
+      teaching: require('../lib/tactics_lore').view(npc, relRow),
     });
   } catch(e) { console.error('Diplomacy route error:', e.message); res.status(500).json({ error: e.message }); }
 });
@@ -275,6 +277,12 @@ function tributeView(npc, rel) {
   const taken = rel && rel.tribute_day && new Date(rel.tribute_day).toISOString().slice(0, 10) === today;
   return { allied, available: allied && !taken, bundle: tributeBundle(npc), needs_trust: ALLIED_TRUST };
 }
+
+// ── POST /api/diplomacy/:npcId/teach { citizen_id } — an Allied village teaches a citizen its lore ──
+router.post('/:npcId/teach', requireAuth, async (req, res) => {
+  try { res.json({ ok: true, ...(await require('../lib/tactics_lore').teach(req.user.userId, req.params.npcId, (req.body || {}).citizen_id)) }); }
+  catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
 
 // ── POST /api/diplomacy/:npcId/tribute — collect today's Allied tribute ──
 router.post('/:npcId/tribute', requireAuth, async (req, res) => {

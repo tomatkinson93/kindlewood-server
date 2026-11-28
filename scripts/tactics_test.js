@@ -96,7 +96,7 @@ console.log('The kits');
     // Schools, the whole kit, and a second school (docs/TACTICS.md §6, 2026-11-26).
     {
       const keys = u => u.abilities.map(a => a.key + (a.off ? '*' : '')).join(), schools = u => [...new Set(u.abilities.map(a => a.school))].join();
-      check(Object.keys(T.SCHOOLS).join() === 'basics,arms,archery,wild,hearth,field' && T.SCHOOLS.wild.name === 'Wild magic' && T.SCHOOLS.hearth.name === 'Hearth magic' && T.SCHOOL_OF.guard === 'arms' && T.SECOND === 5 && T.OFF === 0.75,
+      check(Object.keys(T.SCHOOLS).join() === 'basics,arms,archery,wild,hearth,field,lore' && T.SCHOOLS.wild.name === 'Wild magic' && T.SCHOOLS.hearth.name === 'Hearth magic' && T.SCHOOL_OF.guard === 'arms' && T.SECOND === 5 && T.OFF === 0.75,
         'the schools: Basics, Arms, Archery, Wild magic, Hearth magic, Fieldcraft; five from a second school, at three-quarters strength');
       const vet = T.partyUnit(c, 'guard', null, null, 10);
       check(keys(vet) === 'g_strike,g_shield,g_cover,g_shove,g_heavy,g_stand_fast,g_shield_bash' && schools(vet) === 'arms' && vet.school === 'arms' && vet.second === null && vet.next.key === 'g_oath' && vet.next.at === 13,

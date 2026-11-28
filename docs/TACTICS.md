@@ -1,6 +1,6 @@
 # Tactics battles
 
-Status: **the game's combat (chosen by the owner 2026-11-20; the only combat from 2026-11-26).** Every battle is fought or decided on the board: a quest's, a camp's, a sally's, a clan quest's, a dungeon's. The card battler is deleted (§8). Dungeons are on the world map (2026-11-25, `DUNGEONS.md` §13): a party of four is sent from a tile's panel. What is left is depth (the rest of Phase 4), content (6) and the rest of the way in (7): §9.
+Status: **the game's combat (chosen by the owner 2026-11-20; the only combat from 2026-11-26).** Every battle is fought or decided on the board: a quest's, a camp's, a sally's, a clan quest's, a dungeon's. The card battler is deleted (§8). Dungeons are on the world map (2026-11-25, `DUNGEONS.md` §13): a party of four is sent from a tile's panel. The abilities redesign (Phase 4, §6) was finished on 2026-11-28. What is left is content (6) and the rest of the way in (7): §9.
 
 **There are no players yet** (the owner, 2026-11-25): it is a test server with one tester. Nothing is gated for players' sake, nothing is bought back or migrated gently, and a switch is only worth having where the owner wants to turn something off while testing.
 
@@ -214,7 +214,34 @@ This replaces "knowing and readying five" above. Built in stages; what is built 
 - **A family signature.** A child coming of age is taught one ability by a parent, whatever class they take.
 - **An Allied village** teaches one ability no ladder has (the perk that replaces its card lessons).
 
-**Stages.** A: schools, the whole kit, the second school, the tabbed action bar, the Abilities tab (**built 2026-11-26**: `SCHOOLS`, `partyUnit`, `secondOf` in `lib/tactics_setup.js`; `lib/tactics_abilities.js`; `citizens.second_class`, `second_ready`; `POST /api/tactics/abilities/:id/second`; tabs in `js/tactics.js`; `js/abilities.js`). B: mastery (**built 2026-11-26**: `lib/tactics_mastery.js`, table `citizen_ability_uses`; every use in a kept battle the player played is counted, 25 master it, a mastered ability is 20% stronger wherever it comes from; the end screen says "Mastered: Strike ✦", the Abilities tab shows "12 of 25 uses to ✦"; a practice battle and a battle left to be decided count nothing). C: gear (**built 2026-11-26**, below). D: study and the passive slot (**built 2026-11-27**, below). E: research. F: family. G: the Allied village's ability. Each is playable when it lands.
+**Stages.** A: schools, the whole kit, the second school, the tabbed action bar, the Abilities tab (**built 2026-11-26**: `SCHOOLS`, `partyUnit`, `secondOf` in `lib/tactics_setup.js`; `lib/tactics_abilities.js`; `citizens.second_class`, `second_ready`; `POST /api/tactics/abilities/:id/second`; tabs in `js/tactics.js`; `js/abilities.js`). B: mastery (**built 2026-11-26**: `lib/tactics_mastery.js`, table `citizen_ability_uses`; every use in a kept battle the player played is counted, 25 master it, a mastered ability is 20% stronger wherever it comes from; the end screen says "Mastered: Strike ✦", the Abilities tab shows "12 of 25 uses to ✦"; a practice battle and a battle left to be decided count nothing). C: gear (**built 2026-11-26**, below). D: study and the passive slot (**built 2026-11-27**, below). E: research (**built 2026-11-28**). F: family (**built 2026-11-28**). G: the Allied village's ability (**built 2026-11-28**). All seven stages are built; E to G are described below.
+
+**Stage E as built: research (`lib/research_defs.js`, the Battlecraft path).** A seventh path at the Library. What it gives, every citizen of the town brings to battle (`researchOf` in `lib/tactics_setup.js`):
+
+| Project | Era | Needs | Every citizen… |
+|---|---|---|---|
+| Fletching | Foundations (120 points) | nothing | …shoots Archery one tile further |
+| Field Medicine | Workings (300) | Fletching | …has one more use of healing that is counted by the battle (Kindle, Second Wind, Mending Song) |
+| Stone Wards | Workings (300) | Fletching | …blocks a quarter more with the wards of Wild and Hearth magic |
+| Sparring Rings | Guilds (650) | Field Medicine | …has an Attack a tenth stronger |
+
+The citizen's Abilities tab names what the town has finished ("Fletching, from the Library"). Four projects to prove the path; more are one line each (`effects: { 'battle:<what>': x }`, read in `abilityOf`).
+
+**Stage F as built: a family signature (`lib/tactics_signature.js`).** When a child comes of age, a parent teaches them **one ability of their own**: the one that parent has used most in battle, or with none used, their own family's signature, or else the furthest along their ladder. With no parent who can, their mentor. The child has it **for life, at full strength, whatever work they take up**, marked ⚜ in battle and on the Abilities tab with who taught it, and hands it on in their turn, so an ability can run in a family for generations. The town's news and chronicle say it ("…Hazel taught them Shove, to carry all their life"). An Attack and a passive cannot be a signature. When a citizen's own class teaches the same ability it is not there twice. Dev Tools → 💀 Dungeons → **Hand down family signatures** does it now for grown citizens who have none.
+
+**Stage G as built: village lore (`lib/tactics_lore.js`).** The perk that replaces an Allied village's card lessons. Each kind of village folk has one ability on no ladder:
+
+| Village | Lore | What it does |
+|---|---|---|
+| Mice | Rally | A friend's next attack lands harder. Does not end the turn. |
+| Badgers | Bulwark | Block for yourself and everyone within two tiles. |
+| Squirrels | Quick Jab | A light hit that does not end the turn. |
+| Otters | Riptide (new) | Knocks a foe back a tile and slows it. |
+| Weasels | Smoke Bomb | A little block for yourself and everyone within two tiles. |
+
+A village at **Allied trust (71)** teaches it to one citizen of the player's choosing for **200 wealth**, and to one of that town's citizens **every 7 days**. The citizen has it for life at full strength, marked 🏡, in a school of its own (Village lore). **A citizen carries one piece of village lore**: being taught another replaces it. The village's window shows the lore whatever the trust, as something to work towards. `POST /api/diplomacy/:npcId/teach { citizen_id }`.
+
+**What a citizen can bring to a battle now, in full:** their Attack; everything their class has taught and what they studied in its school; a family signature; one piece of village lore; up to five from a second school; one passive; and, on all of it, their gear, their town's research and their own mastery.
 
 **Stage D as built: study at the class buildings, and a passive slot (`lib/tactics_study.js`).** The owner's choices (2026-11-27): a lesson costs time and wealth; a small first set; a citizen who is studying carries on as normal.
 
@@ -360,7 +387,7 @@ Each phase ends with something playable.
 | 1 | Feel | Choosing a facing, zoom and drag, a phone on its side, hooks for art, sound and music. **Done.** | |
 | 2 | The server decides | The same rules run on the server from a list of the player's choices; a battle is stored, survives a reload and cannot be cheated. **Done** (§10). | |
 | 3 | **Dungeons on the board** | A dungeon's fights are tactics battles. Health and who is down carry between them; rests, loot, fleeing and the endings as now. The door pick and the card after a fight are gone. A dungeon made for the board has fewer fights; a foe leaves what it carried; the fallen lie on the board and a heal stands them up; the numbers are set for whole runs (§5). **Done (2026-11-22).** | |
-| 4 | **Abilities** | Knowing and readying; class ladders; study at the class buildings; research; equipment; mastery. An Abilities page on each citizen. **Built so far:** experience from battle, the ladder to level 20 (ten abilities a class), knowing and readying, the Abilities tab (2026-11-23). **Left:** study, research, equipment, mastery. | Large; half done |
+| 4 | **Abilities** | Experience from battle and the ladder to level 20; then the owner's redesign of 2026-11-26 (§6): schools, the whole class kit, a second school from an old career, an Attack of its own, mastery, gear by kind, study and a passive slot, research, a family signature, village lore. **Done 2026-11-28.** | |
 | 5 | **Everywhere, and the cards go** | Quests, camps, raids and clan quests on the board, with a quick result for a fight left to be decided. The card systems are removed. **Done 2026-11-26** (§8). | |
 | 6 | **Content** | **Raids on a map of the town** (moved here from Phase 5: it is new content, and nothing about retiring the cards waited on it; today a raid is met by a sally, which is a battle on the board, or weathered by the town's defences). Ground that matters, the seasons, other ways to win, placing the party; bosses that resist being stunned or pushed; a second form or a trick for each boss. **The cast is in (2026-11-21):** thirty foes in five bands with board behaviour, and the seven bosses (§4). | Large; alongside the art |
 | 7 | **The way in, and polish** | Dungeons on the map, a first battle that teaches, art and sound in, tuning from real play, slow phones. **Built so far:** dungeons on the map (2026-11-25, `DUNGEONS.md` §13). | Medium; begun |

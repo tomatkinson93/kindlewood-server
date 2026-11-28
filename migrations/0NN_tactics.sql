@@ -133,3 +133,10 @@ ALTER TABLE citizens ADD COLUMN IF NOT EXISTS passive TEXT;
 ALTER TABLE citizens ADD COLUMN IF NOT EXISTS signature TEXT;
 ALTER TABLE citizens ADD COLUMN IF NOT EXISTS signature_from INTEGER;
 ALTER TABLE citizens ADD COLUMN IF NOT EXISTS signature_from_name TEXT;
+
+-- Village lore (lib/tactics_lore.js; docs/TACTICS.md §6 stage G): the one
+-- ability an Allied village has taught a citizen, and which village. A
+-- village teaches one citizen of a town a week (taught_at).
+ALTER TABLE citizens ADD COLUMN IF NOT EXISTS lore TEXT;
+ALTER TABLE citizens ADD COLUMN IF NOT EXISTS lore_from TEXT;
+ALTER TABLE diplomacy_relations ADD COLUMN IF NOT EXISTS taught_at TIMESTAMPTZ;
