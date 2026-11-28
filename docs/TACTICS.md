@@ -1,6 +1,6 @@
 # Tactics battles
 
-Status: **the game's combat (chosen by the owner 2026-11-20; the only combat from 2026-11-26).** Every battle is fought or decided on the board: a quest's, a camp's, a sally's, a clan quest's, a dungeon's. The card battler is deleted (§8). Dungeons are on the world map (2026-11-25, `DUNGEONS.md` §13): a party of four is sent from a tile's panel. The abilities redesign (Phase 4, §6) was finished on 2026-11-28, and the first piece of Phase 6 the same day: **the board itself** (§7a: ground that slows, cover, the season, hiding in leaves, placing the party). What is left is the rest of the content (6) and of the way in (7): §9.
+Status: **the game's combat (chosen by the owner 2026-11-20; the only combat from 2026-11-26).** Every battle is fought or decided on the board: a quest's, a camp's, a sally's, a clan quest's, a dungeon's. The card battler is deleted (§8). Dungeons are on the world map (2026-11-25, `DUNGEONS.md` §13): a party of four is sent from a tile's panel. The abilities redesign (Phase 4, §6) was finished on 2026-11-28, and the first piece of Phase 6 the same day: **the board itself** (§7a: ground that slows, cover, the season, hiding in leaves, placing the party). On 2026-11-29: fields that differ by land and in size, shots that gain from height, walking in several goes, and **a lair and a trick for each boss** (§7b). What is left is the rest of the content (6) and of the way in (7): §9.
 
 **There are no players yet** (the owner, 2026-11-25): it is a test server with one tester. Nothing is gated for players' sake, nothing is bought back or migrated gently, and a switch is only worth having where the owner wants to turn something off while testing.
 
@@ -333,7 +333,7 @@ A village at **Allied trust (71)** teaches it to one citizen of the player's cho
 | **The year on the board** | Winter freezes rivers (walkable) and snow slows; spring floods the fords; autumn leaves hide a unit that has not moved. | **Built 2026-11-28** (§7a) |
 | **Other ways to win** | Hold the gate for six rounds; get the cart across; protect a villager; break the totem. | Yes, with raids (below) |
 | **Raids on your own town** | The raid is fought on a map made from the town: the walls and the Watchtower are the terrain, the defenders are who is on watch. | Yes: it makes walls and guards mean something you can see |
-| **Bosses that use the board** | Old Snapjaw drags a citizen into the water; the Storm Matriarch takes the high ground; Grum throws boulders that stay as rocks. | Yes, one trick each |
+| **Bosses that use the board** | Old Snapjaw drags a citizen into the water; the Storm Matriarch takes the high ground; Grum throws boulders that stay as rocks. | **Built 2026-11-29** (§7b), with the seven tricks the owner chose |
 | **Placing the party** | Choose the four starting tiles before the fight. | **Built 2026-11-28** (§7a) |
 | **Foes out of stories** | The owner's rule is only "no animals on four legs". So beside the bands: a centaur lancer who charges in a line, bramble sprites that tangle, a troll under the bridge, a will-o'-the-wisp that lures a citizen a tile. One or two for each land, as elites or events. | Yes, in Phase 6, a few at a time with their art |
 | **Kin and bonds** | Kin standing side by side block a little more (decided 2026-11-18 for cards). | Yes, as adjacency |
@@ -380,7 +380,46 @@ The screen colours the open ground and the trees for the season (blossom, summer
 
 **What it did to the numbers** (2026-11-28, `SEASON=winter node scripts/tactics_run_sim.js`, sixteen runs a line, so ±10): the skulls clear at the same rates in every season as they did before any of this (green and orange above nine in ten, purple near nine in ten). Yellow taken boldly is the weak spot it already was: 63% over forty runs, where it was about seven in ten. Nothing was retuned. The simulator's party does not place itself or use cover or leaves on purpose; a player will.
 
-**Not built yet from this part of §7:** other ways to win, a trick for each boss, bosses that resist a stun or a shove, night battles, kin side by side.
+**Not built yet from this part of §7:** other ways to win, bosses that resist a stun or a shove, night battles, kin side by side. (A trick for each boss: §7b.)
+
+## 7b. Fields by land, walking in several goes, and the bosses (built 2026-11-29)
+
+Asked for by the owner on 2026-11-29: more varied maps (sizes; plains mostly flat, forests heavy in trees, more to the hills and mountains; arrows from up high doing more), the boss room always in a dungeon setting of the boss's own, walking again after acting, and the trick for each boss. Decided by quiz the same day: the seven tricks below; **a dungeon stays as likely to be cleared as it was** (boss health trimmed to pay for the tricks); **foes do not walk again after acting, yet** (it is the party's edge). The proof is `scripts/tactics_lair_test.js` on the server (53 checks, no database) and section 21 of the frontend's `verify/tactics_proofs.js`.
+
+**Each land makes its own kind of field** (`LANDS` in the engine; counts are for an 8 × 8 field and grow with its size).
+
+| Land | The field |
+|---|---|
+| Plains | All but flat: one low rise at most, a tree or two. Wide (up to 10 × 8). |
+| Forest | Thick with trees, in clumps: about eleven on an 8 × 8 field, five times the plains. Close (7 × 8 to 9 × 8). |
+| Hills | Rolling: four mounds and a flat-topped shelf. |
+| Mountain | Peaks up to four levels, two ridges (lines of high ground), a shelf; rocks, no trees. Long (up to 8 × 10). |
+| River, marsh | As before (a stream with fords; pools and mire), on wider fields. |
+| Ruins | Stone, with what is left of walls: rocks two or three in a row. |
+
+High ground is always stepped (neighbouring tiles never differ by more than a level), so every slope can be walked and nobody can perch where a party without bows cannot reach. Whatever blocks the way is only put where the two sides can still reach each other, so a thick wood never needs the old fall-back to an empty field. **Sizes:** each land has four (`SIZES`), seven to ten tiles each way, chosen by the battle's seed and **stored with the battle** (`setup.w`, `setup.h`), so a stored battle plays back on its own field whatever the lists become.
+
+**Shots from above.** A blow in melee from higher ground does 15% more, as it always has. A shot now does 15% more **for each level** it is loosed from above its target, three levels at most (+45%); it already reached a tile further for each level (two at most). The forecast says by how much.
+
+**Walking in several goes.** A unit has its steps for the turn and may spend them in as many walks as it likes, before acting, after, or both: walk three, strike, walk two. The screen tints what can still be reached and counts the steps left; each walk can be taken back (the last first) until the unit does something else. When the action is used and there is no step left to take, the screen asks which way to face; otherwise the turn ends with End turn as before. The one step a unit can always take (into slow ground it has not the steps for) is the turn's first. *Creatures walk once and then act, as before* (decided: not yet).
+
+**A boss is fought in its lair** (`LAIRS` in the engine, by the boss's key; `setup.lair`). A lair is a fixed 9 × 9 field drawn row by row, turned left to right by the seed, indoors (no season), with its own floor (flagstones, the earth of a hollow tree) and things to stand behind (pillars, roots, rocks). Any fight with a boss in it is fought there, in a dungeon, a practice battle or anywhere else. The placing screen names the lair and says the trick before the first turn; the boss's card and list say it too.
+
+| Boss | Lair | Trick | The answer to it |
+|---|---|---|---|
+| Redtooth | Redtooth's Hall: pillars, a dais | **Riposte**: struck by anyone beside him, he strikes back at half strength, every time (never the felling blow) | Shoot him; pillars give him cover, so mind the side you shoot from |
+| Old Greyfeather | The Owl's Hollow: roots, a rise in the middle, **dark** | **Night Eyes**: nobody aims further than three tiles unless they carry a lantern or stand beside someone who does. He sees well enough | Bring a Hearthkeeper with a lantern (the ember lantern of §6 lights the way) and keep the archers beside them, or close in |
+| The Storm Matriarch | The Storm Eyrie: a spire three levels high | **Aloft**: a shot loosed from below her does half | Climb to her height, or meet her when she dives |
+| Grum | Grum's Cave: wide, nearly empty | **Rubble**: every boulder he throws stays where it lands, as a rock (six at most; never where it would cut anyone off) | The cave fills up: use his rocks as cover, and do not stand where one would hem you in |
+| Old Snapjaw | The Sunken Ford: water, fords to wade | **Shell**: a blow to his front does half | Get round him. With steps left after a blow, a citizen can walk on to his flank for the next turn |
+| The Bog Mother | The Sinking Throne: a ring of mire round her roots | **Long Tongue**: her tongue drags whoever it lashes to her feet, into the mire | Keep the frail out of reach (two to three tiles), or come to her on your own terms |
+| The Hollow King | The Hollow Crypt: pillars, stone coffins, a dais | **Unquiet**: the first time he falls he rises again with half his health | Save something for the second time; the forecast says "falls, and rises again" |
+
+*One change from what was put to the owner:* the dark was described as "nobody aims past three tiles"; in the build Old Greyfeather himself is not bound by it. Symmetric dark was no trick at all (his own bolt was cut too); an owl that sees you when you cannot see him is the fight.
+
+**What it did to the numbers.** `scripts/tactics_boss_sim.js` fights each boss with its trick in its lair and without (as before), the party walking in at 80% health. The tricks cost the party five to twelve points of health a fight (the Hollow King most), so each boss lost health to pay for it: Redtooth 85 → 75, Greyfeather 82 → 68, the Storm Matriarch 80 → 72, Grum 94 → 80, Old Snapjaw 88 → 78, the Bog Mother 96 → 88, the Hollow King 90 → 62 (he has half of it again). Whole dungeons, forty runs a line, before → after (careful / bold): yellow 85 / 63 → 80 / 58, red 88 / 58 → 83 / 55; green 93 / 90, orange 100 / 85 and purple 95 / 88 after (sixteen-run lines before: 94 / 94, 100 / 100, 100 / 88). So a few points down at most, inside what forty runs can tell apart; and the simulator's party neither walks again after striking nor carries a lantern on purpose, both of which a player will. **Red taken boldly (55 to 58%) was and is the hardest thing in the game**, lost in ordinary fights more than at the boss; it has not been retuned.
+
+**Not built:** bosses that resist a stun or a shove (a stun still costs a boss its turn); a second form; foes that walk again after acting.
 
 ## 8. What happened to the cards
 
@@ -428,7 +467,7 @@ Each phase ends with something playable.
 | 3 | **Dungeons on the board** | A dungeon's fights are tactics battles. Health and who is down carry between them; rests, loot, fleeing and the endings as now. The door pick and the card after a fight are gone. A dungeon made for the board has fewer fights; a foe leaves what it carried; the fallen lie on the board and a heal stands them up; the numbers are set for whole runs (§5). **Done (2026-11-22).** | |
 | 4 | **Abilities** | Experience from battle and the ladder to level 20; then the owner's redesign of 2026-11-26 (§6): schools, the whole class kit, a second school from an old career, an Attack of its own, mastery, gear by kind, study and a passive slot, research, a family signature, village lore. **Done 2026-11-28.** | |
 | 5 | **Everywhere, and the cards go** | Quests, camps, raids and clan quests on the board, with a quick result for a fight left to be decided. The card systems are removed. **Done 2026-11-26** (§8). | |
-| 6 | **Content** | **Raids on a map of the town** (moved here from Phase 5: it is new content, and nothing about retiring the cards waited on it; today a raid is met by a sally, which is a battle on the board, or weathered by the town's defences). **Built 2026-11-28 (§7a): ground that matters, the seasons, placing the party.** Still to build: other ways to win; bosses that resist being stunned or pushed; a second form or a trick for each boss. **The cast is in (2026-11-21):** thirty foes in five bands with board behaviour, and the seven bosses (§4). | Large; alongside the art |
+| 6 | **Content** | **Raids on a map of the town** (moved here from Phase 5: it is new content, and nothing about retiring the cards waited on it; today a raid is met by a sally, which is a battle on the board, or weathered by the town's defences). **Built 2026-11-28 (§7a): ground that matters, the seasons, placing the party. Built 2026-11-29 (§7b): fields by land and size, a lair and a trick for each boss.** Still to build: other ways to win; bosses that resist being stunned or pushed; a second form or a trick for each boss. **The cast is in (2026-11-21):** thirty foes in five bands with board behaviour, and the seven bosses (§4). | Large; alongside the art |
 | 7 | **The way in, and polish** | Dungeons on the map, a first battle that teaches, art and sound in, tuning from real play, slow phones. **Built so far:** dungeons on the map (2026-11-25, `DUNGEONS.md` §13). | Medium; begun |
 
 **A change of order (2026-11-25).** Phase 5 was begun, and finished, before Phase 4 was. What is left of Phase 4 (study, research, equipment, mastery) is depth; nothing a player did reached the board until Phase 5, and what players find when they fight real quests there should shape that depth. Abilities enough to replace cards existed: ten a class, five brought.
@@ -461,8 +500,8 @@ Each phase ends with something playable.
 | Routes | server `routes/tactics.js` (a quest's battle and the Abilities page are every player's; a practice battle is for admins; a dungeon's battle is for whoever may enter dungeons) |
 | What a battle teaches: experience by rank and skull, paid into class levels | server `lib/tactics_xp.js` |
 | What a citizen knows and brings: the Abilities tab | server `lib/tactics_abilities.js`; frontend `js/abilities.js`, `css/abilities.css` |
-| Numbers | server `scripts/tactics_sim.js` (one battle), `scripts/tactics_run_sim.js` (a whole dungeon), `scripts/tactics_quest_sim.js` (a quest's fight) |
-| Tests | server `scripts/tactics_ground_test.js` (46: the board itself, §7a); frontend `verify/tactics_proofs.js` (272 checks), `verify/dungeons_proofs.js` (74); server `scripts/tactics_test.js` (the kits, the ladder, readying, the routes), `scripts/tactics_abilities_test.js` (17), `scripts/tactics_quest_test.js` (39), `scripts/combat_gear_test.js` (13: gear on the board), `scripts/dungeon_board_test.js` (41), `scripts/dungeons_test.js` (177: the run itself, through board battles), `scripts/jukebox_test.js` (13) |
+| Numbers | server `scripts/tactics_sim.js` (one battle), `scripts/tactics_run_sim.js` (a whole dungeon), `scripts/tactics_boss_sim.js` (each boss with and without its trick), `scripts/tactics_quest_sim.js` (a quest's fight) |
+| Tests | server `scripts/tactics_ground_test.js` (46: the board itself, §7a), `scripts/tactics_lair_test.js` (53: fields, walking, lairs and tricks, §7b); frontend `verify/tactics_proofs.js` (287 checks), `verify/dungeons_proofs.js` (74); server `scripts/tactics_test.js` (the kits, the ladder, readying, the routes), `scripts/tactics_abilities_test.js` (17), `scripts/tactics_quest_test.js` (39), `scripts/combat_gear_test.js` (13: gear on the board), `scripts/dungeon_board_test.js` (41), `scripts/dungeons_test.js` (177: the run itself, through board battles), `scripts/jukebox_test.js` (13) |
 
 - **The engine is pure**: no clock, no `Math.random`, no DOM. A battle is a plain object changed only by `move`, `use` and `endTurn`, and the same seed and choices always give the same battle.
 - **How the server decides.** A battle is stored as its two sides, frozen when it begins, and the player's choices in order (`tactics_battles`). Creatures have no entries: their mind is part of the rules, so both sides reach the same turns from the same choices. The browser plays each choice at once, so the screen never waits, and sends it; the server plays it on top of the ones before and refuses what the rules do not allow. Every answer carries a fingerprint of the board; if the browser's differs, or a choice is refused, the screen is put back to the battle as the server has it. A choice sent twice is taken once.

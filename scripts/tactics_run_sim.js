@@ -68,7 +68,8 @@ function runOne(base, tier, land, seed, policy) {
         if (room.type === 'boss') out.bossDoor = health;
         const party = base.map((u, i) => ({ ...u, ...(state[i].down ? { down: true, hp: 0 } : { hp: state[i].hp }) }));
         const enemies = room.enemies.map((k, i) => T.foeUnit(F.foe(k), i, tier, room.boost));
-        const st = E.autoplay({ seed: DEFS.battleSeed(seed, 1, f, room.id), land, season: SEASON, party, enemies }, 1200);
+        const bSeed = DEFS.battleSeed(seed, 1, f, room.id);
+        const st = E.autoplay({ seed: bSeed, land, season: SEASON, ...T.fieldOf(bSeed, land, enemies), party, enemies }, 1200);
         out.fights++; out.turns += st.stats.turns;
         st.units.filter(u => u.side === 'player').forEach((u, i) => {
           if (state[i].down && !u.down) out.raised++;
