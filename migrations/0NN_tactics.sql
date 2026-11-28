@@ -126,3 +126,10 @@ CREATE TABLE IF NOT EXISTS citizen_study (
 );
 CREATE INDEX IF NOT EXISTS idx_citizen_study_done ON citizen_study (done_at);
 ALTER TABLE citizens ADD COLUMN IF NOT EXISTS passive TEXT;
+
+-- A family signature (lib/tactics_signature.js; docs/TACTICS.md §6 stage F):
+-- the one ability a parent taught them when they came of age. Theirs for
+-- life, whatever class they take.
+ALTER TABLE citizens ADD COLUMN IF NOT EXISTS signature TEXT;
+ALTER TABLE citizens ADD COLUMN IF NOT EXISTS signature_from INTEGER;
+ALTER TABLE citizens ADD COLUMN IF NOT EXISTS signature_from_name TEXT;

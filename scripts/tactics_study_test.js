@@ -46,6 +46,25 @@ function pure() {
   check(mk('guard', 6, { passive: 'warm_hands' }, { cls: 'hearthkeeper', level: 2, keys: null }).abilities.find(a => a.key === 'h_kindle').heal > mk('guard', 6, null, { cls: 'hearthkeeper', level: 2, keys: null }).abilities.find(a => a.key === 'h_kindle').heal,
     'a passive is the citizen\'s, whatever class they are now: Warm Hands helps a Guard\'s borrowed healing');
 
+  console.log('Research at the Library: Battlecraft');
+  const RS = require('../lib/research_defs'), bp = RS.KEYS.filter(k => RS.PROJECTS[k].branch === 'battle');
+  check(RS.BRANCHES.battle.label === 'Battlecraft' && bp.join() === 'fletching,field_medicine,stone_wards,sparring_rings' && RS.PROJECTS.fletching.tier === 1 && RS.PROJECTS.fletching.requires.length === 0
+    && RS.PROJECTS.sparring_rings.requires.join() === 'field_medicine' && bp.every(k => RS.PROJECTS[k].desc && Object.keys(RS.PROJECTS[k].effects).every(t => t.startsWith('battle:'))),
+  'a Battlecraft path at the Library: Fletching, then Field Medicine and Stone Wards, then Sparring Rings');
+  const withR = (cls, research, second) => T.partyUnit({ id: 1, name: 'x', role: 'idle', unit: { ...stub } }, cls, null, null, 6, second || null, null, { research });
+  const none = c => withR(c, null), aR = withR('archer', { archery_reach: 1 });
+  check(ab(aR, 'a_shoot').max === ab(none('archer'), 'a_shoot').max + 1 && ab(aR, 'a_part').max === ab(none('archer'), 'a_part').max + 1 && ab(aR, 'a_side').max === 0 && ab(withR('guard', { archery_reach: 1 }), 'g_strike').max === 1,
+    'Fletching: Archery reaches one tile further, for everyone in the town; nothing else does');
+  const hR = withR('hearthkeeper', { heal_uses: 1 }), hN = none('hearthkeeper');
+  check(ab(hR, 'h_kindle').uses === ab(hN, 'h_kindle').uses + 1 && ab(hR, 'h_cinder').uses === null && ab(hR, 'h_kindle').heal === ab(hN, 'h_kindle').heal
+    && ab(withR('guard', { heal_uses: 1 }, { cls: 'hearthkeeper', level: 2, keys: null }), 'h_kindle').uses === ab(hN, 'h_kindle').uses + 1, 'Field Medicine: counted healing can be used once more, a borrowed Kindle too');
+  const wR = withR('wizard', { ward: 0.25 }), hW = withR('hearthkeeper', { ward: 0.25 });
+  check(ab(wR, 'w_ward').block === Math.round(ab(none('wizard'), 'w_ward').block * 1.25) && ab(hW, 'h_ward').block === Math.round(ab(hN, 'h_ward').block * 1.25) && ab(withR('guard', { ward: 0.25 }), 'g_shield').block === ab(none('guard'), 'g_shield').block,
+    'Stone Wards: the wards of Wild and Hearth magic block a quarter more; a shield does not');
+  const gR = withR('guard', { attack: 0.1 }), zR = withR('wizard', { attack: 0.1 });
+  check(ab(gR, 'g_strike').dmg === Math.round(ab(none('guard'), 'g_strike').dmg * 1.1) && ab(gR, 'g_heavy').dmg === ab(none('guard'), 'g_heavy').dmg && ab(zR, 'v_knock').dmg === Math.round(ab(none('wizard'), 'v_knock').dmg * 1.1)
+    && ab(zR, 'w_spark').dmg === ab(none('wizard'), 'w_spark').dmg, 'Sparring Rings: every citizen\'s Attack is a tenth stronger; their abilities are not');
+
   console.log('Brace and Counter on the board');
   // A Guard next to a dummy foe that hits; the party is quick, so the citizen acts, then the foe.
   const flat = { w: 6, h: 6, tiles: Array.from({ length: 36 }, () => ({ h: 0, t: 'grass' })) };
@@ -201,6 +220,65 @@ async function main() {
     check(r.status === 200 && r2.status === 200 && r2.body.building.used === 2 && r2.body.building.seats === 3 && (await wealth(poor)) === 1000 - 150 - 150 && Math.abs((new Date(r.body.studying.done_at) - Date.now()) / 3600e3 - 6) < 0.05,
       'a level 3 building seats three, and teaches what a level 2 lesson needs: six hours and 150 wealth each', r.body.error || r2.body.error);
     check((await S.finishDue(poor.sid)) === 0 && (await api(poor, 'GET', `/api/tactics/study/${poor.cits[0]}`)).body.studying.key === 'c_cleave', 'nothing is learned before its time');
+
+    console.log('A town that has done the research');
+    const RES = require('../lib/research');
+    const town = await player('Lore');
+    const [lg, , la, , lh] = town.cits;
+    check((await T.researchOf(town.sid)) === null && (await api(town, 'GET', `/api/tactics/abilities/${la}`)).body.research.length === 0, 'a town that has researched none of it brings nothing extra');
+    const shoot0 = (await api(town, 'GET', `/api/tactics/abilities/${la}`)).body.attack.max, kindle0 = (await api(town, 'GET', `/api/tactics/abilities/${lh}`)).body.abilities.find(x => x.key === 'h_kindle').uses;
+    await RES.adminComplete(town.sid, 'fletching'); await RES.adminComplete(town.sid, 'field_medicine');
+    const got = await T.researchOf(town.sid);
+    check(got && got.archery_reach === 1 && got.heal_uses === 1 && got.ward === undefined, 'finished projects are what the town brings', JSON.stringify(got));
+    const pa = (await api(town, 'GET', `/api/tactics/abilities/${la}`)).body, ph = (await api(town, 'GET', `/api/tactics/abilities/${lh}`)).body;
+    check(pa.attack.max === shoot0 + 1 && ph.abilities.find(x => x.key === 'h_kindle').uses === kindle0 + 1 && pa.research.map(x => x.key).join() === 'fletching,field_medicine' && pa.research[0].name === 'Fletching' && pa.research[0].says,
+      'the Abilities page shows it: the Archer\'s shot reaches further, the Hearthkeeper\'s Kindle has one more use, and the research is named');
+    await D.startTest(town.id, 'test_green', [lg, la, lh]);
+    r = await api(town, 'POST', '/api/dungeons/run/move', { room: 'a' });
+    const bt2 = (await api(town, 'GET', '/api/tactics/battles/' + r.body.board_battle_id)).body.battle;
+    check(bt2.setup.party.find(u => u.citizen_id === la).abilities.find(x => x.attack).max === shoot0 + 1 && bt2.setup.party.find(u => u.citizen_id === lh).abilities.find(x => x.key === 'h_kindle').uses === kindle0 + 1,
+      'and the battle is built with it');
+    await api(town, 'POST', '/api/dungeons/run/flee');
+    check((await T.researchOf(b.sid)) === null, 'another town has none of it');
+
+    console.log('A family signature');
+    const SG = require('../lib/tactics_signature'), LIFE = require('../lib/life');
+    check(SG.kitOf('g_heavy').school === 'arms' && SG.kitOf('h_mend').school === 'hearth' && SG.kitOf('g_strike') === null && SG.kitOf('v_swing') === null && SG.kitOf('nonsense') === null && SG.kitOf('brace') === null,
+      'a signature is an ability of a class ladder or a building\'s lessons: not an Attack, not a passive');
+    check(SG.best([{ key: 'a', at: 6, used: 0 }, { key: 'b', at: 2, used: 9 }, { key: 'c', at: 8, used: 9 }]).key === 'c' && SG.best([{ key: 'a', at: 6, used: 0 }, { key: 'b', at: 2, used: 0 }]).key === 'a' && SG.best([]) === null,
+      'a parent teaches the ability they have used most in battle; with none used, the furthest along');
+    const fam = await player('Kin');
+    const [mum, dad] = fam.cits;       // two soldiers
+    await setLevel(fam, mum, 'soldier', 6);            // knows Shield Up, Cover, Shove, Heavy Blow
+    await setLevel(fam, dad, 'soldier', 2);
+    await q(`INSERT INTO citizen_ability_uses (citizen_id, ability_key, uses) VALUES ($1,'g_shove',12), ($1,'g_strike',40)`, [mum]);
+    const kid = async (name, parents, born) => (await q(
+      `INSERT INTO citizens (settlement_id, name, gender, role, stats, skills, life_stage, parent_ids, born_at) VALUES ($1,$2,'female','idle',$3,'{"combat":1}','child',$4,$5) RETURNING id`,
+      [fam.sid, name + RUN, JSON.stringify({ strength: 9, agility: 9, endurance: 9, intelligence: 9, charisma: 9 }), JSON.stringify(parents), born])).rows[0].id;
+    const old = new Date(Date.now() - (LIFE.CONFIG.ADULT_FROM + 1) * LIFE.YEAR_MS).toISOString();
+    const child = await kid('Pip', [mum, dad], old), orphan = await kid('Tam', [], old);
+    const grown = await LIFE.comeOfAge(fam.sid);
+    const row = (await q('SELECT signature, signature_from, signature_from_name, life_stage, role FROM citizens WHERE id=$1', [child])).rows[0];
+    const line = (await q(`SELECT message FROM settlement_events WHERE settlement_id=$1 AND type='came_of_age' AND citizen_ids @> $2::jsonb`, [fam.sid, JSON.stringify([child])])).rows[0];
+    check(grown.some(x => x.id === child && x.signature === 'g_shove') && row.life_stage === 'adult' && row.signature === 'g_shove' && row.signature_from === mum && /^Kin0/.test(row.signature_from_name),
+      'a child who comes of age is taught one ability by a parent: the one that parent has used most (her Attack is not hers to teach)', JSON.stringify(row));
+    check(line && /taught them Shove, to carry all their life\./.test(line.message), 'the town\'s news says who taught them what', line && line.message);
+    check((await q('SELECT signature FROM citizens WHERE id=$1', [orphan])).rows[0].signature === null && grown.some(x => x.id === orphan && x.signature === null), 'a child with nobody to teach them has none');
+    const pgS = (await api(fam, 'GET', `/api/tactics/abilities/${child}`)).body, sAb = pgS.abilities.find(x => x.key === 'g_shove');
+    check(pgS.signature && pgS.signature.key === 'g_shove' && pgS.signature.name === 'Shove' && sAb && sAb.signature === true && !sAb.off && sAb.school === 'arms' && /^Kin0/.test(sAb.taught_by),
+      'whatever work they take up, they bring it to battle at full strength, and the Abilities page says who taught it', pgS.abilities && pgS.abilities.map(x => x.key).join());
+    const unitS = (await T.partyFor([child], {}))[0];
+    check(unitS.abilities.some(x => x.key === 'g_shove' && x.signature) && unitS.abilities.filter(x => x.key === 'g_shove').length === 1, 'and it is on the board');
+    // A signature is handed on in its turn; a class that already teaches it does not double it.
+    const grand = await kid('Bee', [child], old);
+    await LIFE.comeOfAge(fam.sid);
+    check((await q('SELECT signature, signature_from FROM citizens WHERE id=$1', [grand])).rows[0].signature === 'g_shove', 'she hands it on in her turn: it runs in the family');
+    await q(`UPDATE citizens SET role='soldier' WHERE id=$1`, [child]); await setLevel(fam, child, 'soldier', 6);
+    const asGuard = (await T.partyFor([child], {}))[0];
+    check(asGuard.abilities.filter(x => x.key === 'g_shove').length === 1 && !asGuard.abilities.find(x => x.key === 'g_shove').signature, 'when her own class has taught it too, it is not there twice');
+    await q('UPDATE citizens SET signature=NULL, signature_from=NULL WHERE id=$1', [grand]);
+    check((await SG.assignMissing(fam.sid)) >= 1 && (await q('SELECT signature FROM citizens WHERE id=$1', [grand])).rows[0].signature === 'g_shove' && (await api(fam, 'POST', '/api/tactics/admin/signatures')).status === 403,
+      'Dev Tools can hand signatures down to grown citizens who have none (admins only)');
   } finally { await pool.end(); }
 }
 

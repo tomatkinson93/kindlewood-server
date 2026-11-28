@@ -110,6 +110,15 @@ router.post('/study/:citizenId/cancel', requireAuth, mayPlay, async (req, res) =
 router.post('/study/:citizenId/passive', requireAuth, mayPlay, async (req, res) => {
   try { res.json({ ok: true, ...(await require('../lib/tactics_study').setPassive(req.user.userId, req.params.citizenId, (req.body || {}).key)) }); } catch (e) { failWith(res, e); }
 });
+// Dev Tools: every grown citizen of the admin's town with no family signature is taught one by their parents, if they can.
+router.post('/admin/signatures', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { query } = require('../db');
+    const s = (await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId])).rows[0];
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+    res.json({ ok: true, taught: await require('../lib/tactics_signature').assignMissing(s.id) });
+  } catch (e) { failWith(res, e); }
+});
 // Dev Tools: every study in the admin's town is finished now.
 router.post('/admin/study/finish', requireAuth, requireAdmin, async (req, res) => {
   try {
