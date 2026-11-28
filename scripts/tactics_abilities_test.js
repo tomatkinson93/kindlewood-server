@@ -143,6 +143,8 @@ async function main() {
     let bt2 = (await api(a, 'GET', '/api/tactics/battles/' + bid)).body.battle, last = null;
     const st = E.replay(bt2.setup, bt2.actions).state;
     let n = bt2.count;
+    // Every played battle begins with the party being placed; the bot keeps the places it was given.
+    if (st.status === 'placing') { E.apply(st, { t: 'place', at: {} }); last = await api(a, 'POST', `/api/tactics/battles/${bid}/act`, { n: n++, action: { t: 'place', at: {} } }); }
     for (let g = 0; g < 500 && st.status === 'active'; g++) {
       const u = E.current(st), keep = st.r, plan = E.plan(st); st.r = keep;
       const acts = [];

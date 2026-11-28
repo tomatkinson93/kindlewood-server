@@ -186,6 +186,8 @@ async function part2() {
     const bt = await battleOf(p, battleId);
     const st = E.replay(bt.setup, bt.actions).state;
     let n = bt.count, last = null;
+    // Every played battle begins with the party being placed; the bot keeps the places it was given.
+    if (st.status === 'placing') { E.apply(st, { t: 'place', at: {} }); last = await api(p, 'POST', `/api/tactics/battles/${battleId}/act`, { n: n++, action: { t: 'place', at: {} } }); }
     for (let g = 0; g < 500 && st.status === 'active'; g++) {
       const u = E.current(st), keep = st.r, plan = E.plan(st); st.r = keep;
       const acts = [];
@@ -297,7 +299,7 @@ async function part2() {
     bt = await battleOf(a, r.body.board_battle_id);
     const u0 = bt.setup.party.find(u => u.citizen_id === party[0]), u1 = bt.setup.party.find(u => u.citizen_id === party[1]), u2 = bt.setup.party.find(u => u.citizen_id === party[2]);
     check(u0.hp === 7 && u0.maxHp > 7 && (u2.hp == null ? u2.maxHp : u2.hp) === st[party[2]].hp, 'a wounded citizen walks into the next fight with the health they had');
-    const begun = E.replay(bt.setup, []).state, body = begun.units.find(u => u.citizen_id === party[1]);
+    const begun = E.replay(bt.setup, [{ t: 'place', at: {} }]).state, body = begun.units.find(u => u.citizen_id === party[1]);
     check(u1.down === true && body.down && body.hp === 0 && !begun.order.includes(body.id) && begun.status === 'active', 'a downed citizen is brought along, lying at 0 health, and takes no turn; the fight goes on with the three who are standing');
     const won = await D.adminWin(a.id);
     v = won.run;
@@ -438,8 +440,8 @@ async function part2() {
     await battleOf(i2, b5);
     check(await fresh(), 'opening the fight again counts as an action: the run is not idle');
     await stale();
-    r = await api(i2, 'POST', `/api/tactics/battles/${b5}/act`, { n: 0, action: { t: 'end' } });
-    check(r.status === 200 && await fresh(), 'and so does every turn taken in it');
+    r = await api(i2, 'POST', `/api/tactics/battles/${b5}/act`, { n: 0, action: { t: 'place', at: {} } });
+    check(r.status === 200 && await fresh(), 'and so does every choice made in it (the first is placing the party)');
     await stale();
     const i2w = await wealth(i2);
     await D.sweep();

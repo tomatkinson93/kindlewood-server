@@ -26,6 +26,8 @@ const DEFS = require('../lib/dungeon_defs');
 const { query } = require('../db');
 const E = require(path.join(process.env.KW_FRONTEND_DIR || path.join(__dirname, '..', '..', 'kindlewood-frontend'), 'js', 'tactics-engine.js'));
 if (process.env.TACTICS_TIERS) { const over = JSON.parse(process.env.TACTICS_TIERS); for (const k of Object.keys(over)) Object.assign(T.TIERS[k], over[k]); }
+// SEASON=winter node scripts/tactics_run_sim.js   (the season every map is made for; left out, summer)
+const SEASON = process.env.SEASON || undefined;
 const REST = process.env.DUNGEON_REST != null ? Number(process.env.DUNGEON_REST) : require('../lib/tuning').LIFE_KEYS.DUNGEON_BOARD_REST.default;
 
 const PARTIES = {
@@ -66,7 +68,7 @@ function runOne(base, tier, land, seed, policy) {
         if (room.type === 'boss') out.bossDoor = health;
         const party = base.map((u, i) => ({ ...u, ...(state[i].down ? { down: true, hp: 0 } : { hp: state[i].hp }) }));
         const enemies = room.enemies.map((k, i) => T.foeUnit(F.foe(k), i, tier, room.boost));
-        const st = E.autoplay({ seed: DEFS.battleSeed(seed, 1, f, room.id), land, party, enemies }, 1200);
+        const st = E.autoplay({ seed: DEFS.battleSeed(seed, 1, f, room.id), land, season: SEASON, party, enemies }, 1200);
         out.fights++; out.turns += st.stats.turns;
         st.units.filter(u => u.side === 'player').forEach((u, i) => {
           if (state[i].down && !u.down) out.raised++;

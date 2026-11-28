@@ -283,20 +283,37 @@ async function part2() {
   // The browser's copy, played alongside.
   const mine = E.replay(bt.setup, []).state;
   check(E.checksum(mine) === bt.check, 'the browser\'s copy starts on the same board');
+  // Placing the party: every played battle begins with it, before anyone takes a turn.
+  const P = mine.units.filter(u => u.side === 'player'), act0 = action => call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 0, action });
+  const zone = E.zone(mine), H = mine.map.h;
+  check(bt.setup.place === true && mine.status === 'placing' && E.current(mine) === null && zone.length === mine.map.w * 2 && zone.every(z => z.y >= H - 2) && E.SEASONS.includes(bt.setup.season) && mine.map.season === bt.setup.season,
+    'a practice battle begins with placing: nobody\'s turn yet, the party\'s two rows to choose from, on a map made for the season', bt.setup.season);
+  check((await act0({ t: 'end' })).status === 400 && (await act0({ t: 'move', x: P[0].x, y: P[0].y - 1 })).status === 400, 'nothing else can be done until the party is placed');
+  check((await act0({ t: 'place', at: { [P[0].id]: [P[0].x, 1] } })).status === 400 && (await act0({ t: 'place', at: { [P[0].id]: [P[1].x, P[1].y] } })).status === 400
+    && (await act0({ t: 'place', at: { e0: [0, H - 1] } })).status === 400 && (await act0({ t: 'place', at: { [P[0].id]: 'here' } })).status === 400 && (await call(adminId, 'GET', '/api/tactics/battles/' + bt.id)).body.battle.count === 0,
+    'a place outside the party\'s rows, on a tile a friend keeps, for a unit that is not theirs, or that is no place at all is refused, and nothing is stored');
+  // Two swap, and one goes to the corner.
+  const spots = { [P[0].id]: [P[1].x, P[1].y], [P[1].id]: [P[0].x, P[0].y], [P[2].id]: [0, H - 1] };
+  r = await act0({ t: 'place', at: spots, extra: 'junk' });
+  E.apply(mine, { t: 'place', at: spots });
+  check(r.status === 200 && r.body.battle.count === 1 && JSON.stringify(r.body.battle.actions[0]) === JSON.stringify({ t: 'place', at: spots }) && r.body.battle.check === E.checksum(mine) && mine.status === 'active'
+    && E.unit(mine, P[2].id).x === 0 && E.unit(mine, P[2].id).y === H - 1 && E.current(mine) && E.current(mine).side === 'player',
+    'a good placing is stored (and only what a placing may hold): the party stands where it was put, both sides agree, and the battle begins');
+  check((await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 1, action: { t: 'place', at: {} } })).status === 400, 'the party is placed once');
   const who = E.current(mine), to = [...E.reach(mine, who).values()].filter(nd => nd.stop && nd.cost)[0];
-  r = await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 0, action: { t: 'move', x: 0, y: 0, extra: 'junk' } });
-  check(r.status === 400 && r.body.battle && r.body.battle.count === 0, 'a move the rules do not allow is refused, nothing is stored, and the answer says where the battle stands');
-  check((await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 0, action: { t: 'teleport' } })).status === 400, 'so is a move the game does not know');
-  check((await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 3, action: { t: 'move', x: to.x, y: to.y } })).status === 409, 'a choice out of step is refused (the battle has moved on)');
-  r = await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 0, action: { t: 'move', x: to.x, y: to.y, extra: 'junk' } });
+  r = await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 1, action: { t: 'move', x: 0, y: 0, extra: 'junk' } });
+  check(r.status === 400 && r.body.battle && r.body.battle.count === 1, 'a move the rules do not allow is refused, nothing is stored, and the answer says where the battle stands');
+  check((await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 1, action: { t: 'teleport' } })).status === 400, 'so is a move the game does not know');
+  check((await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 4, action: { t: 'move', x: to.x, y: to.y } })).status === 409, 'a choice out of step is refused (the battle has moved on)');
+  r = await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 1, action: { t: 'move', x: to.x, y: to.y, extra: 'junk' } });
   E.apply(mine, { t: 'move', x: to.x, y: to.y });
-  check(r.status === 200 && r.body.battle.count === 1 && r.body.battle.check === E.checksum(mine) && JSON.stringify(r.body.battle.actions[0]) === JSON.stringify({ t: 'move', x: to.x, y: to.y }), 'a good move is stored (and only what a move may hold); both sides agree on the board');
-  r = await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 0, action: { t: 'move', x: to.x, y: to.y } });
-  check(r.status === 200 && r.body.battle.repeated === true && r.body.battle.count === 1, 'the same choice sent twice is taken once');
-  r = await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 1, action: { t: 'undo' } }); E.apply(mine, { t: 'undo' });
+  check(r.status === 200 && r.body.battle.count === 2 && r.body.battle.check === E.checksum(mine) && JSON.stringify(r.body.battle.actions[1]) === JSON.stringify({ t: 'move', x: to.x, y: to.y }), 'a good move is stored (and only what a move may hold); both sides agree on the board');
+  r = await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 1, action: { t: 'move', x: to.x, y: to.y } });
+  check(r.status === 200 && r.body.battle.repeated === true && r.body.battle.count === 2, 'the same choice sent twice is taken once');
+  r = await call(adminId, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: 2, action: { t: 'undo' } }); E.apply(mine, { t: 'undo' });
   check(r.status === 200 && r.body.battle.check === E.checksum(mine), 'a move can be taken back on the server too');
   // Play it out: the mind chooses for the party, every choice goes through the server.
-  let n = 2, agree = true, refused = 0;
+  let n = 3, agree = true, refused = 0;
   for (let g = 0; g < 400 && mine.status === 'active'; g++) {
     const u = E.current(mine), keep = mine.r, p = E.plan(mine); mine.r = keep;
     const acts = [];

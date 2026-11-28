@@ -121,6 +121,8 @@ async function part2() {
       'a sally is a battle on the board: the citizens sent, in their classes, against the Withered of the raid', bt && bt.setup.enemies.map(e => e.name).join());
     const st = E.replay(bt.setup, bt.actions).state;
     let n = bt.count, last = null;
+    // Every played battle begins with the party being placed; the bot keeps the places it was given.
+    if (st.status === 'placing') { E.apply(st, { t: 'place', at: {} }); last = await api(so3, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: n++, action: { t: 'place', at: {} } }); }
     for (let g = 0; g < 400 && st.status === 'active'; g++) {
       const u = E.current(st), keep = st.r, plan = E.plan(st); st.r = keep;
       const acts = [];

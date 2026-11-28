@@ -36,6 +36,8 @@ router.get('/admin/options', requireAuth, requireAdmin, (req, res) => {
       levels: [{ key: 'skull', label: "What the skull expects" }, { key: 'as_is', label: 'As the citizens really are' }].concat(Object.keys(T.LEVELS).map(k => ({ key: k, label: T.LEVELS[k].label }))),
       tiers: DEFS.TIER_ORDER.map(k => ({ key: k, name: DEFS.TIERS[k].name, skull: DEFS.TIERS[k].skull })),
       lands: require('../lib/dungeon_gen').LANDS,
+      // The season the map is made for (the engine's "Season" rule); left out, the world's season now.
+      seasons: [{ key: '', label: 'The season it is now (' + T.seasonOf() + ')' }, { key: 'spring', label: '🌱 Spring' }, { key: 'summer', label: '☀️ Summer' }, { key: 'autumn', label: '🍂 Autumn' }, { key: 'winter', label: '❄️ Winter' }],
       fights: [{ key: 'first', label: 'An ordinary fight' }, { key: 'hard', label: 'The hardest fight' }, { key: 'boss', label: 'The boss' }],
       // Whose fight: as the land and the seed decide, or one band's showcase (lib/tactics_foes.js SHOWCASE).
       bands: [{ key: '', label: 'Whoever lives in that land' }].concat(Object.keys(T.FOES.BANDS).map(k => ({ key: k, label: T.FOES.BANDS[k].name }))),

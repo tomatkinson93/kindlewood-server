@@ -41,6 +41,8 @@ async function main() {
     let bt = (await api(p, 'GET', '/api/tactics/battles/' + battleId)).body.battle, last = null;
     const st = E.replay(bt.setup, bt.actions).state;
     let n = bt.count;
+    // Every played battle begins with the party being placed; the bot keeps the places it was given.
+    if (st.status === 'placing') { E.apply(st, { t: 'place', at: {} }); last = await api(p, 'POST', `/api/tactics/battles/${battleId}/act`, { n: n++, action: { t: 'place', at: {} } }); }
     for (let g = 0; g < 500 && st.status === 'active'; g++) {
       if (until && until(st)) break;
       const u = E.current(st), keep = st.r, plan = E.plan(st); st.r = keep;
@@ -125,7 +127,7 @@ async function main() {
     const carried = bt.setup.party.every(u => { const m = d1.run.party.find(x => x.id === u.citizen_id); return (u.hp == null ? u.maxHp : u.hp) === m.hp; });
     const kit2 = bt.setup.party.find(u => u.cls === 'guard');
     check(kit2.class_level >= 2 && kit2.abilities.some(x => x.key === 'g_cover'), 'and the next fight is fought with what the last one taught', `class level ${kit2.class_level}: ${kit2.abilities.map(x => x.name).join(', ')}`);
-    const lying = bt.setup.party.find(u => u.citizen_id === fallen), begun = E.replay(bt.setup, []).state, body = begun.units.find(u => u.citizen_id === fallen);
+    const lying = bt.setup.party.find(u => u.citizen_id === fallen), begun = E.replay(bt.setup, [{ t: 'place', at: {} }]).state, body = begun.units.find(u => u.citizen_id === fallen);
     check(b2 > b1 && carried && bt.setup.party.length === 4 && lying && lying.down === true, 'the next fight begins with those wounds, and whoever is down is carried in');
     check(body.down && body.hp === 0 && !begun.order.includes(body.id) && !!E.bodyAt(begun, body.x, body.y) && !E.unitAt(begun, body.x, body.y),
       'they lie on the board where they would have stood, and take no turn');

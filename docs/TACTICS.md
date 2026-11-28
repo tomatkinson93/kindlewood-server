@@ -1,6 +1,6 @@
 # Tactics battles
 
-Status: **the game's combat (chosen by the owner 2026-11-20; the only combat from 2026-11-26).** Every battle is fought or decided on the board: a quest's, a camp's, a sally's, a clan quest's, a dungeon's. The card battler is deleted (§8). Dungeons are on the world map (2026-11-25, `DUNGEONS.md` §13): a party of four is sent from a tile's panel. The abilities redesign (Phase 4, §6) was finished on 2026-11-28. What is left is content (6) and the rest of the way in (7): §9.
+Status: **the game's combat (chosen by the owner 2026-11-20; the only combat from 2026-11-26).** Every battle is fought or decided on the board: a quest's, a camp's, a sally's, a clan quest's, a dungeon's. The card battler is deleted (§8). Dungeons are on the world map (2026-11-25, `DUNGEONS.md` §13): a party of four is sent from a tile's panel. The abilities redesign (Phase 4, §6) was finished on 2026-11-28, and the first piece of Phase 6 the same day: **the board itself** (§7a: ground that slows, cover, the season, hiding in leaves, placing the party). What is left is the rest of the content (6) and of the way in (7): §9.
 
 **There are no players yet** (the owner, 2026-11-25): it is a test server with one tester. Nothing is gated for players' sake, nothing is bought back or migrated gently, and a switch is only worth having where the owner wants to turn something off while testing.
 
@@ -329,12 +329,12 @@ A village at **Allied trust (71)** teaches it to one citizen of the player's cho
 
 | Idea | What | Recommend |
 |---|---|---|
-| **Ground that matters** | Trees give cover from arrows to whoever stands beside them; shallow water and mud cost two steps; high ground already counts. | Yes, three kinds, no more |
-| **The year on the board** | Winter freezes rivers (walkable) and snow slows; spring floods the fords; autumn leaves hide a unit that has not moved. | Yes: it is the game's own pillar, and no other tactics game has it |
+| **Ground that matters** | Trees give cover from arrows to whoever stands beside them; shallow water and mud cost two steps; high ground already counts. | **Built 2026-11-28** (§7a) |
+| **The year on the board** | Winter freezes rivers (walkable) and snow slows; spring floods the fords; autumn leaves hide a unit that has not moved. | **Built 2026-11-28** (§7a) |
 | **Other ways to win** | Hold the gate for six rounds; get the cart across; protect a villager; break the totem. | Yes, with raids (below) |
 | **Raids on your own town** | The raid is fought on a map made from the town: the walls and the Watchtower are the terrain, the defenders are who is on watch. | Yes: it makes walls and guards mean something you can see |
 | **Bosses that use the board** | Old Snapjaw drags a citizen into the water; the Storm Matriarch takes the high ground; Grum throws boulders that stay as rocks. | Yes, one trick each |
-| **Placing the party** | Choose the four starting tiles before the fight. | Yes, cheap and expected |
+| **Placing the party** | Choose the four starting tiles before the fight. | **Built 2026-11-28** (§7a) |
 | **Foes out of stories** | The owner's rule is only "no animals on four legs". So beside the bands: a centaur lancer who charges in a line, bramble sprites that tangle, a troll under the bridge, a will-o'-the-wisp that lures a citizen a tile. One or two for each land, as elites or events. | Yes, in Phase 6, a few at a time with their art |
 | **Kin and bonds** | Kin standing side by side block a little more (decided 2026-11-18 for cards). | Yes, as adjacency |
 | **Speed** | A ×2 switch for creature turns; "let them fight" for a battle far below the party's level. | Yes, both, before players see it |
@@ -342,6 +342,45 @@ A village at **Allied trust (71)** teaches it to one citizen of the player's cho
 | **Magic points, charge times** | The genre's bookkeeping. | No: cooldowns do the job and read at a glance |
 | **Friendly fire** | Bursts hurt friends. | No: wrong tone for this game |
 | **Bigger battles** | Six a side, larger maps. | No: five minutes is the promise. Ten by ten for bosses at most |
+
+## 7a. The board itself (built 2026-11-28)
+
+Decided by the owner on 2026-11-28: the board next, the season on it in all four seasons, and the party placed before every fight. The rules are in the engine (`tactics_engine.js`, its header says each in a line); the proof is `scripts/tactics_ground_test.js` on the server (46 checks, no database) and section 20 of the frontend's `verify/tactics_proofs.js`.
+
+**Ground.** Three things about ground matter, and no more: height (as before), slow ground, and cover.
+
+| Kind | What it does | Where |
+|---|---|---|
+| Shallows 🌊 | two steps to walk into | the fords of a stream; meltwater on bare stone in spring |
+| Mire 🟤 | two steps to walk into | the marsh (four patches), a little by the river; anywhere after the spring thaw |
+| Deep snow ❄️ | two steps to walk into | five drifts on every winter map |
+| Ice 🧊 | walks as open ground | all water, in winter |
+| Fallen leaves 🍂 | walks as open ground; hides (below) | up to six tiles beside the trees, in autumn |
+| Tree 🌳, rock 🪨 | cannot be entered; **cover** | as before |
+| Water 💧 | cannot be crossed | as before |
+
+*A unit can always take one step,* whatever it is into: slowed, with a hammer, in a marsh, nobody is ever stuck. The two rows each side starts on are always open, ordinary ground, in every season. The creatures' mind counts the same steps.
+
+**Cover.** A unit with a tree or a rock beside it, on the side a shot comes from, takes a quarter less (`RULES.COVER`) from anything ranged that is loosed from more than one tile away. A shot from a diagonal counts cover on either near side. Melee is never stopped by it. The forecast says "in cover (−25%)" and the hit floats "In cover". The mind gives a little weight to standing in cover from whoever is shooting at it. *Not built, on purpose:* trees do not block a line of sight. Range in this game is counted in steps; a shot that could be blocked would need the player to judge lines on an isometric board on a phone.
+
+**The season.** A battle's map is made for the world's season when the battle begins (`setup.season`, so a stored battle plays back on the same map whenever it is opened). Dev Tools can ask for one.
+
+| Season | The map |
+|---|---|
+| Spring 🌱 | The stream runs high and keeps one ford, not two. Two more patches of mud after the thaw (meltwater shallows on bare stone). |
+| Summer ☀️ | The land as it is. |
+| Autumn 🍂 | Leaves lie under the trees: stand still on them to hide. |
+| Winter ❄️ | All water is ice and can be walked: a river is crossed anywhere, a marsh's pools are open. The mire is frozen hard. Five drifts of snow. |
+
+The screen colours the open ground and the trees for the season (blossom, summer green, autumn orange, snow on the boughs and the rocks) and names it in the title.
+
+**Hidden.** A unit that ends its turn on fallen leaves, having neither moved nor struck that turn, is hidden: no foe further than one tile away can single it out. A burst or a line still catches it, and a foe that walks up to it strikes as ever (the mind does walk up). Moving, striking or being shoved shows it again; blocking, healing and waiting do not. It is drawn half seen and its card says so. It is a way to wait for a foe to come to you, or to keep a healer out of an archer's sight; it does nothing for a unit that is attacking every turn. *Owner's wording was "a unit that has not moved"; "nor struck" is this build's addition,* so an archer cannot stand on leaves and shoot all battle without being shot back.
+
+**Placing the party.** Every battle a player fights (a dungeon's, a quest's, a practice battle) begins with placing: the board is shown with the foes where they will start, and the party may stand on any open tile of its own two rows. Tap one of yours, then a tile; tap two of yours to change places; tap a foe to see what it can do. "As suggested" puts everyone back. Nothing is sent until **Start the battle**, which is the battle's first stored choice (`{ t: 'place', at: { unit id: [x, y] } }`); the rules refuse any other choice first, and a second placing. A battle left before it was started is picked up again at the placing. A battle the game decides by itself (a quest left to be decided, the simulators) is not asked to begin with placing, and the mind keeps the places it was given.
+
+**What it did to the numbers** (2026-11-28, `SEASON=winter node scripts/tactics_run_sim.js`, sixteen runs a line, so ±10): the skulls clear at the same rates in every season as they did before any of this (green and orange above nine in ten, purple near nine in ten). Yellow taken boldly is the weak spot it already was: 63% over forty runs, where it was about seven in ten. Nothing was retuned. The simulator's party does not place itself or use cover or leaves on purpose; a player will.
+
+**Not built yet from this part of §7:** other ways to win, a trick for each boss, bosses that resist a stun or a shove, night battles, kin side by side.
 
 ## 8. What happened to the cards
 
@@ -389,7 +428,7 @@ Each phase ends with something playable.
 | 3 | **Dungeons on the board** | A dungeon's fights are tactics battles. Health and who is down carry between them; rests, loot, fleeing and the endings as now. The door pick and the card after a fight are gone. A dungeon made for the board has fewer fights; a foe leaves what it carried; the fallen lie on the board and a heal stands them up; the numbers are set for whole runs (§5). **Done (2026-11-22).** | |
 | 4 | **Abilities** | Experience from battle and the ladder to level 20; then the owner's redesign of 2026-11-26 (§6): schools, the whole class kit, a second school from an old career, an Attack of its own, mastery, gear by kind, study and a passive slot, research, a family signature, village lore. **Done 2026-11-28.** | |
 | 5 | **Everywhere, and the cards go** | Quests, camps, raids and clan quests on the board, with a quick result for a fight left to be decided. The card systems are removed. **Done 2026-11-26** (§8). | |
-| 6 | **Content** | **Raids on a map of the town** (moved here from Phase 5: it is new content, and nothing about retiring the cards waited on it; today a raid is met by a sally, which is a battle on the board, or weathered by the town's defences). Ground that matters, the seasons, other ways to win, placing the party; bosses that resist being stunned or pushed; a second form or a trick for each boss. **The cast is in (2026-11-21):** thirty foes in five bands with board behaviour, and the seven bosses (§4). | Large; alongside the art |
+| 6 | **Content** | **Raids on a map of the town** (moved here from Phase 5: it is new content, and nothing about retiring the cards waited on it; today a raid is met by a sally, which is a battle on the board, or weathered by the town's defences). **Built 2026-11-28 (§7a): ground that matters, the seasons, placing the party.** Still to build: other ways to win; bosses that resist being stunned or pushed; a second form or a trick for each boss. **The cast is in (2026-11-21):** thirty foes in five bands with board behaviour, and the seven bosses (§4). | Large; alongside the art |
 | 7 | **The way in, and polish** | Dungeons on the map, a first battle that teaches, art and sound in, tuning from real play, slow phones. **Built so far:** dungeons on the map (2026-11-25, `DUNGEONS.md` §13). | Medium; begun |
 
 **A change of order (2026-11-25).** Phase 5 was begun, and finished, before Phase 4 was. What is left of Phase 4 (study, research, equipment, mastery) is depth; nothing a player did reached the board until Phase 5, and what players find when they fight real quests there should shape that depth. Abilities enough to replace cards existed: ten a class, five brought.
@@ -407,7 +446,7 @@ Each phase ends with something playable.
 
 | Piece | File |
 |---|---|
-| The rules: map, turns, moving, reach, facing, height, abilities, the creatures' mind | frontend `js/tactics-engine.js` |
+| The rules: map (and its season), turns, placing, moving, ground, reach, facing, height, cover, hiding, abilities, the creatures' mind | frontend `js/tactics-engine.js` |
 | The screen: the board, taps and keys, zoom, facing, animation, sound, the Dev Tools box | frontend `js/tactics.js`, `css/tactics.css` |
 | The list of art and sound that exists: foe pictures, ability icons, sounds, music | frontend `scripts/pack_tactics.js` → `assets/tactics/manifest.json` |
 | Is what is live what is in the repository? Run after every upload. With `--zip upload.zip` it also packs every file the site lacks into one archive to upload to the site's root and extract there, so no file is left behind | frontend `scripts/check_live.js` (`npm run check-live`) |
@@ -423,7 +462,7 @@ Each phase ends with something playable.
 | What a battle teaches: experience by rank and skull, paid into class levels | server `lib/tactics_xp.js` |
 | What a citizen knows and brings: the Abilities tab | server `lib/tactics_abilities.js`; frontend `js/abilities.js`, `css/abilities.css` |
 | Numbers | server `scripts/tactics_sim.js` (one battle), `scripts/tactics_run_sim.js` (a whole dungeon), `scripts/tactics_quest_sim.js` (a quest's fight) |
-| Tests | frontend `verify/tactics_proofs.js` (214 checks), `verify/dungeons_proofs.js` (74); server `scripts/tactics_test.js` (the kits, the ladder, readying, the routes), `scripts/tactics_abilities_test.js` (17), `scripts/tactics_quest_test.js` (39), `scripts/combat_gear_test.js` (13: gear on the board), `scripts/dungeon_board_test.js` (41), `scripts/dungeons_test.js` (177: the run itself, through board battles), `scripts/jukebox_test.js` (13) |
+| Tests | server `scripts/tactics_ground_test.js` (46: the board itself, §7a); frontend `verify/tactics_proofs.js` (272 checks), `verify/dungeons_proofs.js` (74); server `scripts/tactics_test.js` (the kits, the ladder, readying, the routes), `scripts/tactics_abilities_test.js` (17), `scripts/tactics_quest_test.js` (39), `scripts/combat_gear_test.js` (13: gear on the board), `scripts/dungeon_board_test.js` (41), `scripts/dungeons_test.js` (177: the run itself, through board battles), `scripts/jukebox_test.js` (13) |
 
 - **The engine is pure**: no clock, no `Math.random`, no DOM. A battle is a plain object changed only by `move`, `use` and `endTurn`, and the same seed and choices always give the same battle.
 - **How the server decides.** A battle is stored as its two sides, frozen when it begins, and the player's choices in order (`tactics_battles`). Creatures have no entries: their mind is part of the rules, so both sides reach the same turns from the same choices. The browser plays each choice at once, so the screen never waits, and sends it; the server plays it on top of the ones before and refuses what the rules do not allow. Every answer carries a fingerprint of the board; if the browser's differs, or a choice is refused, the screen is put back to the battle as the server has it. A choice sent twice is taken once.
