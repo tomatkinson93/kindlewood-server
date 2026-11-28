@@ -54,7 +54,6 @@ app.use('/api/game/tavern', require('./routes/tavern'));
 app.use('/api/mail', require('./routes/mail'));
 app.use('/api/town', require('./routes/town'));
 app.use('/api/wonders', require('./routes/wonders'));
-app.use('/api/cards', require('./routes/cards'));
 app.use('/api/raids', require('./routes/raids'));
 app.use('/api/dungeons', require('./routes/dungeons'));   // a party's run through a dungeon (docs/DUNGEONS.md)
 app.use('/api/tactics', require('./routes/tactics'));     // the tactics battle prototype, admins only (docs/TACTICS.md)
@@ -88,10 +87,6 @@ const relationshipsRoutes = require('./routes/relationships');
 app.use('/api/relationships', relationshipsRoutes);
 const combatRoutes = require('./routes/combat');
 app.use('/api/combat', combatRoutes);
-const deckRoutes = require('./routes/decks');
-app.use('/api/decks', deckRoutes);
-const cardAdminRoutes = require('./routes/card_admin');
-app.use('/api/card-admin', cardAdminRoutes);
 const feedbackRoutes = require('./routes/feedback');
 app.use('/api/feedback', feedbackRoutes);
 const streamRoutes = require('./routes/stream');
@@ -144,11 +139,6 @@ initDB().then(() => {
   require('./lib/clan_quests').seedDefinitions({ onlyIfEmpty: true })
     .then(n => { if (n) console.log(`[clan_quests] seeded ${n} clan quest definitions`); })
     .catch(e => console.error('[clan_quests] seed failed', e.message));
-  // The cards of the class decks into card_templates (lib/class_cards.js). A
-  // card already there is left alone, so the card editor's changes are kept.
-  require('./lib/class_cards').seed()
-    .then(n => { if (n) console.log(`[class_cards] added ${n} class cards`); })
-    .catch(e => console.error('[class_cards] seed failed', e.message));
 
   if (process.env.QUEST_WORKER_DISABLED !== '1') {
     questWorker.start();

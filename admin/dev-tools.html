@@ -23,9 +23,7 @@
         <button class="cheat-tab" onclick="cheatSwitchTab('ct-items',this);loadItemAdmin()">🗡 Items</button>
         <button class="cheat-tab" onclick="cheatSwitchTab('ct-recipes',this);loadRecipeAdmin()">🛠 Recipes</button>
         <button class="cheat-tab" onclick="cheatSwitchTab('ct-balance',this);loadCareerBalance()">📊 Careers</button>
-        <button class="cheat-tab" onclick="cheatSwitchTab('ct-cards',this);loadCardAdmin()">🃏 Cards</button>
         <button class="cheat-tab" onclick="cheatSwitchTab('ct-creatures',this);loadEnemyAdmin()">🐺 Creatures</button>
-        <button class="cheat-tab" onclick="cheatSwitchTab('ct-combat',this)">⚔ Combat</button>
         <button class="cheat-tab" onclick="cheatSwitchTab('ct-time',this);KWDevTime.open()">🕯 Time</button>
         <button class="cheat-tab" onclick="cheatSwitchTab('ct-happenings',this);loadHappeningsAdmin()">🏮 Happenings</button>
       </div>
@@ -85,11 +83,6 @@
           </select>
           <button class="cheat-res-btn" onclick="KWTown.devFinish(document.getElementById('cheat-wonder').value)">Finish wonder stage now</button>
           <button class="cheat-res-btn" onclick="KWTown.devFestival()">🎉 Start a festival (free)</button>
-        </div>
-
-        <div class="cheat-section-label" style="margin-top:14px">🃏 Cards</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="cheat-res-btn" onclick="KWCards.devUnlockAll()">🃏 Unlock all cards</button>
         </div>
 
         <div class="cheat-section-label" style="margin-top:14px">🔥 Raids</div>
@@ -411,15 +404,6 @@
         <div id="ra-list" class="qa-list"><div class="ra-muted">Loading…</div></div>
       </div>
 
-      <!-- ── TAB: Cards ── -->
-      <div class="cheat-tab-panel" id="ct-cards" style="display:none">
-        <div class="ca-toolbar">
-          <button class="ca-new-btn" onclick="ca_new()">＋ New Card</button>
-        </div>
-        <div id="ca-filters" class="ca-filters"></div>
-        <div id="ca-list" class="ca-list"><div class="ca-muted">Loading…</div></div>
-      </div>
-
       <!-- ── TAB: Quests ── -->
       <div class="cheat-tab-panel" id="ct-quests" style="display:none">
         <div style="display:flex;gap:6px;margin-bottom:10px">
@@ -440,18 +424,6 @@
         <div class="cheat-rel-feedback" id="ea-form-feedback"></div>
         <div id="ea-form-wrap" style="display:none"></div>
         <div id="ea-list" class="qa-list"><div style="color:rgba(192,221,151,.3);font-size:11px;padding:8px">Loading…</div></div>
-      </div>
-
-      <!-- ── TAB: Combat Simulator ── -->
-      <div class="cheat-tab-panel" id="ct-combat" style="display:none">
-        <div class="cheat-section-label">Combat Simulator</div>
-        <div style="font-size:11px;color:rgba(192,221,151,.55);margin-bottom:10px;line-height:1.5">
-          Start a test battle with a randomly-rolled party of 3 from your idle citizens
-          versus a random enemy encounter. Test battles aren't tied to a quest —
-          they don't trigger injuries or quest failure, but rewards and skill bumps
-          still apply.
-        </div>
-        <button class="cheat-all-btn" onclick="startTestBattle()">🗡 Start Test Battle</button>
       </div>
 
       <!-- ── TAB: Happenings (spec 021 §6.6 — js/happenings-admin.js) ── -->

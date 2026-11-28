@@ -921,16 +921,9 @@ router.post('/collect/:id', requireAuth, async (req, res) => {
       if (quest && quest.given_by_npc_id) {
         await client.query('UPDATE diplomacy_relations SET last_interaction = NOW() WHERE settlement_id=$1 AND npc_id=$2', [run.settlement_id, quest.given_by_npc_id]);
       }
-      // …and a small chance of a new combat card (lib/cards).
-      let card = null;
-      if (run.status === 'completed' && Math.random() < require('../lib/cards').QUEST_CHANCE) {
-        card = await require('../lib/cards').grantRandom(client, run.settlement_id, Math.random, 'quest');
-        if (card) after.push([run.settlement_id, { type: 'card_unlocked', source: 'quest', card }]);
-      }
-
       await client.query("UPDATE settlement_quests SET status='collected' WHERE id=$1", [run.id]);
       return { ok: true, gold_awarded: goldAwarded, status: run.status, bonus: bonusReward,
-        schematic: schematic ? { name: schematic.name, icon: schematic.icon } : null, card };
+        schematic: schematic ? { name: schematic.name, icon: schematic.icon } : null };
     });
     for (const [sid, ev] of after) eventBus.publish(sid, ev);
     res.json(out);
@@ -993,107 +986,11 @@ async function processCombatTriggers(settlementId) {
         await require('../lib/careers').combatDeltas(settlementId, fightIds).catch(() => ({})));
 
       if (run.auto_resolve_combat) {
-        const partyIds = (run.quest_type === 'party' && Array.isArray(run.party_ids))
-          ? run.party_ids
-          : [run.citizen_id];
-
-        let battleResult;
-        try {
-          battleResult = await combatResolver.autoResolveBattle({
-            citizenIds: partyIds,
-            enemyKeys: encounter,
-            seed: parseInt(run.combat_seed) || 1,
-            mods: combatMods,
-          });
-        } catch (e) {
-          console.error('auto-resolve crashed for quest run', run.id, e);
-          battleResult = { outcome: 'defeat', log: ['Auto-resolve failed: ' + e.message], reward: { wealth: 0 }, rounds: 0 };
-        }
-
-        if (battleResult.outcome === 'victory') {
-          // Quest continues; combat reward will be added at quest collection.
-          // We persist the full battle snapshot so the "View Battle" report
-          // later can show end-of-fight unit HPs, who fell, etc.
-          const stateJson = JSON.stringify(
-            combatResolver.serializeBattle(battleResult.battle)
-          );
-          await client.query(
-            `UPDATE settlement_quests
-             SET combat_status='resolved', combat_outcome='victory',
-                 combat_resolved_at=NOW(), combat_log=$1, combat_state=$2
-             WHERE id=$3`,
-            [JSON.stringify(battleResult.log || []), stateJson, run.id]
-          );
-          // Pyrrhic victory? Roll injuries for any citizens who fell mid-fight.
-          try {
-            await combatResolver.applyBattleAftermath({
-              battle: battleResult.battle,
-              outcome: 'victory',
-              settlementId,
-              questRunId: run.id,
-              encounter,
-            });
-          } catch (e) {
-            console.error('auto-resolve aftermath (victory) failed for run', run.id, e);
-          }
-          // Spoils from the auto-resolved fight: loot into the stores, maybe a
-          // new card (lib/spoils). This transaction holds the run's lock, so
-          // it is granted once.
-          try {
-            const sp = await require('../lib/spoils').grant(client, settlementId, {
-              drops: (battleResult.battle && battleResult.battle.reward && battleResult.battle.reward.drops) || [],
-              enemies: encounter, seedKey: `q${run.id}:${run.combat_seed}`,
-            });
-            if (sp.items.length || sp.card) pendingEvents.push({ type: 'battle_spoils', quest_run_id: run.id, items: sp.items, card: sp.card });
-          } catch (e) {
-            console.error('auto-resolve spoils failed for run', run.id, e);
-          }
-          // Buffer: combat finished. The quest keeps ticking, so we don't
-          // publish quest_resolved here — that'll come from resolveCompletedQuests
-          // when the quest's clock runs out. Flushed after COMMIT.
-          pendingEvents.push({
-            type: 'combat_resolved',
-            quest_run_id: run.id,
-            outcome: 'victory',
-          });
-          pendingGameEvents.push(['battle_won', { settlementId, enemyCount: encounter.length, citizenIds: partyIds.filter(Boolean).map(Number) }]);
-        } else {
-          const stateJson = JSON.stringify(
-            combatResolver.serializeBattle(battleResult.battle)
-          );
-          await client.query(
-            `UPDATE settlement_quests
-             SET combat_status='resolved', combat_outcome='defeat',
-                 combat_resolved_at=NOW(), combat_log=$1, combat_state=$2,
-                 status='failed', completes_at=NOW()
-             WHERE id=$3`,
-            [JSON.stringify(battleResult.log || []), stateJson, run.id]
-          );
-          try {
-            await combatResolver.applyBattleAftermath({
-              battle: battleResult.battle,
-              outcome: 'defeat',
-              settlementId,
-              questRunId: run.id,
-              encounter,
-            });
-          } catch (e) {
-            console.error('auto-resolve aftermath (defeat) failed for run', run.id, e);
-          }
-          // Buffer: defeat ends the quest right now, so both events fire.
-          // Frontend coalesces these into one refresh by re-fetching.
-          // Flushed after COMMIT.
-          pendingEvents.push({
-            type: 'combat_resolved',
-            quest_run_id: run.id,
-            outcome: 'defeat',
-          });
-          pendingEvents.push({
-            type: 'quest_resolved',
-            quest_run_id: run.id,
-            outcome: 'failed',
-          });
-        }
+        // A fight left to be decided is decided by the board's own mind, from the quest's seed, out of sight
+        // (lib/tactics_quests.js decide): no battle is kept for it. It settles the quest's row in this transaction.
+        const done = await require('../lib/tactics_quests').decide(client, settlementId, run, encounter, combatMods);
+        pendingEvents.push(...done.events);
+        pendingGameEvents.push(...done.game);
       } else {
         // Manual battle: pause the quest clock and flag for player attention.
         await client.query(

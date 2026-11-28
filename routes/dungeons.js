@@ -3,6 +3,9 @@
 //  docs/DUNGEONS.md §9.3). The server holds all state: the client never
 //  decides what is in a room.
 //
+//    GET  /               the dungeons on the map this player has found (lib/dungeon_map.js)
+//    GET  /:id            one of them: its card
+//    POST /:id/enter      { citizen_ids: [×4] }  send a party in; the run begins at the door
 //    GET  /run            the town's unfinished run, or the last finished one
 //    POST /run/move       { room }    enter a connected room
 //    POST /run/choose     { option }  answer a rest room or a landing ('rest', 'deeper')
@@ -20,6 +23,8 @@
 //    POST /admin/sweep           { idle_run? } end idle runs now (optionally age this town's run first)
 //    POST /admin/heal            the party back to full health, everyone up
 //    POST /admin/win             win the open fight outright (to walk a path quickly)
+//    POST /admin/arrive          the walk is over now (to the door, or home)
+//    POST /admin/map             { expire? }  put dungeons on the map now (first sending every one away, with expire)
 //
 //  Fights are battles on the board, played through /api/tactics (battles/:id/act).
 // ══════════════════════════════════════════════════════════════════════════
@@ -37,6 +42,25 @@ const gate = async (req, res, next) => {
   try { if (await D.allowed(req.user)) return next(); res.status(403).json({ error: 'Dungeons are not open yet.' }); }
   catch (e) { fail(res, e); }
 };
+
+// ── Dungeons on the map (docs/DUNGEONS.md §6) ──
+const M = require('../lib/dungeon_map');
+router.get('/', requireAuth, gate, async (req, res) => {
+  try { res.json({ ok: true, ...(await M.listFor(req.user.userId)) }); } catch (e) { fail(res, e); }
+});
+router.get('/:id(\\d+)', requireAuth, gate, async (req, res) => {
+  try { res.json({ ok: true, ...(await M.card(req.user.userId, req.params.id)) }); } catch (e) { fail(res, e); }
+});
+router.post('/:id(\\d+)/enter', requireAuth, gate, async (req, res) => {
+  try { res.json({ ok: true, ...(await M.enter(req.user.userId, req.params.id, (req.body || {}).citizen_ids)) }); } catch (e) { fail(res, e); }
+});
+router.post('/admin/map', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const gone = (req.body || {}).expire ? await M.expireAll() : 0;
+    const made = await M.spawn();
+    res.json({ ok: true, gone, made, told: await M.tell(), live: (await M.live()).length });
+  } catch (e) { fail(res, e); }
+});
 
 router.get('/run', requireAuth, async (req, res) => {
   try {
@@ -57,6 +81,10 @@ router.post('/run/leave', requireAuth, gate, async (req, res) => {
 router.post('/run/flee', requireAuth, gate, async (req, res) => {
   try { res.json({ ok: true, ...(await D.flee(req.user.userId)) }); } catch (e) { fail(res, e); }
 });
+// Call the party back while it is still on the road to a map dungeon.
+router.post('/run/recall', requireAuth, async (req, res) => {
+  try { res.json({ ok: true, ...(await D.recall(req.user.userId)) }); } catch (e) { fail(res, e); }
+});
 
 // ── Dev Tools ───────────────────────────────────────────────────────────────
 router.get('/admin/status', requireAuth, requireAdmin, async (req, res) => {
@@ -66,6 +94,7 @@ router.get('/admin/status', requireAuth, requireAdmin, async (req, res) => {
     res.json({
       ok: true, on: await TU.switchOn('dungeons.on'), stories: D.stories(), free_adults: s ? (await D.freeAdults(s)).length : 0, party: D.PARTY,
       tiers: DEFS.TIER_ORDER.map(k => ({ key: k, name: DEFS.TIERS[k].name, skull: DEFS.TIERS[k].skull })), lands: require('../lib/dungeon_gen').LANDS,
+      map: { live: (await M.live()).length },
       ...(await D.current(req.user.userId)),
     });
   } catch (e) { fail(res, e); }
@@ -97,6 +126,16 @@ router.post('/admin/heal', requireAuth, requireAdmin, async (req, res) => {
     for (const k of Object.keys(state)) state[k] = { ...state[k], hp: state[k].max, down: false };
     await query('UPDATE dungeon_runs SET party_state=$2 WHERE id=$1', [r.id, JSON.stringify(state)]);
     res.json({ ok: true, ...(await D.current(req.user.userId)) });
+  } catch (e) { fail(res, e); }
+});
+// The walk is over now: a party on the road is at the door, a party walking home is home.
+router.post('/admin/arrive', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const s = (await query('SELECT id FROM settlements WHERE user_id=$1', [req.user.userId])).rows[0];
+    if (!s) return res.status(404).json({ error: 'No settlement.' });
+    await query(`UPDATE dungeon_runs SET arrives_at = NOW() WHERE settlement_id=$1 AND status='travelling'`, [s.id]);
+    await query(`UPDATE dungeon_runs SET home_at = NOW() WHERE settlement_id=$1 AND owed IS NOT NULL`, [s.id]);
+    res.json({ ok: true, arrived: await D.arrivals(s.id), ...(await D.current(req.user.userId)) });
   } catch (e) { fail(res, e); }
 });
 router.post('/admin/win', requireAuth, requireAdmin, async (req, res) => {

@@ -1,6 +1,8 @@
 # Tactics battles
 
-Status: **chosen by the owner on 2026-11-20 as the game's combat.** Battles are kept and checked by the server (Phase 2 of §9), and a dungeon started from Dev Tools is now fought on the board, room after room (Phase 3, its first half). Quests, camps and raids still use cards. Card battles still run quests, camps, raids and dungeons until the phases in §9 replace them. The same file is in both repos. What art, sound and music it needs is in `docs/TACTICS_ASSETS.md`.
+Status: **the game's combat (chosen by the owner 2026-11-20; the only combat from 2026-11-26).** Every battle is fought or decided on the board: a quest's, a camp's, a sally's, a clan quest's, a dungeon's. The card battler is deleted (§8). Dungeons are on the world map (2026-11-25, `DUNGEONS.md` §13): a party of four is sent from a tile's panel. What is left is depth (the rest of Phase 4), content (6) and the rest of the way in (7): §9.
+
+**There are no players yet** (the owner, 2026-11-25): it is a test server with one tester. Nothing is gated for players' sake, nothing is bought back or migrated gently, and a switch is only worth having where the owner wants to turn something off while testing.
 
 ## 1. The decision
 
@@ -16,7 +18,9 @@ The earlier objections, for the record, and what answered them: battles of this 
 
 ## 2. How to try it
 
-Dev Tools → 💀 Dungeons → **Tactics battle**, at the bottom. On a narrow phone, Dev Tools is in the profile menu.
+**In the game:** send a citizen or a party on a quest that can meet trouble; when it does, the fight waits in **Battles** (The Road) and **Engage** opens it on the board. A camp assault and a sally open the same way.
+
+**A practice battle** (admins): Dev Tools → 💀 Dungeons → **Tactics battle**, at the bottom. On a narrow phone, Dev Tools is in the profile menu.
 
 - **A class for each of the four** (front left, front right, back left, back right): Guard, Archer, Wizard, Hearthkeeper or Villager. Any citizen can be tried as any class.
 - **Their level**: what the skull expects, one of the four levels by name, or the citizens as they really are. A level brings its class level, which decides how much of the kit is known (below): villager 1, novice 3, trained 6, veteran 10. Choose Trained or Veteran to see every ability.
@@ -81,6 +85,19 @@ Every ability is a class card (`lib/class_cards.js`) and takes its numbers from 
 | Archer | 3 / 2 | Shoot (2 to 5) · Sidestep (self, every 2nd) · Parting Shot (1 to 3, then steps back; every 3rd) · Piercing Arrow (down a row to 5, every 4th) · Mark (1 to 5, quick; every 3rd) |
 | Wizard | 3 / 1 | Spark (1 to 4) · Ward (anyone within 3, every 2nd) · Firebolt (1 to 4, every 2nd) · Ember Burst (1 to 4, and those beside; every 4th) · Chill (1 to 4, slow and weak; every 3rd) |
 | Hearthkeeper | 3 / 1 | Cinder (1 to 3) · Hearth Ward (anyone within 3, every 2nd) · Kindle (heal within 3, twice a battle) · Steady Now (every friend within 2, every 3rd) · Embolden (a friend within 3, quick; every 3rd) |
+
+**The higher rungs (built 2026-11-23):** five more for each class, at class levels 8, 10, 13, 16 and 20, from the cards that were never in a kit. A citizen **brings five** to a battle, so from level 8 there is a choice (§6: knowing and readying).
+
+| Class | 8 | 10 | 13 | 16 | 20 |
+|---|---|---|---|---|---|
+| Guard | Stand Fast (self, more block; every 2nd) | Shield Bash (1, the foe loses a turn; every 4th) | Guard's Oath (a friend within 3, a strong block; every 3rd) | Hold the Line (block for all within 2; once a battle) | Hammer Blow (1, heavy and leaves it weak; every 4th) |
+| Archer | Aimed Shot (2 to 6, harder; every 2nd) | Hamstring (1 to 4, weak and slow; every 3rd) | Arrow Rain (2 to 5, and those beside; every 4th) | Pin Down (2 to 5, slow 3 and weak 3; every 3rd) | Hail of Arrows (2 to 5, all within 2 of the target; once a battle) |
+| Wizard | Scorch (1 to 4, burns each turn; every 2nd) | Ice Ward (anyone within 3; every 2nd) | Frost Lance (1 to 5, slow and weak; every 3rd) | Chain Lightning (down a row to 5; every 4th) | Fireball (2 to 5, all within 2 of the target; every 5th) |
+| Hearthkeeper | Ember Ward (anyone within 3; every 2nd) | Banish the Blight (1 to 4; every 2nd) | Battle Cry (next attack of all within 2 lands harder; every 4th) | Hearthlight (heals all within 2; once a battle) | Rekindle (a great heal within 3; once a battle) |
+
+- **Stronger, not twice as strong.** The same citizens bringing only these five win the same fights in about a fifth fewer turns than with the first five (24 battles at red and at purple, `scripts/tactics_test.js` plays twelve of them on every run). The first five are still what the skulls were tuned with, and what a playtest level brings.
+- **Each is described for the board** (`SAY` in `lib/tactics_setup.js`): the cards' own lines spoke of "the creature in front" and "draw a card".
+- **Not carried over from the cards:** Banish the Blight's extra against the Withered and the "later blocks hold better" of Guard's Oath and Ember Ward (the board has no rule for either yet). The mind never uses Battle Cry; a player can.
 | Villager | 3 / 1 | Swing (1) · Duck (self, every 2nd) · their trade card |
 
 ### Who they fight
@@ -97,7 +114,7 @@ Every ability is a class card (`lib/class_cards.js`) and takes its numbers from 
 
 - **A dungeon belongs to a band.** The seed picks one of the bands that live in the land; the dungeon's ordinary foes are that band's, and where the band has nobody of a rank, whoever in the land does. The boss is the land's.
 - **The eleven creatures of the card battles each have a foe that stands in their place** (Marsh Rat → Rat Cutpurse, Wild Fox → Fox Footpad, Thornback Boar → Boar Bruiser, Night Wolf → Wolf Raider, Bog Lurker → Newt Darter, Fungal Toad → Toad Sporecaller, River Pike → Heron Lancer, Withered Husk → Hollow Thrall; the Rot Shaman, the Mountain Harpy and the Hill Ogre are themselves). So a dungeon written for cards, fought on the board, shows the new cast. A creature made in the enemy editor that the board has never heard of is read from its row as before.
-- **The card battles are untouched**: quests, camps and raids in the live game still name the old creatures, until Phase 5 moves them to the board.
+- **A quest still names the old creatures** (it rolls them from the creature list, by land and time of day), and each is met on the board as the foe that stands in its place; the Battles list and the battle report say the foe's name. A creature made in the editor that the board has no foe for is read from its own numbers and moves.
 - **The rule is "no animals on four legs", not "animals only"** (the owner, 2026-11-22): an ogre, a harpy, a centaur, anything out of a story is welcome. So the Hill Ogre and the Mountain Harpy are back as themselves, Grum is the Ogre Chief again and the Storm Matriarch a harpy queen. Two stay changed because the old ones could not stand on a board: the River Pike is a Heron Lancer and Old Snapjaw a snapping turtle. More mythical foes are for Phase 6 (§7).
 - The mind that plays them (`plan` in the engine) already keeps those who shoot at their distance, heals whoever is hurt, and weighs an area by everyone in it, so the new foes needed no new rules.
 
@@ -157,7 +174,108 @@ The owner's direction: "instead of unlocking cards we can just allow villagers t
 
 - **Built.** Each of the four classes knows two abilities at class level 1 and learns one more at levels 2, 4 and 6 (§4). The level is the citizen's own, in that class (`citizen_classes`); a villager's three are known from the start. On the board the unlearned ones sit greyed in the row with "learned at level N"; tapping anyone lists theirs too. When a battle's experience carries a citizen over one of those levels, the victory screen says **Learned: Cover** under their bar, and the next fight has it. Where: `KITS[…].at` and `learnedBetween` in `lib/tactics_setup.js`; `learned` on the rows of `lib/tactics_xp.js`.
 - **Why these levels.** A fresh Guard reaches level 2 in the first fight of a first dungeon and level 4 by the end of it, so the first run already teaches two things; level 6 takes three or four green runs or one orange one. The whole starting kit is known before the skulls that were tuned for it (orange and up).
-- **Next rungs, not built:** levels 8 to 20 teach from the rest of the catalogue (below), which is when **readying five** is needed, and with it the Abilities page on a citizen.
+- **The higher rungs (built 2026-11-23):** levels 8, 10, 13, 16 and 20 teach one more each (§4), ten in all.
+- **Knowing and readying (built 2026-11-23; replaced 2026-11-26 by "Schools, the whole kit, and a second school" below: a citizen now brings all their class has taught them).** A citizen knows what their class level has taught and **brings five** to a battle. Until they choose, those are the first five they learned; a level that teaches a sixth says so on the victory screen ("Learned: Stand Fast, ready it on their Abilities page"). The choice is the citizen's own, made at home and kept until changed (`citizen_classes.ready`, a list of keys); it cannot be changed from inside a dungeon. A choice that no longer fits (a class changed, a key gone) is filled out from the earliest learned, so nobody ever goes in with fewer than five or with something they do not know. `lib/tactics_abilities.js`, `GET /api/tactics/abilities/:citizenId`, `POST …/ready { keys }`.
+- **The Abilities tab on a citizen (built 2026-11-23).** Beside Career on a citizen's page: the class and level with its bar, what the next level teaches, and the ten in the order learned, each with its picture, what it does in that citizen's hands, its reach and how often it can be used; a tick for each one brought, "5 of 5 chosen", Save. Someone with no class sees a villager's three and is told what a class would teach. Frontend `js/abilities.js`, `css/abilities.css`. **The tab shows only where battles on the board are open:** to admins, and to everyone once `dungeons.on` is switched on.
+- **In a battle** the row is still five wide: the readied ones, then (while fewer than five are known) the ones still to learn, greyed. Tapping a citizen also names the next one to come and how many they left at home.
+- **Not built:** study at the class buildings, research, equipment, family, mastery, a reaction and a passive (below).
+
+### Schools, the whole kit, and a second school (decided by the owner 2026-11-26)
+
+This replaces "knowing and readying five" above. Built in stages; what is built is marked.
+
+**Schools.** Every ability belongs to a school:
+
+| School | What it is | Whose |
+|---|---|---|
+| **Basics** | A plain melee blow (Swing). Everyone has it, always. | Everyone |
+| **Arms** | Blows, shield work, holding a line. No magic. | Guards |
+| **Archery** | Shots, marks, pins, rains of arrows. | Archers |
+| **Wild magic** | Fire, frost and lightning: the untamed side of the wood. | Wizards |
+| **Hearth magic** | Healing, wards and heart: the homely side. | Hearthkeepers |
+| **Fieldcraft** | A villager's trade trick (a tool, a ration, a sign read). | Villagers with a trade |
+
+("White" and "black" magic are another game's words; these are ours.)
+
+**In a battle a citizen brings everything their current class has taught them**, not five of it. The battle's action bar is grouped by school, one tab each.
+
+**And up to five from one other class they have levels in: their second school.** The only way to know another class's abilities is to have been that class (the owner chose "old careers only": no cross-study). Class levels are kept when a citizen changes career, so a Guard who becomes an Archer still knows what the Watchtower drilled into them. A villager who has fought has Guard levels (battle pays them as Guard training), so a veteran farmer can bring five Arms abilities.
+
+**A second-school ability works at three-quarters strength** (damage, healing and block ×0.75), on top of what the citizen's own stats and gear make of it. Healing reads intelligence and a staff; a Guard with neither heals about half what an equipped Hearthkeeper does. That gap is the point.
+
+**How abilities are learned.**
+
+- **Levels teach the core.** The ten on each class ladder, free, as built.
+- **Study teaches the rest of the school** at the class's building (Watchtower, Wizard's Tower, Hearth Shrine): extra abilities and **passives**, each needing a class level and a building level, each taking hours and a seat. Only a citizen of that class studies there.
+- **A passive slot.** One always-on trait in battle (Counter, Brace, Sure-footed…), learned by study.
+- **Mastery.** An ability a citizen has used about 25 times in battle is ✦ for them for good: 20% stronger.
+- **Gear.** Kinds of weapon each do one clear thing: a longbow reaches a tile further, a shield adds to Shield Up and Cover, a halberd strikes two tiles away, a war hammer hits harder and slows its wielder a step, a dagger strikes harder from behind, a staff (new) adds to spells.
+- **Research.** Town-wide improvements from the Library (Fletching, Field Medicine, Stone Wards).
+- **A family signature.** A child coming of age is taught one ability by a parent, whatever class they take.
+- **An Allied village** teaches one ability no ladder has (the perk that replaces its card lessons).
+
+**Stages.** A: schools, the whole kit, the second school, the tabbed action bar, the Abilities tab (**built 2026-11-26**: `SCHOOLS`, `partyUnit`, `secondOf` in `lib/tactics_setup.js`; `lib/tactics_abilities.js`; `citizens.second_class`, `second_ready`; `POST /api/tactics/abilities/:id/second`; tabs in `js/tactics.js`; `js/abilities.js`). B: mastery (**built 2026-11-26**: `lib/tactics_mastery.js`, table `citizen_ability_uses`; every use in a kept battle the player played is counted, 25 master it, a mastered ability is 20% stronger wherever it comes from; the end screen says "Mastered: Strike ✦", the Abilities tab shows "12 of 25 uses to ✦"; a practice battle and a battle left to be decided count nothing). C: gear (**built 2026-11-26**, below). D: study and the passive slot (**built 2026-11-27**, below). E: research. F: family. G: the Allied village's ability. Each is playable when it lands.
+
+**Stage D as built: study at the class buildings, and a passive slot (`lib/tactics_study.js`).** The owner's choices (2026-11-27): a lesson costs time and wealth; a small first set; a citizen who is studying carries on as normal.
+
+- **Where.** A Guard or an Archer studies at the Watchtower, a Wizard at the Wizard's Tower, a Hearthkeeper at the Hearth Shrine. A villager studies nowhere.
+- **What a lesson takes.** Hours and a fee by how advanced it is: **2 hours and 50 wealth, 6 and 150, or 12 and 400**. It needs a class level and a building level, and one of the building's **seats (one a building level)**. One lesson at a time for each citizen. Stopping gives the seat and the whole fee back. The citizen still works and can be sent out while they study.
+- **What is learned is the citizen's for good.** An extra ability joins its school: it comes to every battle while they are that class, and is among what that class taught them when it is their second school. A passive goes in their **one passive slot**, chosen at home among those they know, whatever class they are now (the first one learned goes straight in).
+
+| School (building) | Extra abilities | Passives |
+|---|---|---|
+| Arms (Watchtower, a Guard) | **Second Wind** (level 3): heal yourself, once a battle. **Cleave** (level 8, building 2): a wide swing at every foe beside you. | **Brace** (level 3): the first hit each round does a third less. **Counter** (level 6, building 2): struck by a foe beside them, they strike back at half strength, once a round. |
+| Archery (Watchtower, an Archer) | **Venom Arrow** (3): a barbed arrow that poisons. **Expose** (8, building 2): hits on that foe land harder. | **Light Feet** (3): walks one tile further. **Keen Eye** (6, building 2): Archery reaches one tile further. |
+| Wild magic (Wizard's Tower) | **Weaken** (3): a hex, that foe hits less hard. **Deep Freeze** (12, building 3): a foe loses its next turn, once a battle. | **Focus** (3): Wild magic a tenth stronger. **Quick Hands** (6, building 2): Wild magic ready a turn sooner. |
+| Hearth magic (Hearth Shrine) | **Searing Brand** (3): it burns, and the foe hits less hard. **Mending Song** (8, building 2): heals everyone near a little, twice a battle. | **Warm Hands** (3): healing 15% stronger. **Deep Embers** (6, building 2): one more use of what is counted a battle. |
+| Any of the three, to a citizen of its class | | **Sure-footed** (2): jumps one step higher. **Tough** (4): a tenth more health. |
+
+- **Brace and Counter are rules of the board** (both copies of the engine; a unit carries `passive`). Brace takes a third off the first hit a unit takes each round. Counter answers a hit from a foe standing next to the unit with its Attack at half strength, once a round, and **never fells** (the striker is left with 1): that keeps a unit from being struck down in the middle of its own turn. Both are ready again when the unit's turn starts. Old battles replay the same. Foes can be given either later (a boss that counters).
+- **The other eight change the unit as it is built** (reach, a step, health, a tenth of magic, a turn of waiting, a use).
+- **Where it shows.** The citizen's Abilities tab has a **Passive** part (the ones learned, and None) and a **Study** part (the building, its level and seats, each lesson with what it is, what it takes, and a button or the reason it is closed; a lesson under way has a countdown and Stop). In a battle the citizen's card names their passive, "Counter!" and "Braced" float over the board, and a studied ability is in its school's tab. The town's news says when a lesson is finished. Dev Tools → 💀 Dungeons → **Finish studies now**.
+- **API.** `GET /api/tactics/study/:id`, `POST …/study/:id { lesson }`, `POST …/study/:id/cancel`, `POST …/study/:id/passive { key }`, `POST /api/tactics/admin/study/finish`. Tables `citizen_lessons`, `citizen_study`; `citizens.passive`.
+- **Order of the sums on an ability:** the citizen's stats, gear, the passive, three-quarters for a second school, a fifth for mastery.
+- **To add a lesson:** one line in `LESSONS` (and, for a new ability, a `def` in `lib/class_abilities.js`). A passive that only changes numbers is two lines in `abilityOf`/`partyUnit`; one that changes the rules is an engine change in both copies.
+- **Left for later:** Thunderclap, Bulwark, Quick Jab, Rally and Smoke Bomb are in the catalogue and taught nowhere yet.
+
+**The Attack (the owner, 2026-11-27).** Everyone has one Attack, on a button of its own above their abilities (key A), and it is not an ability: it is on no ladder, in no tab, and cannot be brought as a second school's.
+
+| Class | Attack | At the same stats (12s, combat 4) |
+|---|---|---|
+| Guard | Strike: a hard melee blow | 17 |
+| Archer | Shoot: an arrow, two to five tiles | 16 |
+| Villager | Swing: whatever is to hand | 15 |
+| Wizard, Hearthkeeper | Knock: a feeble blow with what they hold | 7 |
+
+- **It is the class's, not the weapon's.** A Guard and an Archer are fighters and their Attack hits well; a Wizard or Hearthkeeper swinging a staff or a lantern does less than half that, and less than their own first spell. The weapon then shapes it by kind (a polearm reaches two tiles, a hammer hits harder, a longbow reaches further).
+- **So a ladder is an Attack and nine abilities** for a Guard or an Archer (their Strike and Shoot were two of the ten), and ten abilities for a Wizard or Hearthkeeper, whose first spell stays an ability.
+- **An Archer has no melee blow** (the plain Swing everyone had since stage A is gone). Standing next to a foe they must step away, use Parting Shot, or carry a short bow, which is what the short bow is for.
+- **A villager's Swing is close to a Guard's Strike at equal stats.** In play villagers have less strength and combat skill, so it is weaker; if it reads as too good, lower the formula in `lib/class_abilities.js`.
+- Code: `ATTACK`, `attackKit`, `knownAt` in `lib/tactics_setup.js`; the unit's first ability has `attack: true`; `v_knock` in `lib/class_abilities.js`; the button and `attackOf` in `js/tactics.js`.
+
+**Stage C as built: what a citizen carries (`lib/gear_kinds.js`).** The numbers on gear always counted (a weapon's combat bonus, the few with dice, armour). Now the **kind** does one clear thing:
+
+| Kind | Items today | What it does |
+|---|---|---|
+| Sword | Iron and Steel Sword, Falchion, Obsidian and Mithril Blade | Arms abilities are ready a turn sooner (never below every other turn) |
+| Hammer | War Hammer | Arms blows, and the plain blow of Basics, land a quarter harder; its wielder walks one tile less |
+| Polearm | Halberd | Melee Arms blows reach two tiles |
+| Dagger | Iron Dagger | A blow from behind does double, where any other does half as much again |
+| Short bow | Shortbow, Composite Bow | An Archery shot can be loosed at a foe standing next to you |
+| Longbow | Longbow, Heartwood Longbow | Archery reaches one tile further |
+| Staff | **Oak, Rowan and Heartwood Staff (new; a carpenter makes them at the workshop, levels 3, 10 and 18)** | Wild magic is a fifth stronger (the Wizard's) |
+| Lantern | **Ember Lantern, Brass Hearth-lantern, Everburning Lantern (new, 2026-11-27; a blacksmith makes them at the smithy, levels 3, 10 and 18)** | Hearth magic is a fifth stronger (the Hearthkeeper's: a coal from the town's hearth, carried) |
+| A shield (its own slot) | Wooden Buckler, Iron Shield, Tower Shield | Arms blocks are stronger by 3, 5 or 8 |
+
+- **They read the school of the ability, not the class of the citizen.** So they hold for a second school: a Guard who carries a lantern heals better with borrowed Hearth magic, and gives up what a sword would do for their own blows. This is the owner's "a guard using heal with no staff… is vastly less effective than a fully trained and equipped healer": in a trial, a Guard's borrowed Kindle is 9, with a lantern 12, and an equipped Hearthkeeper's 17 or more.
+- **An item made in Dev Tools gets its kind from its name** (anything with "bow", "staff", "blade"…), so nothing has to be registered.
+- **Order of the sums:** the citizen's stats, then gear, then three-quarters for a second school, then a fifth for mastery.
+- **Where it shows.** A citizen's Abilities tab has a Gear part: what they hold, what it does, and a guide to every kind. In a battle their card names the weapon and shield. The numbers and reaches on every ability already include it.
+- **One change to the rules of the board** (both copies of the engine): an ability may carry its own worth for a blow from behind (`a.back`); with none it is the usual half as much again. Old battles replay the same.
+- **Two hands (the owner, 2026-11-27).** A hammer, a polearm, a bow and a staff take both hands, so no shield goes with them; a sword, a dagger and a lantern take one. Equipping a two-handed weapon sends the shield back to the stores, equipping a shield sends a two-handed weapon back, and the game says so (`routes/inventory.js`). A shield somehow still carried with one does nothing in a fight and the Abilities tab says it is on their back.
+- **For the day gear is drawn on citizens (the owner, 2026-11-26).** Every unit in a battle's setup carries `gear: { weapon, shield, armour }`, each with the item's `key`, `name` and `icon`, and the weapon its `kind`. The board draws nothing from it today; it is what a sprite layer would read. The kinds are the natural unit of art: seven weapon silhouettes and a shield cover every item, with per-item tints or swaps later. Outside battle, `careers.combatDeltas` gives the same by citizen.
+
+**Known cost.** A level 20 fighter now brings ten abilities and five more; the skulls were tuned for five. More choice is not much more power (one action a turn), but orange and above should be re-simulated once stage C is in.
 
 ### The shape of it
 
@@ -168,7 +286,7 @@ The owner's direction: "instead of unlocking cards we can just allow villagers t
 
 | Way | How it works | Stands on |
 |---|---|---|
-| **Class level** | Each class has a ladder. A new Guard knows Strike, Shield Up and Cover; more come at levels 3, 6, 10, 15 and 20. | Careers and their levels |
+| **Class level** | **Built.** Each class has a ladder of ten: two to begin with, then one at levels 2, 4, 6, 8, 10, 13, 16 and 20. | Careers and their levels |
 | **Study** | A citizen is set to study one ability at their class's building. It takes hours of real time and one of the building's seats. The building's level sets which abilities it can teach. | The Watchtower, Wizard's Tower and Hearth Shrine, and their level ladders (`DUNGEON_CLASS_DECKS.md` §4.3) |
 | **Research** | Town-wide improvements from the Library: "Fletching" (bows reach one further), "Field Medicine" (Kindle a third time), "Stone Wards" (Ward lasts two turns). | The research tree |
 | **Equipment** | A weapon shapes the basic attack and can carry an ability of its own: a longbow reaches further, a shield strengthens Shield Up, a staff adds to spells, a boss's trophy grants something nobody else has. The weapon's dice finally count (a gap noted in `DUNGEON_CONTENT.md` §2). | Crafting, the smithy, dungeon loot |
@@ -198,23 +316,43 @@ The owner's direction: "instead of unlocking cards we can just allow villagers t
 | **Friendly fire** | Bursts hurt friends. | No: wrong tone for this game |
 | **Bigger battles** | Six a side, larger maps. | No: five minutes is the promise. Ten by ten for bosses at most |
 
-## 8. What happens to the cards
+## 8. What happened to the cards
 
-**The owner's word, 2026-11-22:** "we can peel away/archive the card combat system we had originally planned, I am confident in tactics replacing it." So cards go. They go in three steps, because one part of them is still what players fight with today:
+**The owner's word, 2026-11-22:** "we can peel away/archive the card combat system we had originally planned, I am confident in tactics replacing it." And on 2026-11-25: "finish up Phase 5". The cards went in three steps.
 
 | Step | What | State |
 |---|---|---|
-| 1 | **Dungeons with cards cannot be started any more.** Dev Tools offers no "with cards"; the admin routes always start a board dungeon. `docs/DUNGEON_CLASS_DECKS.md` is marked archived. | **Done 2026-11-22** |
-| 2 | **The dungeon card layer is deleted.** Gone from the server: `lib/dungeon_decks.js`; the door pick, the card after a fight, honing and prepared cards in `lib/dungeons.js`; the routes `/run/pick`, `/cards` and `/cards/prepare`; the card runs' callbacks in `routes/combat.js`; the two card simulators; the card shapes in the generator (one shape table now, the board's). Gone from the frontend: the cards, decks, draft, honing and "Class cards" window in `js/dungeons.js` and `css/dungeons.css`, and the dungeon branches of the old battle screen (`js/combat-ui.js`). A card run left unfinished is closed at boot (`migrations/0NN_tactics.sql`). The run's test was ported, not dropped: `scripts/dungeons_test.js` plays the same run (the path, rests, loot, endings, injuries, idle runs, two floors, generated dungeons) through board battles, 177 checks; the 66 it lost were all about decks. Nobody outside Dev Tools ever saw this layer, so no player lost anything. | **Done 2026-11-23** |
-| 3 | **Quests, camps, raids and clan quests on the board**, then delete the card battler itself: both copies of the card engine, the card hand, the battle screen, the home deck and deck builder, the card collection, drops and unlocks, the card editor. This is Phase 5. It is the only step players will notice, so it goes behind a switch the owner turns on, as dungeons are. | Phase 5 |
+| 1 | Dungeons with cards could no longer be started. | Done 2026-11-22 |
+| 2 | The dungeon card layer deleted (decks, the door draft, honing, the Class cards window); its test ported to board battles. | Done 2026-11-23 |
+| 3 | Quest, camp, raid and clan quest battles on the board; the card battler itself deleted. | **Done 2026-11-26** |
 
-**Kept:** the classes, careers and class buildings; the formulas (`lib/class_cards.js` is the catalogue the abilities are read from; its packs, pools and honing are now used by nothing, and it will be cut down to that catalogue and renamed when step 3 is done); the dungeon run (the path, rooms, wounds that carry, rests, endings, the generator); injuries; loot.
+### How a battle outside a dungeon works now
 
-**Nothing a player earned is lost.** Every card a town has unlocked becomes an ability its class building can teach.
+- **What it is.** A quest's, camp's or raid's fight is a row in the Battles list. **Engage** opens it on the board: the quest's own citizens, one to four of them, each in their own class with the five abilities they bring, against the foes that stand in for the quest's creatures, on the land the quest is in, with the quest's own seed. A camp assault and a sally open the same way (`startBattleFromQuest` in the frontend's `js/battles.js` is the one way in).
+- **When it ends the quest is settled:** won, the quest's clock runs on from where it stopped, the fight's wealth is paid, what the foes carried goes into the stores, survivors may gain combat skill, anyone lying fallen rolls for injury, a camp or a sally is told, and class experience is paid at once and shown on the end screen; lost, the quest fails and everyone rolls.
+- **A battle left to be decided** (the "decide it for me" tick when a quest is sent) and **a clan quest's battle** (which nobody plays) are **decided by the board's own mind** playing both sides from the fight's seed, out of sight (`decide`, `autoResolve` in `lib/tactics_quests.js`). No battle is kept for them.
+- **How tough.** A quest's fight is a small one, so it has a tier of its own, `quest`: every foe +30% health and +20% power (`QUEST` in `lib/tactics_setup.js`; Dev Tools → Life → Quest battles). With those, the mind playing: a lone villager wins every fight with one ordinary foe in two to five rounds and about three in four with a heavy one (a Boar Bruiser); two villagers beat two Wolf Raiders 98 times in 100; four novices are never troubled. A camp assault or a sally (up to three citizens against one to four of the Withered): against two, three villagers win 98 in 100; against a full four, three villagers win 70 in 100 over a long fight, three novices in classes every time. `scripts/tactics_quest_sim.js` prints the table. A Happening that toughens creatures toughens these too.
+- **Beside the rest.** A town may have a quest's battle open for each quest that waits on one, as well as its dungeon or practice battle; none pushes another aside. ✕ only steps away: the quest keeps waiting, and the list then offers "Back to the battle". Forfeiting from the list fails the quest and closes its battle.
+- **The record.** A board fight leaves on the quest what the card battles left (`combat_state`, `combat_log`), so "View Battle" works: it names the foes of the board, who stood at the end and the wounds taken.
+- **Who may play.** Every player: there is no switch. (Between 2026-11-25 and 2026-11-26 the board stood behind a switch, `tactics.quests`, with cards as the fallback; both are gone.) A dungeon's battle is still only for whoever may enter dungeons.
+- **Where:** server `lib/tactics_quests.js` (open, settle, decide), `routes/tactics.js` (`POST /quest/:questRunId`, `GET /open`), `routes/combat.js` (the Battles list, forfeit, the report, injuries, the creature editor); frontend `js/battles.js`, `js/tactics.js`. Tests: server `scripts/tactics_quest_test.js` (39), a sally fought for real in `scripts/raid_extras_test.js`.
+
+### What was deleted
+
+- **Server:** the card engine and its registry (`lib/card_engine.js`, `card_combat.js`, `card_definitions.js`, `card_registry.js`, `card_formula.js`), the card collection (`lib/cards.js`), the old combat engine (`lib/combat_engine.js`, `combat-server.js`), the routes `/api/cards`, `/api/decks`, `/api/card-admin` and, in `/api/combat`, `/engage`, `/action` and `/resolve`; the replaying and deciding of card battles in `lib/combat_resolver.js` (which keeps the party and the injuries); the card editor and the old "test battle" in Dev Tools.
+- **Frontend:** the card battle screen (`js/combat-ui.js`), both card engines, the card hand, the deck builder, the card collection, the card editor, their stylesheets and proofs; the Decks button and menu entry.
+- **Two small rewards went with them:** a finished quest's small chance of a new card, and an Allied village teaching two cards a week for wealth. **Neither has a replacement yet**: an Allied village has one perk fewer. (A natural one, when study is built: an Allied village teaches an ability no class ladder has.)
+
+### What was kept
+
+- **Kept:** the classes, careers and class buildings; the ability formulas, now a plain catalogue (`lib/class_abilities.js`, which was `class_cards.js`); the citizen-as-fighter (`lib/citizen_unit.js`, the same health and stats as before); the creature list and its editor (a quest still rolls its creatures from it, and each has a foe that stands in for it on the board); injuries; loot; the Battles list; the battle report.
+- **A weapon's dice count at last.** The card battles rolled a weapon's dice only for a plain attack and never for a card. On the board a weapon with dice adds their average, and its bonus, to every blow (`weaponEdge` in `lib/tactics_setup.js`). Only two weapons have dice today (the Obsidian Blade and the Mithril Blade); every other weapon counts through the combat skill it gives, as before.
+- **Collected cards are simply gone.** A one-time buy-back was built on 2026-11-25 and taken out the same day at the owner's word: there are no players to pay. The card tables are left in the database, unread.
+- **A battle left half-played with cards** when the server was updated starts again on the board: nobody is stranded.
 
 ## 9. The roadmap
 
-Each phase ends with something playable behind the switch.
+Each phase ends with something playable.
 
 | # | Phase | What it delivers | Size |
 |---|---|---|---|
@@ -222,16 +360,18 @@ Each phase ends with something playable behind the switch.
 | 1 | Feel | Choosing a facing, zoom and drag, a phone on its side, hooks for art, sound and music. **Done.** | |
 | 2 | The server decides | The same rules run on the server from a list of the player's choices; a battle is stored, survives a reload and cannot be cheated. **Done** (§10). | |
 | 3 | **Dungeons on the board** | A dungeon's fights are tactics battles. Health and who is down carry between them; rests, loot, fleeing and the endings as now. The door pick and the card after a fight are gone. A dungeon made for the board has fewer fights; a foe leaves what it carried; the fallen lie on the board and a heal stands them up; the numbers are set for whole runs (§5). **Done (2026-11-22).** | |
-| 4 | **Abilities** | Knowing and readying; class ladders; study at the class buildings; research; equipment; mastery. An Abilities page on each citizen. | Large |
-| 5 | **Everywhere, and the cards go** | Quests, camps and raids on the board, with a quick result for small fights. Raids on a map of the town. The card systems are removed. | Large |
-| 6 | **Content** | Ground that matters, the seasons, other ways to win, placing the party; bosses that resist being stunned or pushed; a second form or a trick for each boss. **The cast is in (2026-11-21):** thirty foes in five bands with board behaviour, and the seven bosses (§4). | Large; alongside the art |
-| 7 | **The way in, and polish** | Dungeons on the map for players, a first battle that teaches, art and sound in, tuning from real play, slow phones. | Medium |
+| 4 | **Abilities** | Knowing and readying; class ladders; study at the class buildings; research; equipment; mastery. An Abilities page on each citizen. **Built so far:** experience from battle, the ladder to level 20 (ten abilities a class), knowing and readying, the Abilities tab (2026-11-23). **Left:** study, research, equipment, mastery. | Large; half done |
+| 5 | **Everywhere, and the cards go** | Quests, camps, raids and clan quests on the board, with a quick result for a fight left to be decided. The card systems are removed. **Done 2026-11-26** (§8). | |
+| 6 | **Content** | **Raids on a map of the town** (moved here from Phase 5: it is new content, and nothing about retiring the cards waited on it; today a raid is met by a sally, which is a battle on the board, or weathered by the town's defences). Ground that matters, the seasons, other ways to win, placing the party; bosses that resist being stunned or pushed; a second form or a trick for each boss. **The cast is in (2026-11-21):** thirty foes in five bands with board behaviour, and the seven bosses (§4). | Large; alongside the art |
+| 7 | **The way in, and polish** | Dungeons on the map, a first battle that teaches, art and sound in, tuning from real play, slow phones. **Built so far:** dungeons on the map (2026-11-25, `DUNGEONS.md` §13). | Medium; begun |
+
+**A change of order (2026-11-25).** Phase 5 was begun, and finished, before Phase 4 was. What is left of Phase 4 (study, research, equipment, mastery) is depth; nothing a player did reached the board until Phase 5, and what players find when they fight real quests there should shape that depth. Abilities enough to replace cards existed: ten a class, five brought.
 
 **Why this order.** Phase 2 came first, because everything after it stores results and a battle the browser decides cannot be trusted with them. Phase 3 next, because a single battle is a toy and a dungeon is the game. Abilities (4) before retiring cards (5), so there is something to replace them with. Content (6) can run beside any phase once art starts arriving.
 
 **Decisions the owner will need to make,** none of them yet:
 
-1. **Small fights.** Is a quest's one-creature scuffle a full battle, a quick result, or the player's choice? (Suggested: a quick result by default, "fight it myself" on offer.)
+1. ~~**Small fights.**~~ Settled as the game already had it: it is the player's choice when the quest is sent. Left to be decided, the board's mind decides it out of sight; otherwise it waits in the Battles list as a short battle (a one-on-one is two to five rounds).
 2. ~~**Dungeon length.**~~ Settled by building it: a route has 2 to 3 fights at green, 3 to 4, 3 to 5, 4 to 6, and 5 to 7 at purple (§5). Say so if a dungeon feels too short or too long in play.
 3. **Who owns an ability.** Suggested above: the citizen. The other way (the town knows it and any citizen of the class can ready it) is simpler and loses the family story.
 4. **Species.** Only mice have sprites, so every party is drawn as mice. The other six species are the largest art job in the game either way.
@@ -248,17 +388,20 @@ Each phase ends with something playable behind the switch.
 | The jukebox: a public page that plays the battle music over a battle that plays itself, and takes ratings | frontend `jukebox.html`, `js/jukebox.js`, `css/jukebox.css`, `KWTactics.demo` in `js/tactics.js`; server `routes/jukebox.js`, `migrations/0NN_jukebox.sql`, `scripts/make_tactics_demo.js` (writes the frontend's `assets/tactics/demo.json`) |
 | Who the party fights: the thirty foes, the bands, a dungeon's cast, the showcase fights | server `lib/tactics_foes.js` |
 | The two sides: kits, levels, a foe as a unit, the skull numbers (`TIERS`, and `tierNow` for what Dev Tools has saved) | server `lib/tactics_setup.js` |
+| The catalogue of abilities and their formulas; a citizen as a fighter | server `lib/class_abilities.js`, `lib/citizen_unit.js` |
+| A quest's, camp's, raid's or clan quest's battle: opened, settled, decided | server `lib/tactics_quests.js` |
 | The same rules on the server (kept identical to the browser's; a test compares them) | server `lib/tactics_engine.js` |
 | Battles the server keeps: create, each choice, the result, leaving | server `lib/tactics_battles.js`, `migrations/0NN_tactics.sql` |
-| Routes (admins only) | server `routes/tactics.js` |
+| Routes | server `routes/tactics.js` (a quest's battle and the Abilities page are every player's; a practice battle is for admins; a dungeon's battle is for whoever may enter dungeons) |
 | What a battle teaches: experience by rank and skull, paid into class levels | server `lib/tactics_xp.js` |
-| Numbers | server `scripts/tactics_sim.js` (one battle), `scripts/tactics_run_sim.js` (a whole dungeon) |
-| Tests | frontend `verify/tactics_proofs.js` (170 checks), `verify/dungeons_proofs.js` (74); server `scripts/tactics_test.js` (66), `scripts/dungeon_board_test.js` (41), `scripts/dungeons_test.js` (177: the run itself, through board battles), `scripts/jukebox_test.js` (13) |
+| What a citizen knows and brings: the Abilities tab | server `lib/tactics_abilities.js`; frontend `js/abilities.js`, `css/abilities.css` |
+| Numbers | server `scripts/tactics_sim.js` (one battle), `scripts/tactics_run_sim.js` (a whole dungeon), `scripts/tactics_quest_sim.js` (a quest's fight) |
+| Tests | frontend `verify/tactics_proofs.js` (214 checks), `verify/dungeons_proofs.js` (74); server `scripts/tactics_test.js` (the kits, the ladder, readying, the routes), `scripts/tactics_abilities_test.js` (17), `scripts/tactics_quest_test.js` (39), `scripts/combat_gear_test.js` (13: gear on the board), `scripts/dungeon_board_test.js` (41), `scripts/dungeons_test.js` (177: the run itself, through board battles), `scripts/jukebox_test.js` (13) |
 
 - **The engine is pure**: no clock, no `Math.random`, no DOM. A battle is a plain object changed only by `move`, `use` and `endTurn`, and the same seed and choices always give the same battle.
 - **How the server decides.** A battle is stored as its two sides, frozen when it begins, and the player's choices in order (`tactics_battles`). Creatures have no entries: their mind is part of the rules, so both sides reach the same turns from the same choices. The browser plays each choice at once, so the screen never waits, and sends it; the server plays it on top of the ones before and refuses what the rules do not allow. Every answer carries a fingerprint of the board; if the browser's differs, or a choice is refused, the screen is put back to the battle as the server has it. A choice sent twice is taken once.
 - **When a battle ends** the server records who won, the rounds, and each citizen's health and who is down. Phase 3 reads that to carry wounds through a dungeon.
-- **A town has one battle on a board at a time.** Starting another ends the one before.
+- **A town has one dungeon or practice battle on a board at a time** (starting a practice battle ends the practice battle before it), **and beside it one for each quest that waits on a fight** (§8).
 - **A dungeon's fight keeps its run awake**: every turn taken, and opening the fight again, counts as an action for the run's idle clock (24 hours), so a long battle played in sittings is never swept away.
 - **A dungeon on the board** (`lib/dungeons.js`; every run is `combat = 'board'`). The run starts with no decks and no door pick. Entering a fight room opens a tactics battle that names its run: the party as it stands (health carried in; whoever is down is left off the board) against the room's creatures, with the board's own skull numbers and the room's boost, on the dungeon's land. When the battle ends, the transaction that stores the last choice also settles the run: each citizen's health and who is down, the fight's wealth and any find, the way on; the boss clears the dungeon; a defeat ends it. ✕ on the battle only steps away (it stays open and is picked up from the dungeon's Fight button); fleeing is done from the dungeon's screen and ends the run with half the loot. A run started without `combat: 'board'` is a card run as before.
 - **What finished Phase 3 (2026-11-22).** *Fewer fights:* the generator's shapes are the board's (from 2026-11-23 its only ones: `SHAPES`), and the dungeon it makes says `combat: 'board'`. *Drops:* each foe has `drops` (`lib/tactics_foes.js`): what it carried, never a part of it, so nobody leaves a hide. They are rolled from the battle's seed when a dungeon fight is won (`dropsOf`), filtered to items the database has, and join the fight's wealth in the run's loot. *The fallen:* the engine's rule (§3); `partyFor` brings a downed citizen in with `down: true`; `syncBoard` marks anyone who fell, even if healed back up, as having gone down (they roll for injury at the end without the fatal band). *The rest:* `DUNGEON_BOARD_REST`.

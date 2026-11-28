@@ -127,10 +127,11 @@ router.get('/', requireAuth, async (req, res) => {
     // In a dungeon (lib/dungeons): away from setting out until the run ends.
     const dungeonByCitizen = {};
     try {
-      const dRes = await query(`SELECT r.id, r.party_ids, d.story_key, d.layout->>'name' AS made_name FROM dungeon_runs r JOIN dungeons d ON d.id = r.dungeon_id
-                                 WHERE r.settlement_id = $1 AND r.status IN ('travelling','active')`, [settlement.id]);
+      // …and on the road there, and on the road home with what they found (owed: lib/dungeons.js).
+      const dRes = await query(`SELECT r.id, r.status, r.party_ids, d.story_key, d.layout->>'name' AS made_name FROM dungeon_runs r JOIN dungeons d ON d.id = r.dungeon_id
+                                 WHERE r.settlement_id = $1 AND (r.status IN ('travelling','active') OR r.owed IS NOT NULL)`, [settlement.id]);
       const STORIES = require('../lib/dungeon_defs').STORIES;
-      dRes.rows.forEach(r => (r.party_ids || []).forEach(id => { dungeonByCitizen[id] = { run_id: r.id, name: r.made_name || (STORIES[r.story_key] || {}).name || 'a dungeon' }; }));
+      dRes.rows.forEach(r => (r.party_ids || []).forEach(id => { dungeonByCitizen[id] = { run_id: r.id, name: r.made_name || (STORIES[r.story_key] || {}).name || 'a dungeon', walking: r.status === 'travelling' ? 'out' : r.status === 'active' ? null : 'home' }; }));
     } catch (e) { /* pre-migration */ }
 
     // Build lookup maps for happiness context

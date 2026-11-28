@@ -87,7 +87,7 @@ async function part2() {
   check(x.status === 400, 'a sally needs 1–3 citizens');
   x = await api(so, 'POST', `/api/raids/${sr.id}/sally`, { citizen_ids: [f1, f2] });
   const run = x.body.quest_run_id && (await q('SELECT * FROM settlement_quests WHERE id=$1', [x.body.quest_run_id])).rows[0];
-  check(x.status === 200 && run && run.combat_status === 'pending' && run.quest_id === 'raid_sally' && run.combat_encounter.length === 2, 'sally out: a card battle waits (two Withered for strength 70)');
+  check(x.status === 200 && run && run.combat_status === 'pending' && run.quest_id === 'raid_sally' && run.combat_encounter.length === 2, 'sally out: a battle waits (two Withered for strength 70)');
   const pend = await api(so, 'GET', '/api/combat/pending');
   check(pend.body.battles && pend.body.battles.some(b => b.id === run.id && b.quest_title === 'Sally Out'), '…in the Battles list, titled');
   check((await api(so, 'POST', `/api/raids/${sr.id}/sally`, { citizen_ids: [f1] })).status === 400, 'one sally per raid');
@@ -105,6 +105,35 @@ async function part2() {
   const sr2b = (await q('SELECT outcome, loss_share FROM settlement_raids WHERE id=$1', [sr2.id])).rows[0];
   check(sr2b.outcome === 'broken' && Number(sr2b.loss_share) === 0 && Number((await q('SELECT wealth FROM settlements WHERE id=$1', [so2.sid])).rows[0].wealth) === w0 + 80, 'a won sally breaks the raid: nothing lost, +80 wealth');
   check((await q('SELECT status FROM settlement_quests WHERE id=$1', [run2.id])).rows[0].status === 'collected', 'the sally run is closed (nothing for the notice board)');
+
+  // The same, fought for real: the sally's battle on the board, through the routes, the rules' own mind playing the party.
+  {
+    const E = require('../lib/tactics_engine');
+    const so3 = await player('sally3');
+    await q(`INSERT INTO npc_settlements (name, tile_q, tile_r, faction, species, disposition) VALUES ($1,$2,0,'hostile','withered','hostile')`, ['Warren6' + RUN, so3.q + 2]);
+    const sr3 = await R.start((await q('SELECT * FROM settlements WHERE id=$1', [so3.sid])).rows[0], { strength: 50 });
+    const g1 = await cit(so3, 'Hale', 'soldier'), g2 = await cit(so3, 'Wren', 'archer');
+    await q(`UPDATE citizens SET stats='{"strength":22,"agility":14,"endurance":18,"intelligence":10,"charisma":10}', skills='{"combat":6}' WHERE id = ANY($1::int[])`, [[g1, g2]]);
+    const x3 = await api(so3, 'POST', `/api/raids/${sr3.id}/sally`, { citizen_ids: [g1, g2] });
+    const list3 = (await api(so3, 'GET', '/api/combat/pending')).body.battles.find(b => b.id === x3.body.quest_run_id);
+    const sally = await api(so3, 'POST', '/api/tactics/quest/' + x3.body.quest_run_id); let bt = sally.body.battle; if (!bt) console.log('    (sally answer:', sally.status, JSON.stringify(sally.body).slice(0, 200) + ')');
+    check(bt && bt.source === 'quest' && bt.setup.party.map(u => u.cls).join() === 'guard,archer' && bt.setup.enemies.length === 1 && bt.setup.enemies[0].band === 'withered' && list3 && list3.board_foes.length === 1,
+      'a sally is a battle on the board: the citizens sent, in their classes, against the Withered of the raid', bt && bt.setup.enemies.map(e => e.name).join());
+    const st = E.replay(bt.setup, bt.actions).state;
+    let n = bt.count, last = null;
+    for (let g = 0; g < 400 && st.status === 'active'; g++) {
+      const u = E.current(st), keep = st.r, plan = E.plan(st); st.r = keep;
+      const acts = [];
+      if (plan && plan.to && (plan.to.x !== u.x || plan.to.y !== u.y)) acts.push({ t: 'move', x: plan.to.x, y: plan.to.y });
+      if (plan && plan.ability) acts.push({ t: 'use', key: plan.ability, x: plan.x, y: plan.y });
+      acts.push({ t: 'end' });
+      for (const a of acts) { if (st.status !== 'active' || !E.apply(st, a)) continue; last = await api(so3, 'POST', `/api/tactics/battles/${bt.id}/act`, { n: n++, action: a }); }
+    }
+    const sr3b = (await q('SELECT outcome, loss_share FROM settlement_raids WHERE id=$1', [sr3.id])).rows[0];
+    check(st.status === 'victory' && last.body.quest && last.body.quest.outcome === 'victory' && last.body.quest.raid_battle && sr3b.outcome === 'broken' && Number(sr3b.loss_share) === 0
+      && (await q('SELECT status FROM settlement_quests WHERE id=$1', [x3.body.quest_run_id])).rows[0].status === 'collected' && last.body.rewards && last.body.rewards.party.length === 2,
+      'won on the board, the raid is broken and the sally closed, and the two who fought are paid experience', JSON.stringify(last.body.quest && last.body.quest.raid_battle).slice(0, 120));
+  }
 
   console.log('Withered camps');
   const home = await player('camper');
@@ -125,7 +154,7 @@ async function part2() {
   check(list.body.camps.some(c => c.id === camp.id && c.in_reach), 'GET /api/raids/camps lists it, in reach');
   x = await api(home, 'POST', `/api/raids/camps/${camp.id}/assault`, { citizen_ids: [p1, p2] });
   const crun = x.body.quest_run_id && (await q('SELECT * FROM settlement_quests WHERE id=$1', [x.body.quest_run_id])).rows[0];
-  check(x.status === 200 && crun && crun.quest_id === 'camp_assault' && crun.combat_status === 'pending', 'assault: a party card battle');
+  check(x.status === 200 && crun && crun.quest_id === 'camp_assault' && crun.combat_status === 'pending', 'assault: a party\'s battle');
   const neighbour = await player('neighbour');
   await q('UPDATE settlements SET tile_q = $2 WHERE id=$1', [neighbour.sid, camp.q + 1]);
   await C.onBattleEnded(crun, 'victory');

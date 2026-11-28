@@ -80,10 +80,22 @@ router.patch('/:id', requireAuth, async (req, res) => {
       const prev = (await client.query(
         'UPDATE inventory_items SET equipped_to = NULL WHERE equipped_to = $1 AND equip_slot = $2 AND id <> $3 RETURNING name',
         [c.id, item.equip_slot, item.id])).rows[0];
+      // A weapon that takes both hands and a shield do not go together (lib/gear_kinds.js): taking up
+      // one sends the other back to the stores.
+      const GK = require('../lib/gear_kinds');
+      let freed = null;
+      if (item.equip_slot === 'weapon' && GK.twoHanded(GK.kindOf({ key: item.item_key, name: item.name }))) {
+        freed = (await client.query(`UPDATE inventory_items SET equipped_to = NULL WHERE equipped_to = $1 AND equip_slot = 'shield' RETURNING name`, [c.id])).rows[0] || null;
+      } else if (item.equip_slot === 'shield') {
+        const held = (await client.query(`SELECT id, item_key, name FROM inventory_items WHERE equipped_to = $1 AND equip_slot = 'weapon'`, [c.id])).rows[0];
+        if (held && GK.twoHanded(GK.kindOf({ key: held.item_key, name: held.name }))) { await client.query('UPDATE inventory_items SET equipped_to = NULL WHERE id = $1', [held.id]); freed = { name: held.name }; }
+      }
       await client.query('UPDATE inventory_items SET equipped_to = $1 WHERE id = $2', [c.id, item.id]);
-      return { replaced: prev ? prev.name : null };
+      return { replaced: prev ? prev.name : null, freed: freed ? freed.name : null, who: c.name };
     });
-    res.json({ ok: true, replaced: out.replaced });
+    // freed: what went back to the stores because it cannot be carried with this (a shield with a two-handed weapon).
+    res.json({ ok: true, replaced: out.replaced, freed: out.freed || null,
+      note: out.freed ? `${out.who} put the ${out.freed} back in the stores: it takes both hands.` : null });
   } catch(e) {
     if (e.status) return res.status(e.status).json({ error: e.message });
     res.status(500).json({ error: e.message });

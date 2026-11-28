@@ -35,12 +35,11 @@ const GATED = [
   ['POST', '/api/expeditions/reveal-all'], ['POST', '/api/expeditions/reset-fog'],
   ['POST', '/api/inventory/cheat/add'],
   ['GET', '/api/quest-admin'], ['POST', '/api/quest-admin'], ['PATCH', '/api/quest-admin/x'], ['DELETE', '/api/quest-admin/x'], ['POST', '/api/quest-admin/seed'],
-  ['POST', '/api/card-admin'], ['PATCH', '/api/card-admin/x'], ['DELETE', '/api/card-admin/x'], ['POST', '/api/card-admin/validate'],
   ['GET', '/api/item-admin'], ['POST', '/api/item-admin'], ['PATCH', '/api/item-admin/x'], ['DELETE', '/api/item-admin/x'], ['POST', '/api/item-admin/x/spawn'],
   ['POST', '/api/clans/cheat/prestige'], ['POST', '/api/clan-quests/cheat/finish'],
   ['POST', '/api/game/time/debug'], ['POST', '/api/game/reset-placement'],
 ];
-const OPEN = [['GET', '/api/combat/enemies'], ['GET', '/api/card-admin']];   // (player item adds are gone: scripts/fishing_test.js)
+const OPEN = [['GET', '/api/combat/enemies'], ['GET', '/api/combat/pending']];   // (player item adds are gone: scripts/fishing_test.js)
 
 (async () => {
   const express = require('express');
@@ -53,7 +52,6 @@ const OPEN = [['GET', '/api/combat/enemies'], ['GET', '/api/card-admin']];   // 
   app.use('/api/expeditions', require('../routes/expeditions'));
   app.use('/api/inventory', require('../routes/inventory'));
   app.use('/api/quest-admin', require('../routes/quest_admin'));
-  app.use('/api/card-admin', require('../routes/card_admin'));
   app.use('/api/item-admin', require('../routes/item_admin'));
   app.use('/api/clans', require('../routes/clans'));
   app.use('/api/clan-quests', require('../routes/clan_quests'));
@@ -86,17 +84,12 @@ const OPEN = [['GET', '/api/combat/enemies'], ['GET', '/api/card-admin']];   // 
 
   const blocked = [];
   for (const [m, p] of OPEN) { const s = await call(m, p, 2); if (s.status === 401 || s.status === 403) blocked.push(`${m} ${p}=${s.status}`); }
-  check('4. gameplay routes stay open to players (enemy + card lists)', !blocked.length, blocked.join(' · '));
+  check('4. gameplay routes stay open to players (the creature list, the Battles list)', !blocked.length, blocked.join(' · '));
 
-  // Test battles (no quest_run_id) trust the client → admins only; quest battles stay open.
-  const resolve = async (userId, body) => (await fetch(base + '/api/combat/resolve', { method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok(userId) }, body: JSON.stringify(body) })).status;
-  const testBattlePlayer = await resolve(2, { outcome: 'victory', wealth_reward: 50 });
-  const testBattleAdmin = await resolve(1, { outcome: 'victory', wealth_reward: 50 });
-  const questBattlePlayer = await resolve(2, { outcome: 'victory', quest_run_id: 5 });
-  check('5. /combat/resolve without a quest → 403 for players, open to admins; quest battles stay open',
-        testBattlePlayer === 403 && testBattleAdmin !== 403 && questBattlePlayer !== 403,
-        `player ${testBattlePlayer} · admin ${testBattleAdmin} · quest ${questBattlePlayer}`);
+  // The card battler's routes are gone: nothing is left that takes a client's word for how a battle went.
+  const gone = async (m, p) => (await fetch(base + p, { method: m, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok(1) }, body: '{}' })).status;
+  const card = [await gone('POST', '/api/combat/resolve'), await gone('POST', '/api/combat/engage/5'), await gone('POST', '/api/combat/action/5')];
+  check('5. /combat/resolve, /engage and /action are gone (a battle is played and decided on the server: /api/tactics)', card.every(x => x === 404), card.join(' · '));
 
   // Exploits closed: client-set gold, client-set trust, client-reported wins.
   const st = async (m, p, userId, body) => (await fetch(base + p, { method: m,

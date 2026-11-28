@@ -1,5 +1,8 @@
 # Dungeon content plan: classes, cards, creatures, floors, events and treasure
 
+> **History (2026-11-26).** This plan was written for card battles. The cards are gone: every battle is on the board (`docs/TACTICS.md`). What still holds here is the dungeon itself (floors, rooms, treasure, the difficulty ladder's intent) and the creature list; the parts about cards, decks and the card-playing simulator describe what was removed.
+
+
 Status: **proposal, 2026-11-15, with the owner's decisions of the same day and of 2026-11-18 (§9). None of the content here is built;** the run itself is (`docs/DUNGEONS.md` §12). Companion to `docs/DUNGEONS.md`. The same file is in both repos.
 
 Every number below was produced by `scripts/dungeon_balance_sim.js` (server repo), which plays whole dungeon runs on the real combat engine with a card-playing bot. The proposed cards and creatures live as data in that script. To reproduce:
